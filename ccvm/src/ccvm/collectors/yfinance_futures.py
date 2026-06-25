@@ -58,7 +58,7 @@ class YFinanceFuturesCollector:
 
     source_id = "yfinance_wti_futures"
 
-    def __init__(self, raw_store: RawStore, manifest_db: ManifestDB, num_months: int = 48) -> None:
+    def __init__(self, raw_store: RawStore, manifest_db: ManifestDB, num_months: int = 84) -> None:
         self.raw_store = raw_store
         self.manifest_db = manifest_db
         self.num_months = num_months
