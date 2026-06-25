@@ -1,0 +1,42 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+.env
+*.env
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+
+# Data (raw/bronze/silver/gold are append-only and not committed)
+ccvm/data/raw/
+ccvm/data/bronze/
+ccvm/data/silver/
+ccvm/data/gold/
+ccvm/data/manifests/
+ccvm/data/quality_reports/
+ccvm/data/reports/
+
+# Parquet
+*.parquet
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
