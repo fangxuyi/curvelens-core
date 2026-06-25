@@ -18,10 +18,12 @@ from pathlib import Path
 # Add src to path when run directly
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from ccvm.collectors.barchart_options import BarchartOptionsCollector
 from ccvm.collectors.cme_futures import CMEFuturesCollector
 from ccvm.collectors.cme_options import CMEOptionsCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
 from ccvm.collectors.eia import EIACollector
+from ccvm.collectors.etrade_options import ETradeOptionsCollector
 from ccvm.collectors.yfinance_futures import YFinanceFuturesCollector
 from ccvm.collectors.yfinance_options import YFinanceOptionsCollector
 from ccvm.storage.manifest_db import ManifestDB
@@ -35,9 +37,9 @@ MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
 _SOURCES = [
-    "yfinance_futures", "yfinance_options",
-    "cme_futures", "cme_options",
-    "eia", "csv_futures", "all",
+    "yfinance_futures", "barchart_options", "etrade_options",
+    "yfinance_options", "eia", "csv_futures",
+    "cme_futures", "cme_options", "all",
 ]
 
 
@@ -69,7 +71,19 @@ def main() -> None:
         results["yfinance_futures"] = result
         print(f"[yfinance_futures]  {result}")
 
-    if args.source in ("yfinance_options", "all"):
+    if args.source in ("barchart_options",):
+        collector = BarchartOptionsCollector(raw_store, manifest_db)
+        result = collector.collect(as_of)
+        results["barchart_options"] = result
+        print(f"[barchart_options]  {result}")
+
+    if args.source in ("etrade_options", "all"):
+        collector = ETradeOptionsCollector(raw_store, manifest_db)
+        result = collector.collect(as_of)
+        results["etrade_options"] = result
+        print(f"[etrade_options]    {result}")
+
+    if args.source in ("yfinance_options",):
         collector = YFinanceOptionsCollector(raw_store, manifest_db)
         result = collector.collect(as_of)
         results["yfinance_options"] = result

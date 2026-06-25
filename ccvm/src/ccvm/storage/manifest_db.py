@@ -184,6 +184,18 @@ class ManifestDB:
         finally:
             con.close()
 
+    def has_successful_collection(self, source_id: str, as_of_date: str) -> bool:
+        """Return True if a successful or skipped run already exists for this source+date."""
+        con = self._connect()
+        try:
+            count = con.execute(
+                "SELECT COUNT(*) FROM collection_runs WHERE source_id = ? AND as_of_date = ? AND status IN ('success','warning')",
+                [source_id, as_of_date],
+            ).fetchone()[0]
+            return count > 0
+        finally:
+            con.close()
+
     def has_duplicate_sha256(self) -> bool:
         con = self._connect()
         try:

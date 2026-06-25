@@ -27,6 +27,10 @@ ccvm/data/reports/
 # Parquet
 *.parquet
 
+# Project design documents (kept local, not version-controlled)
+*.pdf
+commodity_catalyst_volatility_monitor_implementation_plan.md
+
 # OS
 .DS_Store
 Thumbs.db
