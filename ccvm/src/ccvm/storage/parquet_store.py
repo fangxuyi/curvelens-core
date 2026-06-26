@@ -35,7 +35,9 @@ class ParquetStore:
         path = self._path(layer, dataset, trade_date)
         if not path.exists():
             raise FileNotFoundError(f"No {layer}/{dataset} for {trade_date}: {path}")
-        return pq.read_table(path)
+        # Use ParquetFile to avoid PyArrow auto-detecting hive partitioning from
+        # the trade_date=YYYY-MM-DD directory name, which causes schema merge errors.
+        return pq.ParquetFile(path).read()
 
     def exists(self, layer: str, dataset: str, trade_date: str) -> bool:
         return self._path(layer, dataset, trade_date).exists()

@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ccvm.collectors.barchart_options import BarchartOptionsCollector
+from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
 from ccvm.collectors.cme_futures import CMEFuturesCollector
 from ccvm.collectors.cme_options import CMEOptionsCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
@@ -39,7 +40,7 @@ FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 _SOURCES = [
     "yfinance_futures", "barchart_options", "etrade_options",
     "yfinance_options", "eia", "csv_futures",
-    "cme_futures", "cme_options", "all",
+    "cme_futures", "cme_options", "cme_bulletin_pdf", "all",
 ]
 
 
@@ -113,6 +114,12 @@ def main() -> None:
         result = collector.collect(as_of)
         results["csv_futures"] = result
         print(f"[csv_futures]       {result}")
+
+    if args.source == "cme_bulletin_pdf":
+        collector = CMEBulletinPDFCollector(DATA_DIR, raw_store, manifest_db)
+        result = collector.collect(as_of)
+        results["cme_bulletin_pdf"] = result
+        print(f"[cme_bulletin_pdf]  {result}")
 
     any_failure = any(r.get("status") == "failed" for r in results.values())
     sys.exit(1 if any_failure else 0)
