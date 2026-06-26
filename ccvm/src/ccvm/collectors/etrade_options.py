@@ -192,13 +192,11 @@ class ETradeOptionsCollector:
         raw_store: RawStore,
         manifest_db: ManifestDB,
         max_expiries: int = 5,
-        no_of_strikes: int = 40,
         use_sandbox: bool | None = None,
     ) -> None:
         self.raw_store = raw_store
         self.manifest_db = manifest_db
         self.max_expiries = max_expiries
-        self.no_of_strikes = no_of_strikes
         use_sb = use_sandbox if use_sandbox is not None else bool(os.environ.get("ETRADE_SANDBOX"))
         self.base_url = _SANDBOX_BASE if use_sb else _LIVE_BASE
         self._tokens = _load_tokens()
@@ -252,8 +250,8 @@ class ETradeOptionsCollector:
             "expiryMonth": str(expiry_month),
             "chainType": "CALLPUT",
             "optionCategory": "STANDARD",
-            "noOfStrikes": str(self.no_of_strikes),
             "skipAdjusted": "true",
+            # No noOfStrikes — fetches the full exchange-listed strike range
         }
         resp = httpx.get(
             url,
