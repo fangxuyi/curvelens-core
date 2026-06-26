@@ -11,6 +11,10 @@ env/
 .env
 *.env
 
+# E*TRADE credentials (stored in ~/.ccvm/ outside repo, never committed)
+etrade_tokens.json
+etrade_request.json
+
 # DuckDB
 *.duckdb
 *.duckdb.wal
