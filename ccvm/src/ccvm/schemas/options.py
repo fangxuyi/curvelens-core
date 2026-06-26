@@ -16,12 +16,20 @@ class OptionSettlement(BaseModel):
     strike: float
     call_put: Literal["C", "P"]
     settlement: float
+    bid: Optional[float] = None
+    ask: Optional[float] = None
     volume: Optional[int] = None
     open_interest: Optional[int] = None
+    implied_volatility: Optional[float] = None
+    delta: Optional[float] = None
+    gamma: Optional[float] = None
+    theta: Optional[float] = None
+    vega: Optional[float] = None
     exercise_style: str = "American"
     settlement_style: str = "Futures"
     contract_multiplier: int = 1000
     source_id: str
+    price_note: Optional[str] = None
     retrieved_at: datetime
     raw_file_sha256: str
 

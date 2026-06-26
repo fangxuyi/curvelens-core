@@ -123,7 +123,7 @@ def compute(
             if code and s:
                 forward_by_contract[code] = s
 
-    # Also use front-month settle as fallback forward for USO
+    # Fallback forward: front-month settle when underlying contract not in the futures table
     front_settle: Optional[float] = None
     for pos_val, s_val in sorted(
         zip(fu_d.get("curve_position", [999] * fu_n), fu_d["settlement"]),
@@ -165,6 +165,9 @@ def compute(
         call_rows: list[dict] = []  # {strike, iv, delta}
         put_rows: list[dict] = []
 
+        # LO options are American-style; Black-76 is a European approximation.
+        # For OTM/near-ATM strikes the error is typically <1 vol point.
+        # Deep ITM puts may show understated IV due to early-exercise premium.
         for i in idxs:
             strike = od["strike"][i]
             settle = od["settlement"][i]
@@ -207,11 +210,19 @@ def compute(
             "WARN" if (n_calls >= 2 and n_puts >= 2) else "FAIL"
         )
 
-        # ATM IV: call row with moneyness closest to 0
+        # ATM IV: average call and put IV at the strike with moneyness closest to 0
         atm_iv = None
-        if call_rows:
-            atm_row = min(call_rows, key=lambda r: abs(r["moneyness"] or float("inf")))
-            atm_iv = atm_row["iv"]
+        all_rows_for_atm = call_rows + put_rows
+        if all_rows_for_atm:
+            atm_strike = min(
+                all_rows_for_atm,
+                key=lambda r: abs(r["moneyness"] if r["moneyness"] is not None else float("inf")),
+            )["strike"]
+            ivs_at_atm = (
+                [r["iv"] for r in call_rows if r["strike"] == atm_strike]
+                + [r["iv"] for r in put_rows if r["strike"] == atm_strike]
+            )
+            atm_iv = sum(ivs_at_atm) / len(ivs_at_atm) if ivs_at_atm else None
 
         # 25-delta IV
         iv_25c, iv_25p = None, None

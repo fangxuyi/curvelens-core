@@ -1,5 +1,5 @@
 """
-Bronze → Silver normalization for WTI/USO options settlements.
+Bronze → Silver normalization for WTI LO (CME daily bulletin) options settlements.
 
 Silver layer:
   - Validates strike > 0 and settlement >= 0

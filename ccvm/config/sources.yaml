@@ -15,6 +15,20 @@ sources:
     collector_class: "ccvm.collectors.cme_futures.CMEFuturesCollector"
     license_note: "prototype/manual verification; review CME terms before automated production use"
 
+  cme_bulletin_lo_option:
+    tier: official_settlement
+    cadence: daily
+    expected_after: "18:00 America/Chicago"
+    format: pdf_parsed_json
+    source_id: cme_bulletin_lo_option
+    pdf_path_template: "data/cme_bulletin/{YYYY-MM-DD}.pdf"
+    pdf_url: "https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf"
+    product_code: LO
+    collector_class: "ccvm.collectors.cme_bulletin_pdf.CMEBulletinPDFCollector"
+    parser: "ccvm.parsers.bronze_options"
+    normalizer: "ccvm.normalizers.silver_options"
+    license_note: "CME Daily Bulletin — public settlement data; PDF must be saved manually before collect_day runs"
+
   cme_wti_option_settlement:
     tier: public_bootstrap
     cadence: daily
@@ -23,6 +37,7 @@ sources:
     endpoint: "https://www.cmegroup.com/CmeWS/mvc/Settlements/options/tradeDate/{YYYYMMDD}/productCode/LO/code/OOF/pageSize/500/isProtected"
     product_code: LO
     collector_class: "ccvm.collectors.cme_options.CMEOptionsCollector"
+    status: not_implemented
     license_note: "prototype/manual verification; review CME terms before automated production use"
 
   eia_api_v2:

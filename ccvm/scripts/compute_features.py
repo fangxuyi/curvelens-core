@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ccvm.analytics import futures_features, option_features, agreement
+from ccvm.validation.quality_report import delta_check_section
 from ccvm.storage.parquet_store import ParquetStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -87,6 +88,22 @@ def main() -> None:
                 logger.info("  IV range: %.1f%% – %.1f%%  ATM: %.1f%%",
                             min(ivs) * 100, max(ivs) * 100,
                             (od["atm_iv"][0] or 0) * 100)
+
+            # ── Delta quality check ──
+            dc = delta_check_section(gold_opt)
+            logger.info(
+                "Delta check: status=%s  compared=%d  mean|Δ|=%.4f  max|Δ|=%.4f",
+                dc["status"], dc.get("compared", 0),
+                dc.get("mean_abs_delta_diff", 0), dc.get("max_abs_delta_diff", 0),
+            )
+            for note in dc.get("notes", []):
+                logger.warning("  delta_check: %s", note)
+
+            quality_path = DATA_DIR / "quality_reports" / f"{as_of_str}.json"
+            if quality_path.exists():
+                quality = json.loads(quality_path.read_text())
+                quality["delta_check"] = dc
+                quality_path.write_text(json.dumps(quality, indent=2))
         else:
             logger.warning("No valid option features computed")
     else:

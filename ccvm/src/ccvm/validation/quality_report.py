@@ -171,6 +171,73 @@ def fundamentals_section(silver_eia: Optional[pa.Table]) -> dict:
     }
 
 
+_DELTA_WARN_THRESHOLD = 0.05
+_DELTA_FAIL_THRESHOLD = 0.10
+
+
+def delta_check_section(gold_options: pa.Table) -> dict:
+    """
+    Compare market delta (CME bulletin, per-strike) against Black-76 model delta.
+
+    Discrepancies flag: model miscalibration, American-style early-exercise
+    premium (expected for deep ITM puts), or bulletin data quality issues.
+    Both deltas should be signed (calls positive, puts negative).
+    """
+    if gold_options is None or len(gold_options) == 0:
+        return {"status": "INSUFFICIENT_DATA", "record_count": 0, "compared": 0,
+                "notes": ["no gold options data"]}
+
+    d = gold_options.to_pydict()
+    n = len(d["trade_date"])
+    market_deltas = d.get("market_delta", [None] * n)
+    model_deltas = d.get("black76_delta", [None] * n)
+
+    diffs: list[float] = []
+    for i in range(n):
+        md = market_deltas[i]
+        bd = model_deltas[i]
+        if md is None or bd is None or md != md or bd != bd:  # skip None / NaN
+            continue
+        diffs.append(abs(md - bd))
+
+    if not diffs:
+        return {
+            "status": "INSUFFICIENT_DATA",
+            "record_count": n,
+            "compared": 0,
+            "notes": ["no rows with both market_delta and black76_delta populated"],
+        }
+
+    mean_diff = sum(diffs) / len(diffs)
+    max_diff = max(diffs)
+    pct_large = sum(1 for x in diffs if x > _DELTA_WARN_THRESHOLD) / len(diffs)
+
+    if mean_diff >= _DELTA_FAIL_THRESHOLD:
+        status = "FAIL"
+    elif mean_diff >= _DELTA_WARN_THRESHOLD or pct_large > 0.20:
+        status = "WARN"
+    else:
+        status = "PASS"
+
+    notes: list[str] = []
+    if pct_large > 0.10:
+        notes.append(
+            f"{pct_large:.0%} of options have |market_delta − model_delta| > "
+            f"{_DELTA_WARN_THRESHOLD} — likely American-style premium on deep ITM puts"
+        )
+
+    return {
+        "status": status,
+        "record_count": n,
+        "compared": len(diffs),
+        "mean_abs_delta_diff": round(mean_diff, 4),
+        "max_abs_delta_diff": round(max_diff, 4),
+        "pct_diff_over_0_05": round(pct_large, 4),
+        "thresholds": {"warn": _DELTA_WARN_THRESHOLD, "fail": _DELTA_FAIL_THRESHOLD},
+        "notes": notes,
+    }
+
+
 def generate(
     trade_date: date,
     silver_futures: Optional[pa.Table],
@@ -202,7 +269,7 @@ def generate(
         "fundamentals": fund,
         "caveats": (caveats or []) + [
             "settlement_data_only_not_executable_mispricing",
-            "USO_options_are_ETF_equity_proxy_not_CL_futures_options",
+            "LO_options_American_style_black76_IV_is_European_approximation",
         ],
     }
 
@@ -256,6 +323,18 @@ def _render_markdown(report: dict) -> str:
         f"- Latest period: {fund.get('latest_period', 'N/A')}",
         f"- Series: {fund.get('series', [])}",
     ]
+
+    dc = report.get("delta_check")
+    if dc:
+        lines += [
+            "\n## Delta Check (market vs Black-76)",
+            f"- Status: **{dc['status']}**",
+            f"- Compared: {dc.get('compared', 0)} of {dc.get('record_count', 0)} rows",
+            f"- Mean |Δ|: {dc.get('mean_abs_delta_diff', 'N/A')}  Max |Δ|: {dc.get('max_abs_delta_diff', 'N/A')}",
+            f"- Fraction with |Δ| > 0.05: {dc.get('pct_diff_over_0_05', 0):.1%}",
+        ]
+        for note in dc.get("notes", []):
+            lines.append(f"- ⚠ {note}")
 
     lines += ["\n## Caveats"]
     for c in report.get("caveats", []):

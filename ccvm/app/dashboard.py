@@ -83,7 +83,7 @@ st.set_page_config(
 )
 
 st.title("CCVM — Commodity Catalyst & Volatility Monitor")
-st.caption("WTI crude oil futures and options analytics • Settlement data only")
+st.caption("WTI crude oil futures and options analytics • CME settlement data (CL futures + LO options)")
 
 # ── Date selector ──
 available = _available_dates()
@@ -166,7 +166,7 @@ with tab_curve:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_vol:
     st.subheader("Options Volatility Surface")
-    st.caption("⚠ Data source: USO equity options (WTI proxy) — not CME LO futures options")
+    st.caption("CME LO NYMEX crude oil options — daily bulletin settlements (source: cme_bulletin_lo_option)")
 
     if not pq.exists("gold", "option_features", selected_date):
         st.info("No gold option features for this date. Collect and process options data first.")
