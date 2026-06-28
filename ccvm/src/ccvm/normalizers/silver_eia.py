@@ -69,14 +69,18 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
     d = bronze.to_pydict()
     n = len(d["period"])
 
-    # Group rows by series_id, sorted newest-first within each group
+    # Group rows by series_id, deduplicate by period (keep first seen), sort newest-first
     from collections import defaultdict
     by_series: dict[str, list[dict]] = defaultdict(list)
+    seen_keys: set[tuple] = set()
     for i in range(n):
         row = {col: d[col][i] for col in d}
+        key = (row["series_id"], row["period"])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
         by_series[row["series_id"]].append(row)
 
-    # Sort each group newest → oldest
     for sid in by_series:
         by_series[sid].sort(key=lambda r: r["period"], reverse=True)
 

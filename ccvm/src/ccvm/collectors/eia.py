@@ -154,26 +154,36 @@ class EIACollector:
                 payload = self.fetch(item)
                 sha256 = hashlib.sha256(payload.content).hexdigest()
 
-                if self.manifest_db.sha256_exists(sha256):
-                    logger.debug("Skipping %s — identical content already in manifest", item.identifier)
+                # Skip only if this exact (sha256, trade_date) pair already registered.
+                if self.manifest_db.sha256_exists_for_date(sha256, as_of_str):
+                    logger.debug("Skipping %s — already registered for %s", item.identifier, as_of_str)
                     skipped += 1
                     continue
 
-                raw_path, sha256_written, byte_size = self.raw_store.persist(
-                    content=payload.content,
-                    source_id=self.source_id,
-                    filename=payload.filename,
-                    trade_date=as_of_str,
-                    source_url=payload.source_url,
-                    http_status=payload.http_status,
-                    content_type=payload.content_type,
-                )
+                # If same content exists for a different trade_date, reuse the raw file.
+                existing = self.manifest_db.get_entry_by_sha256(sha256)
+                if existing:
+                    raw_path = existing["raw_path"]
+                    byte_size = existing["byte_size"]
+                    logger.info("Reusing existing raw file for EIA %s (same weekly release)", series_key)
+                else:
+                    raw_path, sha256, byte_size = self.raw_store.persist(
+                        content=payload.content,
+                        source_id=self.source_id,
+                        filename=payload.filename,
+                        trade_date=as_of_str,
+                        source_url=payload.source_url,
+                        http_status=payload.http_status,
+                        content_type=payload.content_type,
+                    )
+                    logger.info("Collected EIA %s -> %s", series_key, raw_path)
+
                 self.manifest_db.insert_manifest_entry(
                     {
                         "entry_id": str(uuid.uuid4()),
                         "source_id": self.source_id,
                         "raw_path": str(raw_path),
-                        "sha256": sha256_written,
+                        "sha256": sha256,
                         "byte_size": byte_size,
                         "retrieved_at": datetime.now(timezone.utc),
                         "trade_date": as_of_str,
@@ -183,7 +193,6 @@ class EIACollector:
                         "collection_run_id": run_id,
                     }
                 )
-                logger.info("Collected EIA %s -> %s", series_key, raw_path)
                 success += 1
 
             except Exception as exc:

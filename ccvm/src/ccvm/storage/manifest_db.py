@@ -64,6 +64,32 @@ class ManifestDB:
         finally:
             con.close()
 
+    def sha256_exists_for_date(self, sha256: str, trade_date: str) -> bool:
+        """True if this exact (sha256, trade_date) pair is already in the manifest."""
+        con = self._connect()
+        try:
+            count = con.execute(
+                "SELECT COUNT(*) FROM raw_manifest WHERE sha256 = ? AND trade_date = ?",
+                [sha256, trade_date],
+            ).fetchone()[0]
+            return count > 0
+        finally:
+            con.close()
+
+    def get_entry_by_sha256(self, sha256: str) -> Optional[dict]:
+        """Return the first manifest entry matching this sha256, or None."""
+        con = self._connect()
+        try:
+            row = con.execute(
+                "SELECT * FROM raw_manifest WHERE sha256 = ? LIMIT 1", [sha256]
+            ).fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in con.description]
+            return dict(zip(cols, row))
+        finally:
+            con.close()
+
     def insert_manifest_entry(self, entry: dict) -> None:
         con = self._connect()
         try:
