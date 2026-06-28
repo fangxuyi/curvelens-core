@@ -252,17 +252,27 @@ def _render_markdown(report: dict) -> str:
         util_str = f"{util:.1f}%" if util is not None else "N/A"
         net_imp = eia.get("net_imports_mbbld")
         net_str = f"{net_imp:+.0f} MBBL/D" if net_imp is not None else "N/A"
+        def _mbbl(v):
+            return f"{v:,.0f} MBBL" if v is not None else "N/A"
+        def _mbbld_wow(v):
+            return f"{v:+,.0f} MBBL" if v is not None else "N/A"
+        crude_val  = _mbbl(eia.get("crude_stocks_ex_spr_mbbl"))
+        cush_val   = _mbbl(eia.get("cushing_stocks_mbbl"))
+        gas_val    = _mbbl(eia.get("gasoline_stocks_mbbl"))
+        dist_val   = _mbbl(eia.get("distillate_stocks_mbbl"))
+        gas_wow    = _mbbld_wow(eia.get("gasoline_draw_mbbl"))
+        dist_wow   = _mbbld_wow(eia.get("distillate_draw_mbbl"))
         lines += [
             f"*Week ending {eia.get('eia_period', 'N/A')}*",
             "",
-            f"| Metric | Value | WoW |",
-            f"|--------|-------|-----|",
-            f"| U.S. crude stocks (ex-SPR) | {eia.get('crude_stocks_ex_spr_mbbl') and f\"{eia['crude_stocks_ex_spr_mbbl']:,.0f} MBBL\" or 'N/A'} | **{draw_str}** |",
-            f"| Cushing stocks | {eia.get('cushing_stocks_mbbl') and f\"{eia['cushing_stocks_mbbl']:,.0f} MBBL\" or 'N/A'} | {cush_str} |",
+            "| Metric | Value | WoW |",
+            "|--------|-------|-----|",
+            f"| U.S. crude stocks (ex-SPR) | {crude_val} | **{draw_str}** |",
+            f"| Cushing stocks | {cush_val} | {cush_str} |",
             f"| Refinery utilization | {util_str} | — |",
             f"| Net imports | {net_str} | — |",
-            f"| Gasoline stocks | {eia.get('gasoline_stocks_mbbl') and f\"{eia['gasoline_stocks_mbbl']:,.0f} MBBL\" or 'N/A'} | {f\"{eia['gasoline_draw_mbbl']:+,.0f} MBBL\" if eia.get('gasoline_draw_mbbl') is not None else 'N/A'} |",
-            f"| Distillate stocks | {eia.get('distillate_stocks_mbbl') and f\"{eia['distillate_stocks_mbbl']:,.0f} MBBL\" or 'N/A'} | {f\"{eia['distillate_draw_mbbl']:+,.0f} MBBL\" if eia.get('distillate_draw_mbbl') is not None else 'N/A'} |",
+            f"| Gasoline stocks | {gas_val} | {gas_wow} |",
+            f"| Distillate stocks | {dist_val} | {dist_wow} |",
             "",
             f"**Supply signal:** `{signal}`  |  **Scenario trigger:** `{trigger}`",
             "",
