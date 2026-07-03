@@ -1,31 +1,28 @@
 """
 Catalyst extraction agent.
 
-Uses the Claude API to extract structured catalyst events from raw text
-(news articles, EIA releases, OPEC statements, etc.).
+Uses the Claude CLI (`claude -p`) to extract structured catalyst events from
+raw text (news articles, EIA releases, OPEC statements, etc.).
 
-The model produces a JSON object matching the CatalystEvent schema.
-The caller is responsible for deduplication via event_id (SHA-256 of
-canonical fields) and for filtering out low-quality extractions.
+Requires the Claude Code CLI to be installed and authenticated (OAuth login).
+No ANTHROPIC_API_KEY needed — uses the same session as Claude Code.
 
-Setup:
-    export ANTHROPIC_API_KEY=sk-ant-...
-
-Rate limiting: this module makes one API call per document. Batch by
-collecting articles first, then calling extract() in a loop.
+Rate limiting: one CLI call per document. Batch by collecting articles first,
+then calling extract() in a loop.
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-import os
+import shutil
+import subprocess
 from datetime import date, datetime, timezone
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_EXTRACTION_PROMPT_HEADER = """\
+_EXTRACTION_PROMPT = """\
 You are a commodity market analyst. Extract ONE primary catalyst event from the text below.
 A catalyst is a concrete, dated supply or demand development that materially affects WTI crude oil prices.
 
@@ -67,71 +64,64 @@ def extract(
     source_url: str,
     published_at: str,
     observation_date: date,
-    api_key: Optional[str] = None,
+    api_key: Optional[str] = None,  # kept for API compat, unused
     model: str = "claude-haiku-4-5-20251001",
 ) -> Optional[dict]:
+    """Extract a CatalystEvent from article text via the Claude CLI.
+
+    Uses `claude -p` (non-interactive print mode) with the user's existing
+    OAuth session — no API key required.
+    Returns None if extraction fails or no catalyst is found.
     """
-    Extract a CatalystEvent from article text using the Claude API.
-    Returns None if the API is unavailable or extraction fails.
-    """
-    key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-    if not key:
-        logger.warning("ANTHROPIC_API_KEY not set — catalyst extraction skipped")
+    claude_bin = shutil.which("claude")
+    if not claude_bin:
+        logger.error("claude CLI not found in PATH — install Claude Code")
         return None
 
-    try:
-        import httpx
-    except ImportError:
-        logger.error("httpx not available for API calls")
-        return None
-
-    prompt = _EXTRACTION_PROMPT_HEADER + text[:4000]
+    prompt = _EXTRACTION_PROMPT + text[:4000]
 
     try:
-        resp = httpx.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": model,
-                "max_tokens": 512,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=30,
+        result = subprocess.run(
+            [claude_bin, "-p", prompt],
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
-        resp.raise_for_status()
-        content = resp.json()["content"][0]["text"].strip()
-
-        # Strip markdown code fences if present
-        if content.startswith("```"):
-            content = "\n".join(content.split("\n")[1:])
-            content = content.rsplit("```", 1)[0].strip()
-
-        event = json.loads(content)
-
-        # Discard "no catalyst" extractions
-        if event.get("title") == "no_catalyst_found":
-            return None
-
-        # Stamp with metadata
-        event["event_id"] = _stable_event_id(
-            event.get("title", ""),
-            event.get("effective_start"),
-            event.get("event_type", "other"),
-        )
-        event["published_at"] = published_at
-        event["observation_date"] = observation_date.isoformat()
-        event["source_url"] = source_url
-        event["extracted_at"] = datetime.now(timezone.utc).isoformat()
-        event["extraction_model"] = model
-        return event
-
-    except json.JSONDecodeError as exc:
-        logger.warning("Failed to parse extraction response: %s", exc)
+    except subprocess.TimeoutExpired:
+        logger.warning("claude -p timed out for %s", source_url[:60])
         return None
     except Exception as exc:
-        logger.error("Catalyst extraction error: %s", exc)
+        logger.error("Failed to run claude CLI: %s", exc)
         return None
+
+    if result.returncode != 0:
+        logger.warning("claude -p exited %d: %s", result.returncode, result.stderr[:200])
+        return None
+
+    content = result.stdout.strip()
+
+    # Strip markdown code fences if present
+    if content.startswith("```"):
+        content = "\n".join(content.split("\n")[1:])
+        content = content.rsplit("```", 1)[0].strip()
+
+    try:
+        event = json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.warning("Failed to parse extraction response: %s | raw: %s", exc, content[:200])
+        return None
+
+    if event.get("title") == "no_catalyst_found":
+        return None
+
+    event["event_id"] = _stable_event_id(
+        event.get("title", ""),
+        event.get("effective_start"),
+        event.get("event_type", "other"),
+    )
+    event["published_at"] = published_at
+    event["observation_date"] = observation_date.isoformat()
+    event["source_url"] = source_url
+    event["extracted_at"] = datetime.now(timezone.utc).isoformat()
+    event["extraction_model"] = "claude-cli"
+    return event
