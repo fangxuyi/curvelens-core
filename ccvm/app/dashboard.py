@@ -414,10 +414,7 @@ with tab_vol:
             sett_f = [v for v, m in zip(od["settlement"], mask) if m]
             if stk and any(v is not None for v in eeps_f):
                 _section(f"EARLY EXERCISE PREMIUM (BAW − BLACK76) — {fe}")
-                st.caption(
-                    "OTM options have zero EEP — early exercise is never rational when "
-                    "the option is out of the money. EEP % = EEP ÷ market price × 100."
-                )
+
                 raw = pd.DataFrame({
                     "Strike": stk, "EEP": eeps_f, "Price": sett_f, "CP": cps
                 }).dropna(subset=["EEP"])
