@@ -382,11 +382,11 @@ with tab_vol:
             fe    = expiries[0]
             mask  = [e == fe for e in od["option_expiry"]]
             stk   = [s for s, m in zip(od["strike"], mask) if m]
-            ivs_f = [v for v, m in zip(od["black76_iv"], mask) if m]
+            ivs_f = [v for v, m in zip(od["baw_iv"], mask) if m]
             cps   = [c for c, m in zip(od["call_put"], mask) if m]
 
             if stk and any(v is not None for v in ivs_f):
-                _section(f"IV SMILE — {fe}")
+                _section(f"BAW IV SMILE — {fe}")
                 smile_df = (pd.DataFrame({"Strike": stk, "IV": ivs_f, "CP": cps})
                             .dropna(subset=["IV"]).sort_values("Strike"))
                 if _PLOTLY:
