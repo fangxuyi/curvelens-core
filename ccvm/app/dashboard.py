@@ -424,27 +424,38 @@ with tab_vol:
             eeps_f = [v for v, m in zip(
                 od.get("early_exercise_premium", [None]*len(od["trade_date"])), mask
             ) if m]
-            if stk and any(v is not None and v > 0 for v in eeps_f):
+            sett_f = [v for v, m in zip(od["settlement"], mask) if m]
+            if stk and any(v is not None for v in eeps_f):
                 _section(f"EARLY EXERCISE PREMIUM (BAW − BLACK76) — {fe}")
-                eep_df = (
-                    pd.DataFrame({"Strike": stk, "EEP": eeps_f, "CP": cps})
-                    .dropna(subset=["EEP"])
-                    .query("EEP > 0")
+                st.caption(
+                    "OTM options have zero EEP — early exercise is never rational when "
+                    "the option is out of the money. EEP % = EEP ÷ market price × 100."
                 )
-                if not eep_df.empty:
-                    pivot = (
-                        eep_df.pivot_table(index="Strike", columns="CP", values="EEP")
-                        .rename(columns={"C": "Call EEP ($/bbl)", "P": "Put EEP ($/bbl)"})
-                        .sort_index()
-                        .reset_index()
-                    )
-                    for col in ["Call EEP ($/bbl)", "Put EEP ($/bbl)"]:
-                        if col in pivot.columns:
-                            pivot[col] = pivot[col].apply(
-                                lambda v: f"${v:.4f}" if pd.notna(v) else "—"
-                            )
-                    pivot["Strike"] = pivot["Strike"].apply(lambda v: f"${v:.2f}")
-                    st.dataframe(pivot, hide_index=True, use_container_width=True)
+                raw = pd.DataFrame({
+                    "Strike": stk, "EEP": eeps_f, "Price": sett_f, "CP": cps
+                }).dropna(subset=["EEP"])
+                raw["EEP_pct"] = raw.apply(
+                    lambda r: r["EEP"] / r["Price"] * 100 if r["Price"] and r["Price"] > 0 else None,
+                    axis=1,
+                )
+
+                def _pivot_cp(cp_label, col_dollar, col_pct):
+                    sub = raw[raw["CP"] == cp_label][["Strike", "EEP", "EEP_pct"]].copy()
+                    sub = sub.rename(columns={"EEP": col_dollar, "EEP_pct": col_pct})
+                    return sub.set_index("Strike")
+
+                calls_p = _pivot_cp("C", "Call EEP $", "Call EEP %")
+                puts_p  = _pivot_cp("P", "Put EEP $",  "Put EEP %")
+                pivot   = calls_p.join(puts_p, how="outer").sort_index().reset_index()
+
+                for col in ["Call EEP $", "Put EEP $"]:
+                    if col in pivot.columns:
+                        pivot[col] = pivot[col].apply(lambda v: f"${v:.4f}" if pd.notna(v) else "—")
+                for col in ["Call EEP %", "Put EEP %"]:
+                    if col in pivot.columns:
+                        pivot[col] = pivot[col].apply(lambda v: f"{v:.2f}%" if pd.notna(v) else "—")
+                pivot["Strike"] = pivot["Strike"].apply(lambda v: f"${v:.2f}")
+                st.dataframe(pivot, hide_index=True, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
