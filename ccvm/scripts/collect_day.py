@@ -5,11 +5,15 @@ Usage:
     python scripts/collect_day.py --date 2026-06-24 --source yfinance_futures
     python scripts/collect_day.py --date 2026-06-24 --source cme_bulletin_pdf
     python scripts/collect_day.py --date 2026-06-24 --source eia
+    python scripts/collect_day.py --date 2026-06-24 --source rss_news
     python scripts/collect_day.py --date 2026-06-24 --source all
 
 Option data (cme_bulletin_pdf):
     Requires data/cme_bulletin/<YYYY-MM-DD>.pdf downloaded manually from:
     https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf
+
+After running with --source all, extract catalyst events with:
+    python scripts/extract_catalysts.py --date 2026-06-24
 """
 from __future__ import annotations
 
@@ -29,6 +33,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
 from ccvm.collectors.eia import EIACollector
+from ccvm.collectors.rss import RSSNewsCollector
 from ccvm.collectors.yfinance_futures import YFinanceFuturesCollector
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.raw_store import RawStore
@@ -42,7 +47,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
-_SOURCES = ["yfinance_futures", "cme_bulletin_pdf", "eia", "csv_futures", "all"]
+_SOURCES = ["yfinance_futures", "cme_bulletin_pdf", "eia", "rss_news", "csv_futures", "all"]
 
 
 def main() -> None:
@@ -52,7 +57,7 @@ def main() -> None:
         "--source",
         choices=_SOURCES,
         default="all",
-        help="Which collector(s) to run (default: all = yfinance_futures + cme_bulletin_pdf + eia)",
+        help="Which collector(s) to run (default: all = yfinance_futures + cme_bulletin_pdf + eia + rss_news)",
     )
     args = parser.parse_args()
 
@@ -83,6 +88,13 @@ def main() -> None:
         result = collector.collect(as_of)
         results["eia"] = result
         print(f"[eia]               {result}")
+
+    if args.source in ("rss_news", "all"):
+        collector = RSSNewsCollector(raw_store, manifest_db)
+        result = collector.collect(as_of)
+        results["rss_news"] = result
+        n = result.get("articles", 0)
+        print(f"[rss_news]          {result['status']} — {n} articles  {result.get('sources', {})}")
 
     if args.source == "csv_futures":
         collector = CSVFuturesCollector(FIXTURES_DIR, raw_store, manifest_db)

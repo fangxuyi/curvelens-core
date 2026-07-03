@@ -131,7 +131,7 @@ CSS = f"""<style>
 .stApp{{background:var(--bg)!important;}}
 #MainMenu,footer,header{{display:none!important;}}
 .stDeployButton{{display:none!important;}}
-html,body,p,div,span,li,label,td,th,button{{font-family:var(--mono)!important;color:var(--text)!important;}}
+html,body,p,div,li,label,td,th,button{{font-family:var(--mono)!important;color:var(--text)!important;}}
 h1,h2,h3,h4{{font-family:var(--display)!important;color:var(--text)!important;letter-spacing:-0.02em!important;}}
 .main .block-container{{padding:0 2rem 3rem!important;max-width:1480px!important;}}
 [data-testid="stSidebar"]{{background:var(--surface)!important;border-right:1px solid var(--border)!important;}}
@@ -150,7 +150,7 @@ h1,h2,h3,h4{{font-family:var(--display)!important;color:var(--text)!important;le
 [data-testid="stMetricDelta"] svg{{display:none!important;}}
 [data-testid="stDataFrame"]{{border:1px solid var(--border)!important;}}
 details{{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:0!important;}}
-details>summary{{font-family:var(--mono)!important;font-size:0.72rem!important;color:var(--muted)!important;padding:0.7rem 1rem!important;cursor:pointer;}}
+details>summary{{font-size:0.72rem!important;color:var(--muted)!important;padding:0.7rem 1rem!important;cursor:pointer;}}
 [data-testid="stAlert"]{{border-radius:0!important;border:1px solid var(--border)!important;border-left:2px solid var(--amber)!important;background:rgba(196,150,42,0.04)!important;}}
 code,.stMarkdown code{{background:rgba(196,150,42,0.08)!important;color:var(--amber-hi)!important;font-family:var(--mono)!important;font-size:0.78em!important;padding:0.15em 0.4em!important;border:1px solid rgba(196,150,42,0.18)!important;border-radius:2px!important;}}
 .stMarkdown h1{{font-size:1.2rem!important;border-bottom:1px solid var(--border)!important;padding-bottom:0.5rem!important;margin-bottom:1rem!important;}}
@@ -165,6 +165,7 @@ hr{{border-color:var(--border)!important;margin:1.5rem 0!important;}}
 ::-webkit-scrollbar-thumb{{background:var(--border);border-radius:2px;}}
 </style>"""
 st.markdown(CSS, unsafe_allow_html=True)
+
 
 
 # ── Header (outside tabs — markdown works here) ───────────────────────────────
@@ -556,6 +557,20 @@ with tab_agree:
 # ══════════════════════════════════════════════════════════════════════════════
 # CATALYSTS — native expanders + columns
 # ══════════════════════════════════════════════════════════════════════════════
+_HORIZON_LABEL = {
+    "prompt_1m": "Front Month",
+    "prompt_3m": "3 Months",
+    "6m":        "6 Months",
+    "12m":       "12 Months",
+    "structural":"Structural",
+}
+_DIR_DELTA = {
+    "bullish_supply": ("+bullish supply", "normal"),
+    "bearish_demand": ("-bearish demand", "normal"),
+    "two_sided":      ("mixed",           "off"),
+    "unclear":        (None,              "off"),
+}
+
 with tab_cats:
     catalysts = cat_store.load(as_of)
     catalysts.sort(key=lambda e: e.get("relevance_score", 0), reverse=True)
@@ -563,32 +578,36 @@ with tab_cats:
     if not catalysts:
         st.info(
             "No catalyst events for this date.\n\n"
-            f"Run: `python scripts/extract_catalysts.py --date {selected_date} --articles articles.json`"
+            f"Run: `python scripts/extract_catalysts.py --date {selected_date}`"
         )
     else:
         _section(f"{len(catalysts)} EVENTS — RANKED BY RELEVANCE")
-        dir_c = {"bullish_supply": C["bull"], "bearish_demand": C["bear"], "two_sided": "#b8942a"}
 
         for ev in catalysts[:10]:
-            rank      = ev.get("relevance_rank", "?")
+            rank      = ev.get("relevance_rank", 0)
             score     = ev.get("relevance_score", 0)
             title     = ev.get("title", "")
             direction = ev.get("direction", "unclear")
-            mag       = ev.get("magnitude", "—")
-            horizon   = ev.get("affected_horizon", "—")
-            eff       = ev.get("effective_start", "N/A")
+            mag       = ev.get("magnitude", "—").upper()
+            horizon   = _HORIZON_LABEL.get(ev.get("affected_horizon", ""), ev.get("affected_horizon", "—"))
+            eff       = ev.get("effective_start") or "unknown"
             url       = ev.get("source_url", "")
+            dir_label = direction.replace("_", " ").upper()
+            delta_val, delta_color = _DIR_DELTA.get(direction, (None, "off"))
 
-            with st.expander(f"#{rank:02d}  {title[:80]}"):
+            rank_str = f"{rank:02d}" if isinstance(rank, int) else str(rank)
+            with st.expander(f"{rank_str}.  {score} pts  —  {title[:70]}"):
                 cc1, cc2, cc3 = st.columns(3)
-                dc = dir_c.get(direction, C["muted"])
-                cc1.metric("Direction", direction.replace("_", " ").upper())
+                cc1.metric("Direction", dir_label,
+                           delta=delta_val, delta_color=delta_color)
                 cc2.metric("Magnitude", mag)
                 cc3.metric("Horizon",   horizon)
-                st.caption(f"Effective: {eff}  ·  Score: {score}"
-                           + (f"  ·  {url}" if url else ""))
+                meta_parts = [f"Effective: {eff}", f"Score: {score}"]
+                if url:
+                    meta_parts.append(f"[Source]({url})")
+                st.caption("  ·  ".join(meta_parts))
                 for snippet in ev.get("evidence", []):
-                    st.caption(f"> {snippet}")
+                    st.caption(f'"{snippet}"')
 
 
 # ══════════════════════════════════════════════════════════════════════════════

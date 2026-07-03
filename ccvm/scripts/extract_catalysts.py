@@ -2,12 +2,16 @@
 """
 Catalyst extraction pipeline.
 
-Reads article text from stdin or a JSON file of articles, extracts structured
+Reads article text from a JSON file, a single text file, or automatically
+from raw RSS articles collected by collect_day.py. Extracts structured
 catalyst events using Claude, ranks them against the current futures curve,
 and saves to data/gold/events/.
 
 Usage:
-    # Extract from a JSON file of articles:
+    # Auto-read from raw RSS store (after collect_day.py --source rss_news):
+    python scripts/extract_catalysts.py --date 2026-06-25
+
+    # Extract from an explicit JSON file of articles:
     python scripts/extract_catalysts.py --date 2026-06-25 --articles articles.json
 
     # Extract from a single text file:
@@ -28,9 +32,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).parent.parent / ".env")
+
 from ccvm.agents.catalyst_extractor import extract
 from ccvm.agents.catalyst_ranker import rank_events
 from ccvm.agents.catalyst_store import CatalystStore
+from ccvm.collectors.rss import find_raw_articles
 from ccvm.storage.parquet_store import ParquetStore
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -79,8 +87,19 @@ def main() -> None:
         }]
 
     else:
-        print("Provide --articles or --text")
-        sys.exit(1)
+        # Auto-detect: look for raw RSS articles stored by collect_day.py
+        raw_path = find_raw_articles(DATA_DIR, as_of)
+        if raw_path:
+            logger.info("Auto-loading RSS articles from %s", raw_path)
+            articles = json.loads(raw_path.read_text())
+            if not isinstance(articles, list):
+                articles = [articles]
+        else:
+            print(
+                f"No articles found. Run: python scripts/collect_day.py --date {args.date} --source rss_news\n"
+                "Or provide --articles or --text explicitly."
+            )
+            sys.exit(1)
 
     # ── Get front-month contract from gold features ──
     pq = ParquetStore(DATA_DIR)
