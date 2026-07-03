@@ -420,7 +420,7 @@ with tab_vol:
                 else:
                     st.line_chart(smile_df.set_index("Strike")["IV"])
 
-            # EEP per strike — front month only
+            # EEP per strike — front month, as pivot table (calls | puts)
             eeps_f = [v for v, m in zip(
                 od.get("early_exercise_premium", [None]*len(od["trade_date"])), mask
             ) if m]
@@ -430,25 +430,21 @@ with tab_vol:
                     pd.DataFrame({"Strike": stk, "EEP": eeps_f, "CP": cps})
                     .dropna(subset=["EEP"])
                     .query("EEP > 0")
-                    .sort_values("Strike")
                 )
-                if _PLOTLY and not eep_df.empty:
-                    fig_eep = go.Figure()
-                    for cp, col in [("C", C["bull"]), ("P", C["bear"])]:
-                        sub = eep_df[eep_df["CP"] == cp]
-                        if not sub.empty:
-                            fig_eep.add_trace(go.Bar(
-                                x=sub["Strike"], y=sub["EEP"],
-                                name="Calls" if cp == "C" else "Puts",
-                                marker_color=col, opacity=0.85,
-                            ))
-                    fig_eep.update_layout(**_plot_layout(
-                        xaxis_title="Strike (USD)", yaxis_title="EEP ($/bbl)",
-                        barmode="overlay", height=240,
-                    ))
-                    st.plotly_chart(fig_eep, use_container_width=True)
-                elif not eep_df.empty:
-                    st.bar_chart(eep_df.set_index("Strike")["EEP"])
+                if not eep_df.empty:
+                    pivot = (
+                        eep_df.pivot_table(index="Strike", columns="CP", values="EEP")
+                        .rename(columns={"C": "Call EEP ($/bbl)", "P": "Put EEP ($/bbl)"})
+                        .sort_index()
+                        .reset_index()
+                    )
+                    for col in ["Call EEP ($/bbl)", "Put EEP ($/bbl)"]:
+                        if col in pivot.columns:
+                            pivot[col] = pivot[col].apply(
+                                lambda v: f"${v:.4f}" if pd.notna(v) else "—"
+                            )
+                    pivot["Strike"] = pivot["Strike"].apply(lambda v: f"${v:.2f}")
+                    st.dataframe(pivot, hide_index=True, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
