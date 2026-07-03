@@ -335,21 +335,15 @@ with tab_vol:
             st.caption(f"Data source: {note}")
 
         expiries = sorted(set(od["option_expiry"]))
-        atm_ivs  = {e: None for e in expiries}
-        rr25s    = {e: None for e in expiries}
-        bf25s    = {e: None for e in expiries}
-        # EEP accumulators: {expiry: {"C": [eep,...], "P": [eep,...]}}
-        eep_by_exp: dict = {e: {"C": [], "P": []} for e in expiries}
+        atm_ivs = {e: None for e in expiries}
+        rr25s   = {e: None for e in expiries}
+        bf25s   = {e: None for e in expiries}
         for i in range(len(od["trade_date"])):
             exp = od["option_expiry"][i]
             if atm_ivs[exp] is None and od["atm_iv"][i] is not None:
                 atm_ivs[exp] = od["atm_iv"][i]
                 rr25s[exp]   = od["risk_reversal_25d"][i]
                 bf25s[exp]   = od["butterfly_25d"][i]
-            eep_val = od.get("early_exercise_premium", [None] * len(od["trade_date"]))[i]
-            cp_val  = od["call_put"][i]
-            if eep_val is not None and eep_val >= 0:
-                eep_by_exp[exp][cp_val].append(eep_val)
 
         if _PLOTLY and expiries:
             exp_iv  = [e for e in expiries if atm_ivs[e] is not None]
@@ -377,18 +371,11 @@ with tab_vol:
             ))
             st.plotly_chart(fig_vol, use_container_width=True)
 
-        def _fmt_eep(vals: list) -> str:
-            if not vals:
-                return "—"
-            return f"${max(vals):.3f} max / ${sum(vals)/len(vals):.3f} avg"
-
         st.dataframe(pd.DataFrame({
             "Expiry": list(atm_ivs.keys()),
             "ATM IV": [f"{v*100:.1f}%"  if v else "—" for v in atm_ivs.values()],
             "25Δ RR": [f"{v*100:+.2f}%" if v else "—" for v in rr25s.values()],
             "25Δ BF": [f"{v*100:.2f}%"  if v else "—" for v in bf25s.values()],
-            "EEP Calls": [_fmt_eep(eep_by_exp[e]["C"]) for e in atm_ivs],
-            "EEP Puts":  [_fmt_eep(eep_by_exp[e]["P"]) for e in atm_ivs],
         }), hide_index=True, use_container_width=True)
 
         if expiries:
