@@ -6,14 +6,10 @@ Used to compute:
   - Option price given forward, strike, time, rate, vol (for validation)
   - Delta, gamma, vega, theta under Black-76
 
-Important caveats:
-  - WTI options (LO) are American-style. Black-76 is strictly valid for
-    European options. For deep in-the-money options the European approximation
-    understates true value. For OTM options the difference is small.
-  - USO equity options (E*TRADE source) are also American-style on an ETF,
-    not futures-settled. Black-76 is an approximation for both.
-  - Market-provided Greeks (delta, vega) are used directly when available.
-    Black-76 IV is computed as a consistency check and for surface fitting.
+Note:
+  Black-76 is kept as a European reference pricer and for comparison.
+  The primary IV/greeks for WTI (LO) American options now use the
+  Barone-Adesi & Whaley (BAW) model in baw.py.
 
 References:
   Black, F. (1976). "The pricing of commodity contracts."

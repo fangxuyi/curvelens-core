@@ -4,11 +4,17 @@ Options surface analytics (gold layer features).
 Computed from silver options + silver futures for a single trade date.
 
 Per-option features:
-  - black76_iv             implied vol via Black-76 (European approximation)
-  - black76_delta          model delta (if market delta missing)
-  - black76_vega           model vega per 1% vol move
+  - baw_iv                 implied vol via BAW (primary — correct for American options)
+  - baw_delta              BAW delta (finite difference)
+  - baw_vega               BAW vega per 1% vol move (finite difference)
+  - early_exercise_premium baw_price - black76_price at baw_iv
+  - black76_iv             implied vol via Black-76 (European approx, for comparison)
+  - black76_delta          Black-76 delta at baw_iv
+  - black76_vega           Black-76 vega at baw_iv
   - moneyness              log(F/K) — negative = OTM call / ITM put
   - time_to_expiry_years
+
+Surface summaries use BAW IV throughout (atm_iv, risk_reversal_25d, etc.).
 
 Surface summaries per (expiry, underlying):
   - atm_iv                 IV at the strike closest to ATM
@@ -31,7 +37,8 @@ from typing import Optional
 
 import pyarrow as pa
 
-from .black76 import black76_greeks, implied_vol
+from .baw import baw_greeks, baw_implied_vol, baw_price
+from .black76 import black76_greeks, black76_price, implied_vol
 
 _RISK_FREE_RATE = 0.05  # 5% — approximate; for USO/CL options, use T-bill rate
 
@@ -49,6 +56,10 @@ _SCHEMA = pa.schema([
     pa.field("black76_iv", pa.float64()),
     pa.field("black76_delta", pa.float64()),
     pa.field("black76_vega", pa.float64()),
+    pa.field("baw_iv", pa.float64()),
+    pa.field("baw_delta", pa.float64()),
+    pa.field("baw_vega", pa.float64()),
+    pa.field("early_exercise_premium", pa.float64()),  # baw_price - black76_price
     pa.field("market_delta", pa.float64()),
     pa.field("atm_iv", pa.float64()),
     pa.field("iv_25d_call", pa.float64()),
@@ -161,13 +172,10 @@ def compute(
             continue
         tte = max((exp_date - as_of_date).days / 365.0, 1.0 / 365.0)
 
-        # Compute IV for each row
-        call_rows: list[dict] = []  # {strike, iv, delta}
+        # Compute IV for each row (Black-76 for comparison, BAW as primary)
+        call_rows: list[dict] = []  # {strike, baw_iv, delta, ...}
         put_rows: list[dict] = []
 
-        # LO options are American-style; Black-76 is a European approximation.
-        # For OTM/near-ATM strikes the error is typically <1 vol point.
-        # Deep ITM puts may show understated IV due to early-exercise premium.
         for i in idxs:
             strike = od["strike"][i]
             settle = od["settlement"][i]
@@ -175,7 +183,8 @@ def compute(
             if strike is None or settle is None or strike <= 0:
                 continue
 
-            iv = implied_vol(
+            # BAW implied vol (primary — correct for American options)
+            baw_iv = baw_implied_vol(
                 market_price=settle,
                 forward=fwd,
                 strike=strike,
@@ -183,20 +192,41 @@ def compute(
                 rate=_RISK_FREE_RATE,
                 call_put=cp,
             )
-            if iv is None or iv <= 0:
+            if baw_iv is None or baw_iv <= 0:
                 continue
 
-            greeks = black76_greeks(fwd, strike, tte, _RISK_FREE_RATE, iv, cp)
-            delta_val = abs(greeks.get("delta", float("nan")))
+            # Black-76 IV kept for comparison
+            b76_iv = implied_vol(
+                market_price=settle,
+                forward=fwd,
+                strike=strike,
+                time_to_expiry=tte,
+                rate=_RISK_FREE_RATE,
+                call_put=cp,
+            )
+
+            baw_g = baw_greeks(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
+            b76_g = black76_greeks(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
+
+            # Early-exercise premium in price space
+            baw_p  = baw_price(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
+            b76_p  = black76_price(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
+            eep = baw_p - b76_p
+
+            delta_val = abs(baw_g.get("delta", float("nan")))
             moneyness = math.log(fwd / strike) if fwd > 0 and strike > 0 else None
 
             row = {
                 "idx": i,
                 "strike": strike,
-                "iv": iv,
+                "iv": baw_iv,        # surface summaries use BAW IV
+                "baw_iv": baw_iv,
+                "b76_iv": b76_iv,
                 "delta": delta_val,
                 "moneyness": moneyness,
-                "greeks": greeks,
+                "baw_greeks": baw_g,
+                "b76_greeks": b76_g,
+                "eep": eep,
             }
             if cp == "C":
                 call_rows.append(row)
@@ -294,11 +324,16 @@ def compute(
         # Get pre-computed IV and greeks for this row
         iv_row = surf["call_by_idx"].get(i) if cp == "C" else surf["put_by_idx"].get(i)
         if iv_row:
-            b76_iv = iv_row["iv"]
-            b76_delta = iv_row["greeks"].get("delta")
-            b76_vega = iv_row["greeks"].get("vega")
+            b76_iv    = iv_row["b76_iv"]
+            b76_delta = iv_row["b76_greeks"].get("delta")
+            b76_vega  = iv_row["b76_greeks"].get("vega")
+            baw_iv_v  = iv_row["baw_iv"]
+            baw_delta = iv_row["baw_greeks"].get("delta")
+            baw_vega  = iv_row["baw_greeks"].get("vega")
+            eep       = iv_row["eep"]
         else:
             b76_iv = b76_delta = b76_vega = None
+            baw_iv_v = baw_delta = baw_vega = eep = None
 
         rows["trade_date"].append(as_of_date.isoformat())
         rows["option_expiry"].append(exp_str)
@@ -313,6 +348,10 @@ def compute(
         rows["black76_iv"].append(b76_iv)
         rows["black76_delta"].append(b76_delta)
         rows["black76_vega"].append(b76_vega)
+        rows["baw_iv"].append(baw_iv_v)
+        rows["baw_delta"].append(baw_delta)
+        rows["baw_vega"].append(baw_vega)
+        rows["early_exercise_premium"].append(eep)
         rows["market_delta"].append(od["delta"][i])
         rows["atm_iv"].append(surf["atm_iv"])
         rows["iv_25d_call"].append(surf["iv_25d_call"])
