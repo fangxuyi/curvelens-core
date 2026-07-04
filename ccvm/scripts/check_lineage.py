@@ -27,7 +27,7 @@ def main() -> None:
     entries = db.get_manifest_entries()
 
     print(f"\n{'=' * 60}")
-    print(f"CCVM Lineage Report — {MANIFEST_DB_PATH}")
+    print(f"CurveLens Lineage Report — {MANIFEST_DB_PATH}")
     print(f"{'=' * 60}")
     print(f"\nCollection runs ({len(runs)} total):")
     print(f"{'Run ID':38} {'Source':30} {'Date':12} {'Status':10} {'S':>4} {'W':>4} {'F':>4} {'Skip':>4}")

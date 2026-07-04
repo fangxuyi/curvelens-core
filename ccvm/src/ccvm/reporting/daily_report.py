@@ -212,7 +212,7 @@ def _render_markdown(report: dict) -> str:
     next_rev = s["next_review"]
 
     lines = [
-        f"# CCVM Daily Forward-Risk Brief — {td}",
+        f"# CurveLens Daily Forward-Risk Brief — {td}",
         f"\n*Generated: {gen}  |  Data quality: **{quality}***",
         "",
     ]
@@ -363,7 +363,7 @@ def _render_markdown(report: dict) -> str:
         f"- **Next catalyst date:** {next_rev.get('next_catalyst_date', 'N/A')} — {next_rev.get('next_catalyst_title', '')}",
         "",
         "---",
-        "*CCVM — Commodity Catalyst and Volatility Monitor. "
+        "*CurveLens — WTI futures and options daily analytics. "
         "Settlement data only; does not establish executability or confirmed mispricing.*",
     ]
 

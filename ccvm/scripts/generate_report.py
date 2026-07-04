@@ -112,7 +112,7 @@ def main() -> None:
     logger.info("JSON report written to %s", json_path)
 
     print(f"\n{'='*60}")
-    print(f"CCVM Daily Brief — {as_of_str}")
+    print(f"CurveLens Daily Brief — {as_of_str}")
     print(f"Quality: {report['quality_status']}")
     print(f"Agreement: {agreement.get('state')} ({agreement.get('confidence')})")
     print(f"Catalysts: {len(catalysts)} events")

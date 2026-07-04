@@ -42,7 +42,7 @@ QUALITY_DIR = DATA_DIR / "quality_reports"
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Normalize CCVM data for a given date")
+    parser = argparse.ArgumentParser(description="Normalize CurveLens data for a given date")
     parser.add_argument("--date", required=True, help="Trade date (YYYY-MM-DD)")
     parser.add_argument("--force", action="store_true", help="Re-normalize even if silver already exists")
     args = parser.parse_args()

@@ -1,5 +1,5 @@
 """
-CCVM Streamlit Dashboard — Crude Terminal.
+CurveLens Streamlit Dashboard — Crude Terminal.
 
 Run:
     streamlit run app/dashboard.py
@@ -116,7 +116,7 @@ def _plot_layout(**kw) -> dict:
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="CCVM — Crude Terminal",
+    page_title="CurveLens — Crude Terminal",
     page_icon="🛢",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -173,11 +173,11 @@ st.markdown(
     f'<div style="display:flex;align-items:center;gap:1.25rem;padding:1.25rem 0 1.1rem;'
     f'border-bottom:1px solid {C["border"]};margin-bottom:1.75rem;">'
     f'<span style="font-family:Syne,sans-serif;font-size:1.55rem;font-weight:800;'
-    f'color:{C["amber"]};letter-spacing:-0.04em;line-height:1">CCVM</span>'
+    f'color:{C["amber"]};letter-spacing:-0.04em;line-height:1">CurveLens</span>'
     f'<div style="width:1px;height:1.1rem;background:{C["border"]}"></div>'
     f'<span style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:{C["muted"]};'
     f'letter-spacing:0.16em;text-transform:uppercase;line-height:1.6">'
-    f'Commodity Catalyst &amp; Volatility Monitor</span>'
+    f'WTI Futures &amp; Options Analytics</span>'
     f'<span style="margin-left:auto;font-family:JetBrains Mono,monospace;font-size:0.58rem;'
     f'color:{C["muted"]};letter-spacing:0.14em;text-transform:uppercase">'
     f'WTI CRUDE OIL · SETTLEMENT DATA ONLY</span></div>',
