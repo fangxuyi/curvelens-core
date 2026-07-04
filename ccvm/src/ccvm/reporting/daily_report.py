@@ -79,9 +79,13 @@ def _market_risk_section(
     if gold_futures is not None and len(gold_futures) > 0:
         fd = gold_futures.to_pydict()
         n = len(fd["trade_date"])
+        front_spread = fd["spread_to_next"][0] if n > 0 else None  # M1-M2 spread
         section["futures"] = {
             "front_contract": fd["contract_code"][0] if n > 0 else None,
             "front_settlement": fd["settlement"][0] if n > 0 else None,
+            "front_return_1d": fd["return_1d"][0] if n > 0 else None,
+            "days_to_expiry": fd["days_to_expiry"][0] if n > 0 else None,
+            "m1_m2_spread": front_spread,
             "curve_slope_per_month": fd["front_back_slope"][0] if n > 0 else None,
             "contango": fd["contango_flag"][0] if n > 0 else None,
             "active_contracts": n,
@@ -92,12 +96,16 @@ def _market_risk_section(
     if gold_options is not None and len(gold_options) > 0:
         od = gold_options.to_pydict()
         expiries = sorted(set(od["option_expiry"]))
-        atm_ivs = [v for v in od["atm_iv"] if v is not None]
+        atm_ivs   = [v for v in od["atm_iv"] if v is not None]
         rr25_vals = [v for v in od["risk_reversal_25d"] if v is not None]
+        bf25_vals = [v for v in od["butterfly_25d"] if v is not None]
+        skew_vals = [v for v in od["skew_slope"] if v is not None]
         section["options"] = {
             "expiries_covered": expiries[:6],
             "atm_iv": atm_ivs[0] if atm_ivs else None,
             "risk_reversal_25d": rr25_vals[0] if rr25_vals else None,
+            "butterfly_25d": bf25_vals[0] if bf25_vals else None,
+            "skew_slope": skew_vals[0] if skew_vals else None,
             "coverage_note": od["price_note"][0] if od.get("price_note") else None,
             "feature_source": "gold/option_features",
         }
@@ -113,6 +121,7 @@ def _eia_section(gold_eia: Optional[pa.Table]) -> dict:
         "status": "available",
         "eia_period": d["eia_period"][0],
         "crude_stocks_ex_spr_mbbl": d["crude_stocks_ex_spr"][0],
+        "spr_stocks_mbbl": d.get("spr_stocks", [None])[0],
         "cushing_stocks_mbbl": d["cushing_stocks"][0],
         "crude_draw_mbbl": d["crude_draw"][0],
         "cushing_draw_mbbl": d["cushing_draw"][0],
@@ -153,8 +162,9 @@ def _catalysts_section(top_catalysts: list[dict]) -> dict:
 def _caveats(quality_report: dict) -> list[str]:
     caveats = [
         "settlement_data_only: prices are EOD settlements, not executable quotes",
-        "USO_option_proxy: options data is from USO equity options, not CL futures options",
-        "black76_approximation: IV computed under European option assumption; WTI options are American",
+        "baw_iv: implied vol uses Barone-Adesi & Whaley (1987) for American option pricing; "
+        "Black-76 retained as reference only",
+        "eia_lag: EIA weekly data has a 1-week lag (e.g. Thu report covers prior week)",
     ]
     qr_caveats = quality_report.get("caveats", [])
     caveats.extend(c for c in qr_caveats if c not in caveats)
@@ -222,19 +232,31 @@ def _render_markdown(report: dict) -> str:
     if fut:
         slope = fut.get("curve_slope_per_month")
         slope_str = f"${slope:+.3f}/month" if slope is not None else "N/A"
+        m1m2 = fut.get("m1_m2_spread")
+        m1m2_str = f"${m1m2:+.3f}" if m1m2 is not None else "N/A"
+        ret1d = fut.get("front_return_1d")
+        ret1d_str = f"{ret1d:+.2%}" if ret1d is not None else "N/A"
+        dte = fut.get("days_to_expiry")
         structure = "CONTANGO" if fut.get("contango") else "BACKWARDATION"
         lines += [
             f"**WTI Futures** (source: `{fut.get('feature_source')}`)",
-            f"- Front contract: **{fut.get('front_contract')}** @ **{_fmt_usd(fut.get('front_settlement'))}/bbl**",
-            f"- Curve structure: **{structure}** (slope: {slope_str})",
+            f"- Front contract: **{fut.get('front_contract')}** @ **{_fmt_usd(fut.get('front_settlement'))}/bbl**"
+            + (f"  ({ret1d_str} 1-day)" if ret1d is not None else ""),
+            f"- Days to expiry: **{dte}**" if dte is not None else "",
+            f"- Curve structure: **{structure}** (slope: {slope_str}  |  M1-M2 spread: {m1m2_str})",
             f"- Active contracts: {fut.get('active_contracts')}",
             "",
         ]
     if opt:
+        bf25 = opt.get("butterfly_25d")
+        bf25_str = f"{bf25:.2%}" if bf25 is not None else "N/A"
+        skew = opt.get("skew_slope")
+        skew_str = f"{skew:.3f}" if skew is not None else "N/A"
         lines += [
-            f"**Options Surface** (source: `{opt.get('feature_source')}`)",
+            f"**Options Surface — BAW IV** (source: `{opt.get('feature_source')}`)",
             f"- ATM IV: **{_fmt_pct(opt.get('atm_iv'))}**",
             f"- 25Δ Risk Reversal: **{_fmt_pct(opt.get('risk_reversal_25d'))}**",
+            f"- 25Δ Butterfly: **{bf25_str}**  |  Skew slope: **{skew_str}**",
             f"- ⚠ Note: *{opt.get('coverage_note')}*",
             "",
         ]
@@ -247,15 +269,17 @@ def _render_markdown(report: dict) -> str:
         util = eia.get("refinery_utilization_pct")
         signal = eia.get("supply_signal", "neutral").upper()
         trigger = eia.get("scenario_trigger", "none")
-        draw_str = f"{draw:+,.0f} MBBL" if draw is not None else "N/A"
-        cush_str = f"{cush_draw:+,.0f} MBBL" if cush_draw is not None else "N/A"
+        # draw columns store -(wow_change): negate to show actual stock WoW change
+        draw_str = f"{-draw:+,.0f} MBBL" if draw is not None else "N/A"
+        cush_str = f"{-cush_draw:+,.0f} MBBL" if cush_draw is not None else "N/A"
         util_str = f"{util:.1f}%" if util is not None else "N/A"
         net_imp = eia.get("net_imports_mbbld")
         net_str = f"{net_imp:+.0f} MBBL/D" if net_imp is not None else "N/A"
         def _mbbl(v):
             return f"{v:,.0f} MBBL" if v is not None else "N/A"
         def _mbbld_wow(v):
-            return f"{v:+,.0f} MBBL" if v is not None else "N/A"
+            # draw columns = -(wow_change); negate to show actual stock change
+            return f"{-v:+,.0f} MBBL" if v is not None else "N/A"
         crude_val  = _mbbl(eia.get("crude_stocks_ex_spr_mbbl"))
         cush_val   = _mbbl(eia.get("cushing_stocks_mbbl"))
         gas_val    = _mbbl(eia.get("gasoline_stocks_mbbl"))
@@ -268,13 +292,14 @@ def _render_markdown(report: dict) -> str:
             "| Metric | Value | WoW |",
             "|--------|-------|-----|",
             f"| U.S. crude stocks (ex-SPR) | {crude_val} | **{draw_str}** |",
-            f"| Cushing stocks | {cush_val} | {cush_str} |",
+            f"| SPR stocks | {_mbbl(eia.get('spr_stocks_mbbl'))} | — |",
+            f"| Cushing stocks (WTI delivery) | {cush_val} | {cush_str} |",
             f"| Refinery utilization | {util_str} | — |",
             f"| Net imports | {net_str} | — |",
             f"| Gasoline stocks | {gas_val} | {gas_wow} |",
             f"| Distillate stocks | {dist_val} | {dist_wow} |",
             "",
-            f"**Supply signal:** `{signal}`  |  **Scenario trigger:** `{trigger}`",
+            f"**Supply signal:** `{signal}`  |  **Cushing signal:** `{eia.get('cushing_signal','—').upper()}`  |  **Scenario trigger:** `{trigger}`",
             "",
         ]
     else:
