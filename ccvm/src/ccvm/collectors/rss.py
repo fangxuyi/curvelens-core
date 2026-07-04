@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # Lookback window: include articles published within this many days of as_of
 _LOOKBACK_DAYS = 7
 
-_USER_AGENT = "CCVMBot/1.0 (Commodity Catalyst and Volatility Monitor)"
+_USER_AGENT = "CurveLensBot/1.0 (https://github.com/fangxuyi/curveLens)"
 
 # Energy/commodity keywords — any match in title+summary qualifies the article
 _ENERGY_KEYWORDS = frozenset([
@@ -73,7 +73,7 @@ class RSSNewsCollector:
     """Fetches energy news from free RSS feeds for a given trade date.
 
     Stores one JSON file per trade_date containing all filtered articles.
-    Follows the same collect() return-dict contract as other CCVM collectors.
+    Follows the same collect() return-dict contract as other CurveLens collectors.
     """
 
     source_id = "rss_news"

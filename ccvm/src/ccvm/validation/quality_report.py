@@ -292,7 +292,7 @@ def _render_markdown(report: dict) -> str:
     fund = report["fundamentals"]
 
     lines = [
-        f"# CCVM Quality Report — {td}",
+        f"# CurveLens Quality Report — {td}",
         f"\n**Overall status:** {overall}  |  Generated: {report['generated_at']}\n",
         "## Futures",
         f"- Status: **{fut['status']}**",

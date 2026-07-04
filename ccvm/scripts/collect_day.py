@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run CCVM data collection for a given date.
+"""Run CurveLens data collection for a given date.
 
 Usage:
     python scripts/collect_day.py --date 2026-06-24 --source yfinance_futures
@@ -51,7 +51,7 @@ _SOURCES = ["yfinance_futures", "cme_bulletin_pdf", "eia", "rss_news", "csv_futu
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Collect CCVM data for a given date")
+    parser = argparse.ArgumentParser(description="Collect CurveLens data for a given date")
     parser.add_argument("--date", required=True, help="Trade date (YYYY-MM-DD)")
     parser.add_argument(
         "--source",
