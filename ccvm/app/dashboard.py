@@ -177,7 +177,7 @@ st.markdown(
     f'<div style="width:1px;height:1.1rem;background:{C["border"]}"></div>'
     f'<span style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:{C["muted"]};'
     f'letter-spacing:0.16em;text-transform:uppercase;line-height:1.6">'
-    f'Commodity Catalyst &amp; Volatility Monitor</span>'
+    f'WTI Futures &amp; Options Analytics</span>'
     f'<span style="margin-left:auto;font-family:JetBrains Mono,monospace;font-size:0.58rem;'
     f'color:{C["muted"]};letter-spacing:0.14em;text-transform:uppercase">'
     f'WTI CRUDE OIL · SETTLEMENT DATA ONLY</span></div>',
