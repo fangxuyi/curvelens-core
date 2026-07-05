@@ -161,36 +161,31 @@ def baw_price(
     h = 1.0 - df
 
     if call_put == "C":
-        # Immediate exercise value
-        if F - K <= 0:
-            # OTM call: early exercise never optimal
-            return black76_price(F, K, T, r, σ, "C")
-
         q = _q2(r, σ, h)
         F_star = _critical_call(K, T, r, σ)
 
         if F >= F_star:
-            return F - K
+            return F - K  # immediate exercise optimal
 
         d1_star = _d1(F_star, K, T, σ)
         A2 = (F_star / q) * (1.0 - df * _N(d1_star))
         euro = black76_price(F, K, T, r, σ, "C")
+        # For OTM calls (F < K < F_star), A2*(F/F_star)^q2 is small but non-zero —
+        # it captures the probability of reaching F_star before expiry.
         return euro + A2 * (F / F_star) ** q
 
     else:  # PUT
-        if K - F <= 0:
-            # OTM put: early exercise never optimal
-            return black76_price(F, K, T, r, σ, "P")
-
         q = _q1(r, σ, h)  # negative
         F_star2 = _critical_put(K, T, r, σ)
 
         if F <= F_star2:
-            return K - F
+            return K - F  # immediate exercise optimal
 
         d1_star = _d1(F_star2, K, T, σ)
         A1 = -(F_star2 / q) * (1.0 - df * _N(-d1_star))
         euro = black76_price(F, K, T, r, σ, "P")
+        # For OTM puts (F > K > F_star2), A1*(F/F_star2)^q1 → 0 as F/F_star2 → ∞
+        # (q1 < 0), but is non-zero for near-OTM puts.
         return euro + A1 * (F / F_star2) ** q
 
 
@@ -270,3 +265,27 @@ def baw_greeks(
         "delta": delta * multiplier,
         "vega":  vega  * multiplier,
     }
+
+
+def critical_boundary(
+    strike: float,
+    time_to_expiry: float,
+    rate: float,
+    vol: float,
+    call_put: str,
+) -> Optional[float]:
+    """
+    Return the critical early-exercise boundary F* (calls) or F** (puts).
+
+    Early exercise is optimal when forward crosses this boundary:
+      - Calls: exercise if F >= F*  (F* > strike)
+      - Puts:  exercise if F <= F** (F** < strike)
+
+    Returns None when rate <= 0 (no early-exercise incentive exists).
+    """
+    if time_to_expiry <= 0 or vol <= 0 or rate <= 0:
+        return None
+    if call_put == "C":
+        return _critical_call(strike, time_to_expiry, rate, vol)
+    else:
+        return _critical_put(strike, time_to_expiry, rate, vol)

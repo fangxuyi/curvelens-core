@@ -240,34 +240,38 @@ def compute(
             "WARN" if (n_calls >= 2 and n_puts >= 2) else "FAIL"
         )
 
-        # ATM IV: average call and put IV at the strike with moneyness closest to 0
+        # Vol surface uses OTM-only options (market convention).
+        # ITM call IV != OTM put IV at the same strike due to CME settlement methodology
+        # computing calls and puts independently — mixing them biases surface metrics.
+        # OTM: calls where K >= F (moneyness <= 0), puts where K <= F (moneyness >= 0).
+        otm_calls = [r for r in call_rows if r["moneyness"] is not None and r["moneyness"] <= 0]
+        otm_puts  = [r for r in put_rows  if r["moneyness"] is not None and r["moneyness"] >= 0]
+
+        # ATM IV: average OTM call and OTM put at the strike closest to forward
         atm_iv = None
-        all_rows_for_atm = call_rows + put_rows
-        if all_rows_for_atm:
+        all_otm = otm_calls + otm_puts
+        if all_otm:
             atm_strike = min(
-                all_rows_for_atm,
-                key=lambda r: abs(r["moneyness"] if r["moneyness"] is not None else float("inf")),
+                all_otm,
+                key=lambda r: abs(r["moneyness"]),
             )["strike"]
-            ivs_at_atm = (
-                [r["iv"] for r in call_rows if r["strike"] == atm_strike]
-                + [r["iv"] for r in put_rows if r["strike"] == atm_strike]
-            )
+            ivs_at_atm = [r["iv"] for r in all_otm if r["strike"] == atm_strike]
             atm_iv = sum(ivs_at_atm) / len(ivs_at_atm) if ivs_at_atm else None
 
-        # 25-delta IV
+        # 25-delta IV — OTM only
         iv_25c, iv_25p = None, None
-        if call_rows:
+        if otm_calls:
             iv_25c = _interpolate_iv_at_delta(
-                [r["strike"] for r in call_rows],
-                [r["iv"] for r in call_rows],
-                [r["delta"] for r in call_rows],
+                [r["strike"] for r in otm_calls],
+                [r["iv"] for r in otm_calls],
+                [r["delta"] for r in otm_calls],
                 0.25,
             )
-        if put_rows:
+        if otm_puts:
             iv_25p = _interpolate_iv_at_delta(
-                [r["strike"] for r in put_rows],
-                [r["iv"] for r in put_rows],
-                [r["delta"] for r in put_rows],
+                [r["strike"] for r in otm_puts],
+                [r["iv"] for r in otm_puts],
+                [r["delta"] for r in otm_puts],
                 0.25,
             )
 
@@ -275,11 +279,10 @@ def compute(
         bf25 = ((iv_25c + iv_25p) / 2 - atm_iv
                 if (iv_25c and iv_25p and atm_iv) else None)
 
-        # Skew slope (IV vs log-moneyness) — combined calls + puts
-        all_rows = call_rows + put_rows
+        # Skew slope — OTM only (consistent with ATM and 25d metrics above)
         skew = _linear_regression_slope(
-            [r["moneyness"] for r in all_rows if r["moneyness"] is not None],
-            [r["iv"] for r in all_rows if r["moneyness"] is not None],
+            [r["moneyness"] for r in all_otm],
+            [r["iv"] for r in all_otm],
         )
 
         surface_by_group[key] = {
