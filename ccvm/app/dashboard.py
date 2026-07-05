@@ -35,6 +35,7 @@ REPORTS_DIR = DATA_DIR / "reports"
 
 from ccvm.storage.parquet_store import ParquetStore
 from ccvm.agents.catalyst_store import CatalystStore
+from ccvm.analytics.baw import critical_boundary as _baw_critical_boundary
 
 pq        = ParquetStore(DATA_DIR)
 cat_store = CatalystStore(DATA_DIR)
@@ -412,24 +413,48 @@ with tab_vol:
                 od.get("early_exercise_premium", [None]*len(od["trade_date"])), mask
             ) if m]
             sett_f = [v for v, m in zip(od["settlement"], mask) if m]
+            fwds_f = [v for v, m in zip(od["forward_price"], mask) if m]
+            ttes_f = [v for v, m in zip(od["time_to_expiry_years"], mask) if m]
+            ivs_f  = [v for v, m in zip(od["baw_iv"], mask) if m]
+            _R     = 0.05  # must match option_features._RISK_FREE_RATE
             if stk and any(v is not None for v in eeps_f):
                 _section(f"EARLY EXERCISE PREMIUM (BAW − BLACK76) — {fe}")
 
+                import math as _math
                 raw = pd.DataFrame({
-                    "Strike": stk, "EEP": eeps_f, "Price": sett_f, "CP": cps
+                    "Strike": stk, "EEP": eeps_f, "Price": sett_f, "CP": cps,
+                    "Fwd": fwds_f, "TTE": ttes_f, "IV": ivs_f,
                 }).dropna(subset=["EEP"])
+
+                # Keep only strikes within ±2 σ√T of forward (standard "relevant" range).
+                # Uses ATM IV and TTE from the first valid row — both are per-expiry constants.
+                _atm_iv  = raw["IV"].median()
+                _fwd_ref = raw["Fwd"].median()
+                _tte_ref = raw["TTE"].median()
+                if _atm_iv and _tte_ref:
+                    _width = 2.0 * _atm_iv * _math.sqrt(_tte_ref)
+                    raw = raw[raw["Strike"].apply(
+                        lambda k: abs(_math.log(k / _fwd_ref)) <= _width if k > 0 else False
+                    )]
                 raw["EEP_pct"] = raw.apply(
                     lambda r: r["EEP"] / r["Price"] * 100 if r["Price"] and r["Price"] > 0 else None,
                     axis=1,
                 )
+                raw["Boundary"] = raw.apply(
+                    lambda r: _baw_critical_boundary(r["Strike"], r["TTE"], _R, r["IV"], r["CP"])
+                    if r["IV"] and r["IV"] > 0 else None,
+                    axis=1,
+                )
 
-                def _pivot_cp(cp_label, col_dollar, col_pct):
-                    sub = raw[raw["CP"] == cp_label][["Strike", "EEP", "EEP_pct"]].copy()
-                    sub = sub.rename(columns={"EEP": col_dollar, "EEP_pct": col_pct})
+                def _pivot_cp(cp_label, col_dollar, col_pct, col_boundary):
+                    sub = raw[raw["CP"] == cp_label][["Strike", "EEP", "EEP_pct", "Boundary"]].copy()
+                    sub = sub.rename(columns={
+                        "EEP": col_dollar, "EEP_pct": col_pct, "Boundary": col_boundary,
+                    })
                     return sub.set_index("Strike")
 
-                calls_p = _pivot_cp("C", "Call EEP $", "Call EEP %")
-                puts_p  = _pivot_cp("P", "Put EEP $",  "Put EEP %")
+                calls_p = _pivot_cp("C", "Call EEP $", "Call EEP %", "Call F*")
+                puts_p  = _pivot_cp("P", "Put EEP $",  "Put EEP %",  "Put F**")
                 pivot   = calls_p.join(puts_p, how="outer").sort_index().reset_index()
 
                 for col in ["Call EEP $", "Put EEP $"]:
@@ -438,6 +463,9 @@ with tab_vol:
                 for col in ["Call EEP %", "Put EEP %"]:
                     if col in pivot.columns:
                         pivot[col] = pivot[col].apply(lambda v: f"{v:.2f}%" if pd.notna(v) else "—")
+                for col in ["Call F*", "Put F**"]:
+                    if col in pivot.columns:
+                        pivot[col] = pivot[col].apply(lambda v: f"${v:.2f}" if pd.notna(v) else "—")
                 pivot["Strike"] = pivot["Strike"].apply(lambda v: f"${v:.2f}")
                 st.dataframe(pivot, hide_index=True, use_container_width=True)
 

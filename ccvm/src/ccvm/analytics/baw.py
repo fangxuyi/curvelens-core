@@ -265,3 +265,27 @@ def baw_greeks(
         "delta": delta * multiplier,
         "vega":  vega  * multiplier,
     }
+
+
+def critical_boundary(
+    strike: float,
+    time_to_expiry: float,
+    rate: float,
+    vol: float,
+    call_put: str,
+) -> Optional[float]:
+    """
+    Return the critical early-exercise boundary F* (calls) or F** (puts).
+
+    Early exercise is optimal when forward crosses this boundary:
+      - Calls: exercise if F >= F*  (F* > strike)
+      - Puts:  exercise if F <= F** (F** < strike)
+
+    Returns None when rate <= 0 (no early-exercise incentive exists).
+    """
+    if time_to_expiry <= 0 or vol <= 0 or rate <= 0:
+        return None
+    if call_put == "C":
+        return _critical_call(strike, time_to_expiry, rate, vol)
+    else:
+        return _critical_put(strike, time_to_expiry, rate, vol)
