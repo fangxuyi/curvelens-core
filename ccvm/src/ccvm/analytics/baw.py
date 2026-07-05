@@ -161,36 +161,31 @@ def baw_price(
     h = 1.0 - df
 
     if call_put == "C":
-        # Immediate exercise value
-        if F - K <= 0:
-            # OTM call: early exercise never optimal
-            return black76_price(F, K, T, r, σ, "C")
-
         q = _q2(r, σ, h)
         F_star = _critical_call(K, T, r, σ)
 
         if F >= F_star:
-            return F - K
+            return F - K  # immediate exercise optimal
 
         d1_star = _d1(F_star, K, T, σ)
         A2 = (F_star / q) * (1.0 - df * _N(d1_star))
         euro = black76_price(F, K, T, r, σ, "C")
+        # For OTM calls (F < K < F_star), A2*(F/F_star)^q2 is small but non-zero —
+        # it captures the probability of reaching F_star before expiry.
         return euro + A2 * (F / F_star) ** q
 
     else:  # PUT
-        if K - F <= 0:
-            # OTM put: early exercise never optimal
-            return black76_price(F, K, T, r, σ, "P")
-
         q = _q1(r, σ, h)  # negative
         F_star2 = _critical_put(K, T, r, σ)
 
         if F <= F_star2:
-            return K - F
+            return K - F  # immediate exercise optimal
 
         d1_star = _d1(F_star2, K, T, σ)
         A1 = -(F_star2 / q) * (1.0 - df * _N(-d1_star))
         euro = black76_price(F, K, T, r, σ, "P")
+        # For OTM puts (F > K > F_star2), A1*(F/F_star2)^q1 → 0 as F/F_star2 → ∞
+        # (q1 < 0), but is non-zero for near-OTM puts.
         return euro + A1 * (F / F_star2) ** q
 
 
