@@ -1,0 +1,145 @@
+# AGENTS.md — CurveLens Project
+
+This repository is the working directory for the `curvelens` OpenClaw agent.
+Treat it as a project-scoped WTI analytics repository, not as the main
+assistant workspace.
+
+## Scope
+
+Work only on the CurveLens daily WTI futures & options workflow:
+- fetching the day's raw inputs (CL futures, CME LO option settlements, EIA
+  weeklies, energy RSS news)
+- running the deterministic analytics pipeline (normalize → gold features →
+  BAW vol surface → cross-market agreement → daily brief)
+- delivering the daily brief, and priority alerts on confirmed directional
+  agreement, via Telegram
+
+Do not modify the main OpenClaw workspace, global memory, personal
+preferences, unrelated repositories, or unrelated cron jobs.
+
+## Runtime Model
+
+Use cron to trigger the `curvelens` agent once per trading day, after CME
+settlements post (~5:30 PM ET). The agent invokes the tested pipeline
+(`scripts/run_pipeline.py`) as a tool call rather than reconstructing the
+collect/normalize/compute/report workflow from a prompt each run — that part
+stays fully deterministic and testable.
+
+The agent's own job is narrow but load-bearing in three places the pipeline
+**deliberately cannot do itself**:
+
+1. **Fetch the CME option bulletin.** The CME daily bulletin is behind Akamai
+   bot protection, so `run_pipeline.py` cannot download it. The agent fetches
+   it with its own browser/fetch capability and saves it to the exact path the
+   pipeline expects, before running the pipeline.
+2. **Deliver via Telegram.** `run_pipeline.py` and `notify.py` never hold a bot
+   token and never call the Telegram API. All delivery goes through the agent's
+   own Telegram integration.
+3. **Judge borderline priority alerts.** The pipeline flags `alert_worthy`
+   deterministically; the agent decides whether a marginal trigger is genuinely
+   worth interrupting someone, and may hold a borderline alert (the daily brief
+   still goes out).
+
+A recurring run is three passes, back-to-back:
+
+**Pass 1 — ensure the CME bulletin is on disk.**
+
+1. Run `./.venv/bin/python scripts/run_pipeline.py --date <today>` (omit
+   `--date` to default to today, America/New_York).
+2. If the result is `{"result": "NEED_CME_PDF", "pdf_path": ..., "url": ...}`,
+   download the bulletin from `url` and save the PDF **exactly** to `pdf_path`,
+   then re-run step 1. The bulletin is a public document; fetch it with your
+   browser/fetch tool (a plain HTTP client is blocked by Akamai).
+3. If, after fetching, the result is still `NEED_CME_PDF` or an `ERROR`, stop
+   and report the failure. Do not fabricate settlements or run with
+   `--force-pdf` unless a human explicitly approves a futures-only run.
+
+**Pass 2 — run the pipeline to completion.**
+
+4. On `{"result": "OK", ...}`, the daily brief has been written to `report_md`
+   / `report_json`. Note `agreement_state`, `eia_scenario`, and `alert_worthy`.
+5. On `{"result": "ERROR", "step": ..., "detail": ...}`, stop and report which
+   stage failed. A failed optional stage (catalyst extraction) does not
+   error the run; only required stages do.
+
+**Pass 3 — prepare and deliver.**
+
+6. Run `./.venv/bin/python scripts/notify.py --prepare --date <date>`. This
+   formats a `DAILY_BRIEF` (always) and, when the day is alert-worthy, a
+   `PRIORITY_ALERT`, queueing them in `data/agent_outbox/pending.json`. It skips
+   any message already queued or already delivered — re-running is safe.
+7. Run `./.venv/bin/python scripts/notify.py --list-pending` and read the
+   `items` array. Each item has `id`, `type`, and `text`.
+8. Deliver each item's `text` **verbatim** (Markdown parse mode) via your
+   Telegram integration to the configured chat. Send `PRIORITY_ALERT` items
+   immediately; the `DAILY_BRIEF` is the routine digest. Do not rewrite or
+   re-summarize the message text.
+9. After each successful send, ack it with
+   `./.venv/bin/python scripts/notify.py --ack <id>` (or `--ack-all` once
+   everything for this run is sent) so it is never delivered twice.
+
+Parse all JSON with Python, not `jq`, so missing/empty keys do not create shell
+failures.
+
+## Repository Layout
+
+- `scripts/run_pipeline.py` — single-entry orchestrator (5 stages → one JSON line)
+- `scripts/notify.py` — formats + queues Telegram messages; ack after send
+- `scripts/collect_day.py` — raw ingest (futures / CME PDF / EIA / RSS)
+- `scripts/normalize_day.py` — raw → bronze → silver + quality report
+- `scripts/compute_features.py` — silver → gold (curve, BAW vol surface, agreement)
+- `scripts/extract_catalysts.py` — RSS → ranked catalyst events (needs `claude` CLI)
+- `scripts/generate_report.py` — gold → `data/reports/<date>.md` + `.json`
+- `src/ccvm/` — the analytics package (collectors, normalizers, analytics, reporting)
+- `config/sources.yaml` — configured RSS/EIA sources
+- `config/markets/wti.yaml` — WTI contract/market config
+- `data/cme_bulletin/<date>.pdf` — the agent-downloaded CME bulletin (gitignored)
+- `data/reports/<date>.{md,json}` — the daily brief (gitignored)
+- `data/agent_outbox/pending.json` — messages awaiting Telegram delivery + ack
+- `data/agent_outbox/delivered.json` — delivery log (dedupe guarantee)
+- `app/dashboard.py` — Streamlit terminal (separate, not part of the cron run)
+
+## Alert Policy
+
+The daily brief is always delivered. A `PRIORITY_ALERT` is queued only when the
+day is `alert_worthy`, meaning either:
+- the cross-market agreement state is `confirmed_upside_risk` or
+  `confirmed_downside_risk` (futures and options both signal the same
+  direction), or
+- the EIA scenario trigger is `bull_confirmed` or `bear_confirmed` (a
+  >3M bbl draw or >4M bbl build).
+
+Never deliver a duplicate. A given date can queue each message type at most
+once (ids are `<date>:<type>`), and every sent message must be acked so
+`pending.json` never re-offers it. No-data or futures-only days still deliver a
+brief; they simply won't carry a priority alert.
+
+The agent may hold a borderline `PRIORITY_ALERT` if its own read is that the
+trigger is marginal — but it must still deliver the `DAILY_BRIEF`, and should
+note in its run summary that an alert was held and why.
+
+## Safety Rules
+
+- Do not modify files outside this project's repository root.
+- `scripts/run_pipeline.py` and `scripts/notify.py` must never call the Telegram
+  API or hold a bot token / chat ID. All delivery goes through the agent's own
+  Telegram integration.
+- The agent must not send Telegram messages except for pending `DAILY_BRIEF` /
+  `PRIORITY_ALERT` items in `data/agent_outbox/pending.json`, or an explicit
+  approved test.
+- Never fabricate market data. If the CME bulletin cannot be fetched, report the
+  failure — do not invent settlements or run `--force-pdf` without human
+  approval.
+- Do not change global OpenClaw config, identity, memory, or unrelated cron jobs
+  unless explicitly asked.
+- `EIA_API_KEY` lives in `.env` (gitignored). Never commit secrets.
+- Ask before enabling live Telegram delivery schedules.
+
+## Data Integrity
+
+- Settlement data only. The brief describes the settled curve and vol surface;
+  it does not establish executability or confirmed mispricing.
+- BAW (Barone-Adesi & Whaley) is the primary IV model — WTI LO options are
+  American. Deep-OTM early-exercise premia carry known approximation error and
+  are filtered out of the surface metrics.
+- EIA weeklies lag by up to a week; the brief labels the report period.
