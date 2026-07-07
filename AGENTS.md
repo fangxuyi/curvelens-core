@@ -20,10 +20,11 @@ preferences, unrelated repositories, or unrelated cron jobs.
 ## Runtime Model
 
 Use cron to trigger the `curvelens` agent once per trading day, after CME
-settlements post (~5:30 PM ET). The agent invokes the tested pipeline
-(`scripts/run_pipeline.py`) as a tool call rather than reconstructing the
-collect/normalize/compute/report workflow from a prompt each run — that part
-stays fully deterministic and testable.
+settlements post (~5:30 PM ET). Commands are run from the repository root
+(`CurveLens/`); the Python interpreter is the pipeline's venv at `ccvm/.venv`.
+The agent invokes the tested pipeline (`agent/run_pipeline.py`) as a tool call
+rather than reconstructing the collect/normalize/compute/report workflow from a
+prompt each run — that part stays fully deterministic and testable.
 
 The agent's own job is narrow but load-bearing in three places the pipeline
 **deliberately cannot do itself**:
@@ -44,7 +45,7 @@ A recurring run is three passes, back-to-back:
 
 **Pass 1 — ensure the CME bulletin is on disk.**
 
-1. Run `./.venv/bin/python scripts/run_pipeline.py --date <today>` (omit
+1. Run `ccvm/.venv/bin/python agent/run_pipeline.py --date <today>` (omit
    `--date` to default to today, America/New_York).
 2. If the result is `{"result": "NEED_CME_PDF", "pdf_path": ..., "url": ...}`,
    download the bulletin from `url` and save the PDF **exactly** to `pdf_path`,
@@ -64,18 +65,18 @@ A recurring run is three passes, back-to-back:
 
 **Pass 3 — prepare and deliver.**
 
-6. Run `./.venv/bin/python scripts/notify.py --prepare --date <date>`. This
+6. Run `ccvm/.venv/bin/python agent/notify.py --prepare --date <date>`. This
    formats a `DAILY_BRIEF` (always) and, when the day is alert-worthy, a
-   `PRIORITY_ALERT`, queueing them in `data/agent_outbox/pending.json`. It skips
+   `PRIORITY_ALERT`, queueing them in `ccvm/data/agent_outbox/pending.json`. It skips
    any message already queued or already delivered — re-running is safe.
-7. Run `./.venv/bin/python scripts/notify.py --list-pending` and read the
+7. Run `ccvm/.venv/bin/python agent/notify.py --list-pending` and read the
    `items` array. Each item has `id`, `type`, and `text`.
 8. Deliver each item's `text` **verbatim** (Markdown parse mode) via your
    Telegram integration to the configured chat. Send `PRIORITY_ALERT` items
    immediately; the `DAILY_BRIEF` is the routine digest. Do not rewrite or
    re-summarize the message text.
 9. After each successful send, ack it with
-   `./.venv/bin/python scripts/notify.py --ack <id>` (or `--ack-all` once
+   `ccvm/.venv/bin/python agent/notify.py --ack <id>` (or `--ack-all` once
    everything for this run is sent) so it is never delivered twice.
 
 Parse all JSON with Python, not `jq`, so missing/empty keys do not create shell
@@ -83,21 +84,33 @@ failures.
 
 ## Repository Layout
 
-- `scripts/run_pipeline.py` — single-entry orchestrator (5 stages → one JSON line)
-- `scripts/notify.py` — formats + queues Telegram messages; ack after send
-- `scripts/collect_day.py` — raw ingest (futures / CME PDF / EIA / RSS)
-- `scripts/normalize_day.py` — raw → bronze → silver + quality report
-- `scripts/compute_features.py` — silver → gold (curve, BAW vol surface, agreement)
-- `scripts/extract_catalysts.py` — RSS → ranked catalyst events (needs `claude` CLI)
-- `scripts/generate_report.py` — gold → `data/reports/<date>.md` + `.json`
-- `src/ccvm/` — the analytics package (collectors, normalizers, analytics, reporting)
-- `config/sources.yaml` — configured RSS/EIA sources
-- `config/markets/wti.yaml` — WTI contract/market config
-- `data/cme_bulletin/<date>.pdf` — the agent-downloaded CME bulletin (gitignored)
-- `data/reports/<date>.{md,json}` — the daily brief (gitignored)
-- `data/agent_outbox/pending.json` — messages awaiting Telegram delivery + ack
-- `data/agent_outbox/delivered.json` — delivery log (dedupe guarantee)
-- `app/dashboard.py` — Streamlit terminal (separate, not part of the cron run)
+The repo has two tiers: the **agent layer** at the root (what the cron run
+touches) and the **`ccvm/` pipeline package** (the deterministic engine).
+
+Agent layer (repo root):
+- `agent/run_pipeline.py` — single-entry orchestrator (5 stages → one JSON line)
+- `agent/notify.py` — formats + queues Telegram messages; ack after send
+- `AGENTS.md`, `IDENTITY.md` — this spec + agent identity
+- `config/cron.example` — agent-driven cron template
+
+Pipeline package (`ccvm/`):
+- `ccvm/.venv/` — the Python environment all commands run under
+- `ccvm/scripts/collect_day.py` — raw ingest (futures / CME PDF / EIA / RSS)
+- `ccvm/scripts/normalize_day.py` — raw → bronze → silver + quality report
+- `ccvm/scripts/compute_features.py` — silver → gold (curve, BAW vol surface, agreement)
+- `ccvm/scripts/extract_catalysts.py` — RSS → ranked catalyst events (needs `claude` CLI)
+- `ccvm/scripts/generate_report.py` — gold → `ccvm/data/reports/<date>.md` + `.json`
+- `ccvm/src/ccvm/` — the analytics package (collectors, normalizers, analytics, reporting)
+- `ccvm/config/sources.yaml` — configured RSS/EIA sources
+- `ccvm/config/markets/wti.yaml` — WTI contract/market config
+- `ccvm/.env` — `EIA_API_KEY` (gitignored; see `ccvm/.env.example`)
+- `ccvm/app/dashboard.py` — Streamlit terminal (separate, not part of the cron run)
+
+Runtime state (under `ccvm/data/`, gitignored):
+- `ccvm/data/cme_bulletin/<date>.pdf` — the agent-downloaded CME bulletin
+- `ccvm/data/reports/<date>.{md,json}` — the daily brief
+- `ccvm/data/agent_outbox/pending.json` — messages awaiting Telegram delivery + ack
+- `ccvm/data/agent_outbox/delivered.json` — delivery log (dedupe guarantee)
 
 ## Alert Policy
 
@@ -121,18 +134,18 @@ note in its run summary that an alert was held and why.
 ## Safety Rules
 
 - Do not modify files outside this project's repository root.
-- `scripts/run_pipeline.py` and `scripts/notify.py` must never call the Telegram
+- `agent/run_pipeline.py` and `agent/notify.py` must never call the Telegram
   API or hold a bot token / chat ID. All delivery goes through the agent's own
   Telegram integration.
 - The agent must not send Telegram messages except for pending `DAILY_BRIEF` /
-  `PRIORITY_ALERT` items in `data/agent_outbox/pending.json`, or an explicit
+  `PRIORITY_ALERT` items in `ccvm/data/agent_outbox/pending.json`, or an explicit
   approved test.
 - Never fabricate market data. If the CME bulletin cannot be fetched, report the
   failure — do not invent settlements or run `--force-pdf` without human
   approval.
 - Do not change global OpenClaw config, identity, memory, or unrelated cron jobs
   unless explicitly asked.
-- `EIA_API_KEY` lives in `.env` (gitignored). Never commit secrets.
+- `EIA_API_KEY` lives in `ccvm/.env` (gitignored). Never commit secrets.
 - Ask before enabling live Telegram delivery schedules.
 
 ## Data Integrity
