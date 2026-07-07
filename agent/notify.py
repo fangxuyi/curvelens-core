@@ -17,6 +17,7 @@ type at most once — re-running --prepare is idempotent and will not re-queue a
 message that was already delivered.
 
 Usage:
+    python agent/notify.py --is-new 2026-07-02        # freshness gate (before saving PDF)
     python agent/notify.py --prepare --date 2026-07-02
     python agent/notify.py --list-pending
     python agent/notify.py --ack 2026-07-02:DAILY_BRIEF
@@ -222,6 +223,27 @@ def cmd_list_pending() -> None:
     })
 
 
+def cmd_is_new(date_str: str) -> None:
+    """Report whether a bulletin date still needs processing.
+
+    A date is "new" (needs the pipeline + delivery) when its DAILY_BRIEF has not
+    yet been delivered. Used as the up-front freshness gate: the agent downloads
+    the CME "current" bulletin, reads its internal date, and calls this before
+    saving/recomputing — if not new, it discards the download and stays silent.
+
+    Delivered gates out; merely-pending does not — so a run that crashed after
+    queueing but before delivering still counts as new and can recover.
+    """
+    delivered_ids = {d["id"] for d in _load(DELIVERED_PATH)}
+    already_delivered = f"{date_str}:DAILY_BRIEF" in delivered_ids
+    _emit({
+        "result": "DATE_STATUS",
+        "date": date_str,
+        "is_new": not already_delivered,
+        "already_delivered": already_delivered,
+    })
+
+
 def cmd_ack(ids: list[str], ack_all: bool) -> None:
     pending = _load(PENDING_PATH)
     delivered = _load(DELIVERED_PATH)
@@ -248,6 +270,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="CurveLens alert prep + delivery queue")
     parser.add_argument("--prepare", action="store_true", help="Queue messages for a date")
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (required with --prepare)")
+    parser.add_argument("--is-new", metavar="DATE",
+                        help="Report whether DATE still needs processing (freshness gate)")
     parser.add_argument("--list-pending", action="store_true", help="Print queued messages as JSON")
     parser.add_argument("--ack", nargs="+", metavar="ID", help="Mark message id(s) delivered")
     parser.add_argument("--ack-all", action="store_true", help="Mark all pending messages delivered")
@@ -258,6 +282,8 @@ def main() -> None:
             _emit({"result": "ERROR", "detail": "--prepare requires --date"})
             sys.exit(1)
         cmd_prepare(args.date)
+    elif args.is_new:
+        cmd_is_new(args.is_new)
     elif args.list_pending:
         cmd_list_pending()
     elif args.ack or args.ack_all:

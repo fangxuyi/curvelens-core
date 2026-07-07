@@ -19,8 +19,8 @@ preferences, unrelated repositories, or unrelated cron jobs.
 
 ## Runtime Model
 
-Use cron to trigger the `curvelens` agent once per trading day, after CME
-settlements post (~5:30 PM ET). Commands are run from the repository root
+Use cron to trigger the `curvelens` agent on a T+1 retry window after CME
+settlements have had time to post. Commands are run from the repository root
 (`CurveLens/`); the Python interpreter is the pipeline's venv at `ccvm/.venv`.
 The agent invokes the tested pipeline (`agent/run_pipeline.py`) as a tool call
 rather than reconstructing the collect/normalize/compute/report workflow from a
@@ -41,41 +41,65 @@ The agent's own job is narrow but load-bearing in three places the pipeline
    worth interrupting someone, and may hold a borderline alert (the daily brief
    still goes out).
 
-A recurring run is three passes, back-to-back:
+A recurring run is three passes, back-to-back. The cron job fires every 30
+minutes across the early-morning retry window regardless of state; the freshness
+gate in Pass 1 is what keeps a firing cheap — once that day's bulletin has been
+handled, later firings discard the re-download and finish silently without
+recomputing or re-sending.
 
-**Pass 1 — ensure the CME bulletin is on disk.**
+**Pass 1 — fetch the bulletin, and only proceed if it is a new date.**
 
-1. Run `ccvm/.venv/bin/python agent/run_pipeline.py --date <today>` (omit
-   `--date` to default to today, America/New_York).
-2. If the result is `{"result": "NEED_CME_PDF", "pdf_path": ..., "url": ...}`,
-   download the bulletin from `url` and save the PDF **exactly** to `pdf_path`,
-   then re-run step 1. The bulletin is a public document; fetch it with your
-   browser/fetch tool (a plain HTTP client is blocked by Akamai).
-3. If, after fetching, the result is still `NEED_CME_PDF` or an `ERROR`, stop
-   and report the failure. Do not fabricate settlements or run with
-   `--force-pdf` unless a human explicitly approves a futures-only run.
+The CME "current" URL always serves *some* bulletin — whatever was published
+most recently. So the download always succeeds; the real question is whether it
+is a *new* trading day you have not already handled. Gate on that before saving
+anything or running the pipeline.
+
+1. Download the CME Section 63 Energy Options bulletin from
+   `https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf`
+   to a **temporary** path (not yet into `ccvm/data/`). The bulletin is a public
+   document; fetch it with your browser/fetch tool (a plain HTTP client is
+   blocked by Akamai). If the download itself fails (URL unreachable / not a
+   PDF), finish with a concise `CME_PDF_UNAVAILABLE` summary and send nothing;
+   the next half-hour cron run will retry.
+2. Read the downloaded bulletin's **internal PDF date**. This is the
+   authoritative `<pdf-date>` for the run.
+3. Freshness gate: run
+   `ccvm/.venv/bin/python agent/notify.py --is-new <pdf-date>`.
+   - If `is_new` is **false** (this date's brief was already delivered):
+     **discard the temporary download, save nothing, run nothing, send
+     nothing.** Finish with a concise `CME_PDF_NOT_NEW` summary. The bulletin
+     hasn't rolled to a new day yet; the next cron run will check again.
+   - If `is_new` is **true**: move the temporary file to
+     `ccvm/data/cme_bulletin/<pdf-date>.pdf` and continue to Pass 2 with
+     `<date>` = `<pdf-date>`.
+
+Never fabricate settlements or run with `--force-pdf` unless a human explicitly
+approves a futures-only run.
 
 **Pass 2 — run the pipeline to completion.**
 
-4. On `{"result": "OK", ...}`, the daily brief has been written to `report_md`
+4. After the PDF has been saved to `ccvm/data/cme_bulletin/<date>.pdf`, run
+   `ccvm/.venv/bin/python agent/run_pipeline.py --date <date>`.
+5. On `{"result": "OK", ...}`, the daily brief has been written to `report_md`
    / `report_json`. Note `agreement_state`, `eia_scenario`, and `alert_worthy`.
-5. On `{"result": "ERROR", "step": ..., "detail": ...}`, stop and report which
+6. On `{"result": "ERROR", "step": ..., "detail": ...}`, stop and report which
    stage failed. A failed optional stage (catalyst extraction) does not
    error the run; only required stages do.
 
 **Pass 3 — prepare and deliver.**
 
-6. Run `ccvm/.venv/bin/python agent/notify.py --prepare --date <date>`. This
+7. Run `ccvm/.venv/bin/python agent/notify.py --prepare --date <date>`, where
+   `<date>` is the PDF date. This
    formats a `DAILY_BRIEF` (always) and, when the day is alert-worthy, a
    `PRIORITY_ALERT`, queueing them in `ccvm/data/agent_outbox/pending.json`. It skips
    any message already queued or already delivered — re-running is safe.
-7. Run `ccvm/.venv/bin/python agent/notify.py --list-pending` and read the
+8. Run `ccvm/.venv/bin/python agent/notify.py --list-pending` and read the
    `items` array. Each item has `id`, `type`, and `text`.
-8. Deliver each item's `text` **verbatim** (Markdown parse mode) via your
+9. Deliver each item's `text` **verbatim** (Markdown parse mode) via your
    Telegram integration to the configured chat. Send `PRIORITY_ALERT` items
    immediately; the `DAILY_BRIEF` is the routine digest. Do not rewrite or
    re-summarize the message text.
-9. After each successful send, ack it with
+10. After each successful send, ack it with
    `ccvm/.venv/bin/python agent/notify.py --ack <id>` (or `--ack-all` once
    everything for this run is sent) so it is never delivered twice.
 
