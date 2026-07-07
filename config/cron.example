@@ -10,17 +10,19 @@
 # nothing would fetch the CME bulletin (bot-protected) or deliver Telegram —
 # both require the agent, per AGENTS.md Runtime Model.
 #
-# Runs once per weekday after CME settlements post (~5:30 PM ET).
+# Runs every 30 minutes in the T+1 early-morning retry window. This lets the
+# agent keep checking until the CME bulletin is available; notify.py dedupes
+# delivered messages, so later retries should not duplicate Telegram sends.
 # Ships --disabled with a telegram:YOUR_CHAT_ID placeholder — fill in the real
 # chat id and enable deliberately. Do not commit a working chat id here.
 
 openclaw cron add \
   --agent curvelens \
   --name "CurveLens daily brief" \
-  --cron "30 17 * * 1-5" \
+  --cron "*/30 2-6 * * 2-6" \
   --tz "America/New_York" \
   --session isolated \
-  --message "From /path/to/CurveLens, read AGENTS.md Runtime Model and follow it exactly. Run ccvm/.venv/bin/python agent/run_pipeline.py for today. If the result is NEED_CME_PDF, download the bulletin from the given url with your browser/fetch tool, save it exactly to pdf_path, then re-run. On ERROR, stop and report which step failed. On OK, run ccvm/.venv/bin/python agent/notify.py --prepare --date <date>, then ccvm/.venv/bin/python agent/notify.py --list-pending, and deliver each item's text verbatim (Markdown) via OpenClaw Telegram to telegram:YOUR_CHAT_ID — PRIORITY_ALERT first, then DAILY_BRIEF. After each successful send, ack only that id with ccvm/.venv/bin/python agent/notify.py --ack <id>. Parse JSON with Python, not jq. Do not fabricate market data or run --force-pdf without approval." \
+  --message "From /path/to/CurveLens, read AGENTS.md Runtime Model and follow it exactly. This cron may rerun every half hour until the CME PDF is available; avoid duplicate Telegram by relying on notify.py pending/delivered state. First, before running the pipeline, download the CME Section 63 Energy Options PDF from https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf. If the PDF is not available yet, finish with CME_PDF_NOT_READY and send nothing; the next half-hour cron run will retry. After download, find and use the PDF's internal bulletin date as <pdf-date>, save/move the file to ccvm/data/cme_bulletin/<pdf-date>.pdf, then run ccvm/.venv/bin/python agent/run_pipeline.py --date <pdf-date>. On ERROR, stop and report which step failed. On OK, run ccvm/.venv/bin/python agent/notify.py --prepare --date <pdf-date>, then ccvm/.venv/bin/python agent/notify.py --list-pending, and deliver each item's text verbatim (Markdown) via OpenClaw Telegram to telegram:YOUR_CHAT_ID — PRIORITY_ALERT first, then DAILY_BRIEF. After each successful send, ack only that id with ccvm/.venv/bin/python agent/notify.py --ack <id>. Parse JSON with Python, not jq. Do not fabricate market data or run --force-pdf without approval." \
   --model "openai/gpt-5.5" \
   --thinking low \
   --timeout-seconds 900 \
