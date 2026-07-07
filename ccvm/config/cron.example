@@ -1,0 +1,28 @@
+# OpenClaw cron template for CurveLens.
+#
+# This is intentionally an agent turn, not a plain system cron command:
+# - the Python pipeline collects, normalizes, computes features, and formats
+#   the daily brief + alert messages
+# - the OpenClaw curvelens agent fetches the Akamai-protected CME bulletin,
+#   runs the pipeline, and delivers the messages via its own Telegram integration
+#
+# A bare `python scripts/run_pipeline.py` in system cron is NOT sufficient:
+# nothing would fetch the CME bulletin (bot-protected) or deliver Telegram —
+# both require the agent, per AGENTS.md Runtime Model.
+#
+# Runs once per weekday after CME settlements post (~5:30 PM ET).
+# Ships --disabled with a telegram:YOUR_CHAT_ID placeholder — fill in the real
+# chat id and enable deliberately. Do not commit a working chat id here.
+
+openclaw cron add \
+  --agent curvelens \
+  --name "CurveLens daily brief" \
+  --cron "30 17 * * 1-5" \
+  --tz "America/New_York" \
+  --session isolated \
+  --message "From /path/to/CurveLens/ccvm, read AGENTS.md Runtime Model and follow it exactly. Run ./.venv/bin/python scripts/run_pipeline.py for today. If the result is NEED_CME_PDF, download the bulletin from the given url with your browser/fetch tool, save it exactly to pdf_path, then re-run. On ERROR, stop and report which step failed. On OK, run ./.venv/bin/python scripts/notify.py --prepare --date <date>, then ./.venv/bin/python scripts/notify.py --list-pending, and deliver each item's text verbatim (Markdown) via OpenClaw Telegram to telegram:YOUR_CHAT_ID — PRIORITY_ALERT first, then DAILY_BRIEF. After each successful send, ack only that id with ./.venv/bin/python scripts/notify.py --ack <id>. Parse JSON with Python, not jq. Do not fabricate market data or run --force-pdf without approval." \
+  --model "openai/gpt-5.5" \
+  --thinking low \
+  --timeout-seconds 900 \
+  --no-deliver \
+  --disabled
