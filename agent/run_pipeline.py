@@ -14,9 +14,9 @@ Stages (each an isolated subprocess of the current interpreter):
     5. generate_report.py   gold → data/reports/<date>.md + .json
 
 Usage:
-    python scripts/run_pipeline.py                 # today (America/New_York)
-    python scripts/run_pipeline.py --date 2026-07-02
-    python scripts/run_pipeline.py --date 2026-07-02 --skip-catalysts
+    python agent/run_pipeline.py                 # today (America/New_York)
+    python agent/run_pipeline.py --date 2026-07-02
+    python agent/run_pipeline.py --date 2026-07-02 --skip-catalysts
 
 stdout is exactly one JSON object. Human-readable progress goes to stderr.
 
@@ -39,11 +39,14 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
-SCRIPTS = PROJECT_ROOT / "scripts"
-DATA_DIR = PROJECT_ROOT / "data"
+# This script lives in CurveLens/agent/; the deterministic pipeline and its
+# data live one level down in CurveLens/ccvm/.
+REPO_ROOT = Path(__file__).parent.parent
+CCVM_DIR = REPO_ROOT / "ccvm"
+SCRIPTS = CCVM_DIR / "scripts"
+DATA_DIR = CCVM_DIR / "data"
 
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+sys.path.insert(0, str(CCVM_DIR / "src"))
 
 # Agreement states / EIA scenarios that warrant an immediate priority alert
 # rather than just the routine daily brief.
@@ -82,7 +85,7 @@ def _run_stage(name: str, argv: list[str], required: bool) -> bool:
     # clean for the single machine-readable JSON result line.
     proc = subprocess.run(
         [sys.executable, str(SCRIPTS / argv[0]), *argv[1:]],
-        cwd=str(PROJECT_ROOT),
+        cwd=str(CCVM_DIR),
         stdout=sys.stderr,
     )
     if proc.returncode != 0:

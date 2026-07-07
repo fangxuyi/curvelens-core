@@ -17,10 +17,10 @@ type at most once — re-running --prepare is idempotent and will not re-queue a
 message that was already delivered.
 
 Usage:
-    python scripts/notify.py --prepare --date 2026-07-02
-    python scripts/notify.py --list-pending
-    python scripts/notify.py --ack 2026-07-02:DAILY_BRIEF
-    python scripts/notify.py --ack-all
+    python agent/notify.py --prepare --date 2026-07-02
+    python agent/notify.py --list-pending
+    python agent/notify.py --ack 2026-07-02:DAILY_BRIEF
+    python agent/notify.py --ack-all
 """
 from __future__ import annotations
 
@@ -30,8 +30,10 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+# This script lives in CurveLens/agent/; the pipeline's data lives in
+# CurveLens/ccvm/data/.
+REPO_ROOT = Path(__file__).parent.parent
+DATA_DIR = REPO_ROOT / "ccvm" / "data"
 OUTBOX_DIR = DATA_DIR / "agent_outbox"
 PENDING_PATH = OUTBOX_DIR / "pending.json"
 DELIVERED_PATH = OUTBOX_DIR / "delivered.json"
@@ -214,7 +216,7 @@ def cmd_list_pending() -> None:
             "Deliver each item's `text` verbatim via your Telegram integration "
             "(Markdown parse mode). Send PRIORITY_ALERT items immediately; a "
             "DAILY_BRIEF is the routine digest. After each successful send, ack "
-            "its id with: python scripts/notify.py --ack <id>"
+            "its id with: python agent/notify.py --ack <id>"
         ),
         "items": pending,
     })
