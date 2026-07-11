@@ -92,10 +92,11 @@ def test_silver_futures_calendar_enrichment():
     bronze = _make_futures_bronze(_GOOD_FUTURES)
     silver = silver_futures.normalize(bronze, AS_OF)
     d = silver.to_pydict()
-    # CLQ26 → LTD = 2026-07-21
+    # CLQ26 → LTD = 2026-07-21; LO expiry = LTD − 3 biz days = 2026-07-16
+    # (verified vs ICE WTI American options: Aug 2026 → 2026-07-16)
     idx = d["contract_code"].index("CLQ26")
     assert d["last_trade_date"][idx] == "2026-07-21"
-    assert d["cl_option_expiry"][idx] == "2026-07-13"
+    assert d["cl_option_expiry"][idx] == "2026-07-16"
 
 
 def test_silver_futures_curve_position():

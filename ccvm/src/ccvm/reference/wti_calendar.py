@@ -7,17 +7,31 @@ Last Trading Day calculation:
     If the 25th calendar day is not a business day, trading terminates on the
     third business day prior to the last business day preceding the 25th."
 
-    This implementation uses Mon–Fri business days only (no CME holiday calendar).
-    For production use, override with an authoritative CME holiday calendar.
-
 LO Option Expiry:
-    "Options expire on the business day that is 6 business days prior to the
-    expiration of the underlying futures contract."
+    Trading terminates 3 business days before the termination of trading in
+    the underlying futures contract: option_expiry = futures_LTD − 3 business
+    days.
+
+Business days are Mon–Fri excluding CME full-closure holidays
+(see exchange_calendar.py).
+
+Verified against external sources (2026-07-10):
+  - ICE WTI American-style options expiry table (mirrors the NYMEX LO
+    schedule), delivery-month labels: Aug26→2026-07-16, Sep26→2026-08-17,
+    Oct26→2026-09-17, Nov26→2026-10-15, Dec26→2026-11-17
+  - Documented CLK20 LTD 2020-04-21 and LOK20 expiry 2020-04-16
+  - ICE WTI futures LTDs equal NYMEX CL LTD − 1 business day (ICE uses a
+    4-days-prior rule); all six checked months align, including the
+    Christmas-shifted CLF27 case (NYMEX LTD 2026-12-21).
+
+Pinned fixtures: tests/fixtures/cme_expiry_calendar.json
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+
+from .exchange_calendar import is_business_day as _cme_is_business_day
 
 MONTH_LETTERS: dict[int, str] = {
     1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
@@ -37,7 +51,7 @@ class ContractInfo:
 
 
 def _is_business_day(d: date) -> bool:
-    return d.weekday() < 5  # Mon=0 .. Fri=4
+    return _cme_is_business_day(d)  # Mon–Fri excluding CME holidays
 
 
 def _prev_business_day(d: date) -> date:
@@ -78,11 +92,14 @@ def futures_last_trade_date(delivery_year: int, delivery_month: int) -> date:
 
 def option_expiry_date(delivery_year: int, delivery_month: int) -> date:
     """
-    Compute the LO (WTI options) expiry date: 6 business days before the
+    Compute the LO (WTI options) expiry date: 3 business days before the
     underlying futures last trading day.
+
+    Verified against the ICE WTI American options schedule (mirrors NYMEX LO)
+    and the documented LOK20 expiry (2020-04-16).
     """
     ltd = futures_last_trade_date(delivery_year, delivery_month)
-    return _subtract_business_days(ltd, 6)
+    return _subtract_business_days(ltd, 3)
 
 
 def contract_code(delivery_year: int, delivery_month: int) -> str:

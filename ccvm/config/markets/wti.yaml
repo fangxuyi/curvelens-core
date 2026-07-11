@@ -26,8 +26,11 @@ market:
   options:
     exercise_style: American
     settlement_style: Futures
-    # Option expiry: typically 3rd business day prior to 25th of month before delivery
-    expiry_rule: "3rd_business_day_before_25th_of_prior_month"
+    # LO option expiry = CL futures LTD − 3 business days (holiday-aware).
+    # Futures LTD = 3 business days before the (adjusted) 25th of the month
+    # prior to delivery. Source of truth: src/ccvm/reference/wti_calendar.py
+    # (verified vs ICE WTI American options schedule; see tests/fixtures/).
+    expiry_rule: "futures_ltd_minus_3_business_days"
 
   # MVP scope: first 8-12 monthly contracts
   futures_depth: 12

@@ -32,6 +32,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ..reference.wti_calendar import option_expiry_date
 from ..storage.manifest_db import ManifestDB
 from ..storage.raw_store import RawStore
 
@@ -52,24 +53,21 @@ _DECIMAL_RE = re.compile(r'^\d*\.\d+$')
 _INT_RE = re.compile(r'^\d+$')
 
 
-def _third_friday(year: int, month: int) -> date:
-    first_day = date(year, month, 1)
-    days_until_friday = (4 - first_day.weekday()) % 7
-    return date(year, month, 1 + days_until_friday + 14)
-
-
 def _expiry_code_to_option_info(code: str) -> tuple[date, str, str]:
     """
     'AUG26' → (option_expiry, underlying_contract, underlying_delivery_month)
 
-    Label month = option expiry month (3rd Friday),
-    underlying = next calendar month's CL futures.
+    Bulletin label month = option expiry month; underlying = next calendar
+    month's CL futures. The expiry date comes from the WTI calendar module
+    (single source of truth): LO expiry = futures LTD − 3 business days,
+    holiday-aware. E.g. AUG26 → underlying CLU26 (Sep delivery), expiry
+    2026-08-17 (verified vs the ICE WTI American options schedule).
     """
     month_num = _MONTH_NAME_TO_NUM[code[:3].upper()]
     year = 2000 + int(code[3:])
-    option_expiry = _third_friday(year, month_num)
     und_month = month_num % 12 + 1
     und_year = year + (1 if month_num == 12 else 0)
+    option_expiry = option_expiry_date(und_year, und_month)
     underlying_contract = f"CL{_MONTH_NUM_TO_LETTER[und_month]}{str(und_year)[2:]}"
     underlying_delivery_month = f"{und_year:04d}-{und_month:02d}"
     return option_expiry, underlying_contract, underlying_delivery_month
