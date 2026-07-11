@@ -50,28 +50,28 @@ recomputing or re-sending.
 **Pass 1 — fetch the bulletin, and only proceed if it is a new date.**
 
 The CME "current" URL always serves *some* bulletin — whatever was published
-most recently. So the download always succeeds; the real question is whether it
-is a *new* trading day you have not already handled. Gate on that before saving
-anything or running the pipeline.
+most recently. So the download may succeed even before a new trading day is
+available; the real question is whether it is a *new* trading day you have not
+already handled. Gate on that before running the pipeline.
 
-1. Download the CME Section 63 Energy Options bulletin from
-   `https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf`
-   to a **temporary** path (not yet into `ccvm/data/`). The bulletin is a public
-   document; fetch it with your browser/fetch tool (a plain HTTP client is
-   blocked by Akamai). If the download itself fails (URL unreachable / not a
-   PDF), finish with a concise `CME_PDF_UNAVAILABLE` summary and send nothing;
-   the next half-hour cron run will retry.
-2. Read the downloaded bulletin's **internal PDF date**. This is the
-   authoritative `<pdf-date>` for the run.
+1. Download the CME Section 63 Energy Options bulletin with the existing headed
+   Playwright downloader:
+   `CME_BULLETIN_RUN_PIPELINE=0 CME_BULLETIN_DIR=/Users/openclawyi/Desktop/curvelens/ccvm/data/cme_bulletin /Users/openclawyi/.openclaw/workspace/skills/cme-bulletin-downloader/scripts/download_cme_bulletin_pdf.js`.
+   The downloader handles CME's browser requirement, extracts the bulletin's
+   internal PDF date, saves the PDF under the configured `CME_BULLETIN_DIR`,
+   and prints JSON containing `date` and `path`. If the download itself fails
+   (URL unreachable / not a PDF / Chrome cannot capture real PDF bytes), finish
+   with a concise `CME_PDF_UNAVAILABLE` summary and send nothing; the next
+   half-hour cron run will retry.
+2. Use the downloader JSON `date` as the authoritative `<pdf-date>` for the
+   run, and use the JSON `path` as the saved PDF path.
 3. Freshness gate: run
    `ccvm/.venv/bin/python agent/notify.py --is-new <pdf-date>`.
    - If `is_new` is **false** (this date's brief was already delivered):
-     **discard the temporary download, save nothing, run nothing, send
-     nothing.** Finish with a concise `CME_PDF_NOT_NEW` summary. The bulletin
-     hasn't rolled to a new day yet; the next cron run will check again.
-   - If `is_new` is **true**: move the temporary file to
-     `ccvm/data/cme_bulletin/<pdf-date>.pdf` and continue to Pass 2 with
-     `<date>` = `<pdf-date>`.
+     run nothing and send nothing. Finish with a concise `CME_PDF_NOT_NEW`
+     summary. The bulletin hasn't rolled to a new day yet; the next cron run
+     will check again.
+   - If `is_new` is **true**: continue to Pass 2 with `<date>` = `<pdf-date>`.
 
 Never fabricate settlements or run with `--force-pdf` unless a human explicitly
 approves a futures-only run.
