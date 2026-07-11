@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ccvm.analytics import futures_features, option_features, agreement
+from ccvm.analytics import futures_features, history_context, option_features, agreement
 from ccvm.validation.quality_report import delta_check_section
 from ccvm.storage.parquet_store import ParquetStore
 
@@ -31,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
+
+
+def _fmt_pct(v) -> str:
+    return f"{v:.0f}" if v is not None else "n/a"
 
 
 def main() -> None:
@@ -116,6 +120,19 @@ def main() -> None:
             logger.warning("No valid option features computed")
     else:
         logger.info("No silver options for %s — skipping option features", as_of_str)
+
+    # ── History context: percentiles / z-scores vs accumulated gold ──
+    ctx = history_context.compute(pq, as_of_str)
+    if ctx is not None:
+        pq.write("gold", "history_context", as_of_str, ctx)
+        cd = ctx.to_pydict()
+        logger.info(
+            "History context (%dd): ATM IV %s%%ile  RR25 %s%%ile  slope %s%%ile",
+            cd["lookback_days"][0],
+            _fmt_pct(cd["atm_iv_pctile"][0]),
+            _fmt_pct(cd["rr25_pctile"][0]),
+            _fmt_pct(cd["curve_slope_pctile"][0]),
+        )
 
     # ── Agreement classification ──
     slope_val = d["front_back_slope"][0] if d["front_back_slope"] else None

@@ -36,6 +36,7 @@ def generate(
     quality_report: dict,
     output_dir: Path,
     gold_eia: Optional[pa.Table] = None,
+    history_context: Optional[pa.Table] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -45,6 +46,7 @@ def generate(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sections": {
             "market_risk": _market_risk_section(gold_futures, gold_options),
+            "history_context": _history_context_section(history_context),
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -161,6 +163,27 @@ def _catalysts_section(top_catalysts: list[dict]) -> dict:
             for i, e in enumerate(top_catalysts[:5])
         ],
     }
+
+
+def _history_context_section(ctx) -> dict:
+    """Percentiles/z-scores of headline metrics vs accumulated gold history (B2)."""
+    if ctx is None or len(ctx) == 0:
+        return {"status": "unavailable"}
+    d = ctx.to_pydict()
+    keys = [
+        "lookback_days",
+        "front_settle_pctile", "front_settle_z",
+        "settle_30d_high", "settle_30d_low", "settle_range_position",
+        "curve_slope_pctile", "curve_slope_z",
+        "m1_m2_pctile", "m1_m2_z",
+        "atm_iv_pctile", "atm_iv_z",
+        "rr25_pctile", "rr25_z",
+        "bf25_pctile", "bf25_z",
+        "skew_slope_pctile", "skew_slope_z",
+    ]
+    out = {k: d[k][0] for k in keys if k in d}
+    out["status"] = "available"
+    return out
 
 
 def _quality_notes(quality_report: dict) -> str:
@@ -296,6 +319,26 @@ def _render_markdown(report: dict) -> str:
             f"- 25Δ Risk Reversal: **{_fmt_pct(opt.get('risk_reversal_25d'))}**",
             f"- 25Δ Butterfly: **{bf25_str}**  |  Skew slope: **{skew_str}**",
             f"- ⚠ Note: *{opt.get('coverage_note')}*",
+            "",
+        ]
+
+    # ── History context (percentiles vs accumulated gold) ──
+    ctx = s.get("history_context", {})
+    if ctx.get("status") == "available":
+        n = ctx.get("lookback_days")
+
+        def _pc(key):
+            v = ctx.get(key)
+            return f"{v:.0f}%ile" if v is not None else "n/a"
+
+        rng = ctx.get("settle_range_position")
+        rng_str = f"{rng:.0%} of 30d range" if rng is not None else "n/a"
+        lines += [
+            f"**Context** *(vs {n} trade dates of history — percentiles firm up as history accrues)*",
+            f"- Settle: {_pc('front_settle_pctile')} ({rng_str}, "
+            f"30d band {_fmt_usd(ctx.get('settle_30d_low'))}–{_fmt_usd(ctx.get('settle_30d_high'))})",
+            f"- ATM IV: {_pc('atm_iv_pctile')}  |  25Δ RR: {_pc('rr25_pctile')}  |  25Δ BF: {_pc('bf25_pctile')}",
+            f"- Curve slope: {_pc('curve_slope_pctile')}  |  M1-M2: {_pc('m1_m2_pctile')}",
             "",
         ]
 

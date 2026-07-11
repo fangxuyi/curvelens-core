@@ -69,6 +69,11 @@ def main() -> None:
     if pq.exists("gold", "eia_features", as_of_str):
         gold_eia = pq.read("gold", "eia_features", as_of_str)
 
+    # ── History context (optional) ──
+    history_ctx = None
+    if pq.exists("gold", "history_context", as_of_str):
+        history_ctx = pq.read("gold", "history_context", as_of_str)
+
     # ── Agreement ──
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     if agr_path.exists():
@@ -104,6 +109,7 @@ def main() -> None:
         quality_report=quality_report,
         output_dir=output_dir,
         gold_eia=gold_eia,
+        history_context=history_ctx,
     )
 
     md_path = output_dir / f"{as_of_str}.md"
