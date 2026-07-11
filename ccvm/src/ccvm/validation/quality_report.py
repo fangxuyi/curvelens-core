@@ -267,10 +267,9 @@ def generate(
         "futures": fut,
         "options": opt,
         "fundamentals": fund,
-        "caveats": (caveats or []) + [
-            "settlement_data_only_not_executable_mispricing",
-            "LO_options_American_style_black76_IV_is_European_approximation",
-        ],
+        # Note: the report-level caveats (settlement-only, BAW model, EIA lag)
+        # live in reporting/daily_report._caveats — don't duplicate them here.
+        "caveats": caveats or [],
     }
 
     output_dir.mkdir(parents=True, exist_ok=True)

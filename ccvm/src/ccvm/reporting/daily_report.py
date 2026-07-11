@@ -53,6 +53,7 @@ def generate(
             "next_review": _next_review(trade_date, top_catalysts),
         },
         "quality_status": quality_report.get("overall_status", "UNKNOWN"),
+        "quality_notes": _quality_notes(quality_report),
         "source_feature_ids": {
             "gold_futures": f"gold/futures_features/trade_date={trade_date.isoformat()}",
             "gold_options": f"gold/option_features/trade_date={trade_date.isoformat()}",
@@ -140,11 +141,14 @@ def _eia_section(gold_eia: Optional[pa.Table]) -> dict:
 
 
 def _catalysts_section(top_catalysts: list[dict]) -> dict:
+    # Rank is the position in the globally score-sorted list. The stored
+    # relevance_rank is per-extraction-batch and collides across batches
+    # (multiple runs per day produced 1,1,2,1,2 in the brief).
     return {
         "count": len(top_catalysts),
         "top_events": [
             {
-                "rank": e.get("relevance_rank"),
+                "rank": i + 1,
                 "score": e.get("relevance_score"),
                 "event_id": e.get("event_id"),
                 "title": e.get("title"),
@@ -154,9 +158,28 @@ def _catalysts_section(top_catalysts: list[dict]) -> dict:
                 "effective_start": e.get("effective_start"),
                 "source_url": e.get("source_url"),
             }
-            for e in top_catalysts[:5]
+            for i, e in enumerate(top_catalysts[:5])
         ],
     }
+
+
+def _quality_notes(quality_report: dict) -> str:
+    """One-line explanation of a non-PASS overall status (A6).
+
+    e.g. "futures WARN (10 rows have warnings); options WARN (7 rows failed
+    quality checks)" — so the brief header never shows a bare WARN.
+    """
+    if quality_report.get("overall_status", "PASS") == "PASS":
+        return ""
+    parts = []
+    for section in ("futures", "options", "fundamentals"):
+        s = quality_report.get(section, {})
+        status = s.get("status", "PASS")
+        if status != "PASS":
+            notes = s.get("notes") or []
+            first = f" ({notes[0]})" if notes else ""
+            parts.append(f"{section} {status}{first}")
+    return "; ".join(parts)
 
 
 def _caveats(quality_report: dict) -> list[str]:
@@ -170,6 +193,15 @@ def _caveats(quality_report: dict) -> list[str]:
         "approximation; all IV/greeks history was restated (front-expiry TTE shortened "
         "~4 days → slightly higher IVs than previously reported)",
     ]
+    # Delta quality check: bulletin-published deltas vs BAW model deltas (A7).
+    # An empirical validation of the pricing setup (TTE, model, rate).
+    dc = quality_report.get("delta_check")
+    if dc and dc.get("compared"):
+        caveats.append(
+            f"delta_check: {dc.get('status')} — model delta vs CME-published delta, "
+            f"{dc['compared']} options compared, mean|diff|={dc.get('mean_abs_delta_diff', 0):.4f}, "
+            f"max|diff|={dc.get('max_abs_delta_diff', 0):.3f}"
+        )
     qr_caveats = quality_report.get("caveats", [])
     caveats.extend(c for c in qr_caveats if c not in caveats)
     return caveats
@@ -225,9 +257,11 @@ def _render_markdown(report: dict) -> str:
     caveats = s["data_caveats"]
     next_rev = s["next_review"]
 
+    quality_notes = report.get("quality_notes", "")
+    quality_suffix = f" — {quality_notes}" if quality_notes else ""
     lines = [
         f"# CurveLens Daily Forward-Risk Brief — {td}",
-        f"\n*Generated: {gen}  |  Data quality: **{quality}***",
+        f"\n*Generated: {gen}  |  Data quality: **{quality}**{quality_suffix}*",
         "",
     ]
 

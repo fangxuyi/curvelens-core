@@ -257,4 +257,7 @@ def test_report_includes_caveats(tmp_path):
 
     caveats = report["sections"]["data_caveats"]
     assert any("settlement" in c for c in caveats)
-    assert any("USO" in c for c in caveats)
+    # BAW is the pricing model for American LO options (USO caveat is long gone
+    # with the dropped E*TRADE source)
+    assert any("baw_iv" in c for c in caveats)
+    assert any("eia_lag" in c for c in caveats)
