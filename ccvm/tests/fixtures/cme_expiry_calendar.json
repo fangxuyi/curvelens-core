@@ -1,0 +1,25 @@
+{
+  "_comment": "Externally verified NYMEX CL futures LTD and LO option expiry dates. Sources: ICE WTI American-style options expiry table (mirrors the NYMEX LO schedule; delivery-month labels) fetched 2026-07-10; ICE WTI futures expiry table (ICE futures LTD = NYMEX CL LTD - 1 business day, ICE uses a 4-days-prior rule); documented CLK20/LOK20 dates from the April 2020 negative-price event.",
+  "futures_ltd": {
+    "2020-05": "2020-04-21",
+    "2026-08": "2026-07-21",
+    "2026-09": "2026-08-20",
+    "2026-10": "2026-09-22",
+    "2026-11": "2026-10-20",
+    "2026-12": "2026-11-20",
+    "2027-01": "2026-12-21"
+  },
+  "option_expiry": {
+    "2020-05": "2020-04-16",
+    "2026-08": "2026-07-16",
+    "2026-09": "2026-08-17",
+    "2026-10": "2026-09-17",
+    "2026-11": "2026-10-15",
+    "2026-12": "2026-11-17"
+  },
+  "_sources": {
+    "option_expiry 2026-*": "https://www.ice.com/products/908/WTI-American-Style-Options/expiry",
+    "futures_ltd 2026-* / 2027-01": "https://www.ice.com/products/213/WTI-Crude-Futures/expiry (+1 business day)",
+    "2020-05": "documented CLK20 last trade 2020-04-21 / LOK20 expiry 2020-04-16"
+  }
+}

@@ -36,10 +36,11 @@ class TestFuturesLastTradeDate:
     def test_january_2027(self):
         # CLF27: delivery Jan 2027
         # Prior month: Dec 2026
-        # 25 Dec 2026 = Friday → ref = Dec 25 (it's a business day since we don't count holidays)
-        # 3 biz days before Dec 25 = Dec 24, 23, 22 → Dec 22
+        # 25 Dec 2026 = Friday but a CME holiday (Christmas) → ref = Dec 24 (Thu)
+        # 3 biz days before Dec 24 = Dec 23, 22, 21 → Dec 21
+        # Cross-check: ICE WTI futures Jan 2027 LTD = Dec 18 = NYMEX LTD − 1 biz day
         ltd = futures_last_trade_date(2027, 1)
-        assert ltd == date(2026, 12, 22)
+        assert ltd == date(2026, 12, 21)
 
     def test_result_is_weekday(self):
         for month in range(1, 13):
@@ -53,11 +54,12 @@ class TestOptionExpiryDate:
         ltd = futures_last_trade_date(2026, 8)
         assert opt < ltd
 
-    def test_august_2026_is_6_business_days_before_ltd(self):
-        # LTD = July 21 → go back 6 biz days:
-        # July 20 (Mon), 17 (Fri), 16 (Thu), 15 (Wed), 14 (Tue), 13 (Mon) → July 13
+    def test_august_2026_is_3_business_days_before_ltd(self):
+        # LTD = July 21 → go back 3 biz days:
+        # July 20 (Mon), 17 (Fri), 16 (Thu) → July 16
+        # Verified: ICE WTI American options Aug 2026 expiry = 2026-07-16
         opt = option_expiry_date(2026, 8)
-        assert opt == date(2026, 7, 13)
+        assert opt == date(2026, 7, 16)
 
     def test_result_is_weekday(self):
         for month in range(1, 13):

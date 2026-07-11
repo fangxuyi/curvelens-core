@@ -165,6 +165,10 @@ def _caveats(quality_report: dict) -> list[str]:
         "baw_iv: implied vol uses Barone-Adesi & Whaley (1987) for American option pricing; "
         "Black-76 retained as reference only",
         "eia_lag: EIA weekly data has a 1-week lag (e.g. Thu report covers prior week)",
+        "expiry_convention_corrected_2026-07-10: LO option expiry now uses the exchange "
+        "rule (futures LTD − 3 business days, holiday-aware) instead of a 3rd-Friday "
+        "approximation; all IV/greeks history was restated (front-expiry TTE shortened "
+        "~4 days → slightly higher IVs than previously reported)",
     ]
     qr_caveats = quality_report.get("caveats", [])
     caveats.extend(c for c in qr_caveats if c not in caveats)
