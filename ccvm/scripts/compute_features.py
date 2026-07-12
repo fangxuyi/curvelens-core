@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ccvm.analytics import futures_features, history_context, option_features, agreement
+from ccvm.analytics import futures_features, history_context, monitor_state, option_features, agreement
 from ccvm.validation.quality_report import delta_check_section
 from ccvm.storage.parquet_store import ParquetStore
 
@@ -189,6 +189,19 @@ def main() -> None:
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     agr_path.parent.mkdir(parents=True, exist_ok=True)
     agr_path.write_text(json.dumps({**agr, "trade_date": as_of_str}, indent=2))
+
+    # ── Trigger evaluation + scenario state machine (C1) ──
+    monitor = monitor_state.update_scenario_state(pq, DATA_DIR, as_of_str)
+    trig_path = DATA_DIR / "gold" / "triggers" / f"trade_date={as_of_str}" / "triggers.json"
+    trig_path.parent.mkdir(parents=True, exist_ok=True)
+    trig_path.write_text(json.dumps(monitor, indent=2))
+    for sc, st in monitor["scenarios"].items():
+        logger.info(
+            "Scenario %s: %s (since %s)  confirms=%d/%d  invalidations=%s",
+            sc.upper(), st["status"].upper(), st["since"],
+            len(st["confirms_fired"]), st["confirms_total_auto"],
+            st["invalidations_fired"] or "none",
+        )
 
     print(f"\nAgreement state: {agr['state']} (confidence: {agr['confidence']})")
     print(f"Gold features written to {DATA_DIR}/gold/")

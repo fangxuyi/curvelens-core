@@ -74,6 +74,13 @@ def main() -> None:
     if pq.exists("gold", "history_context", as_of_str):
         history_ctx = pq.read("gold", "history_context", as_of_str)
 
+    # ── Monitor: trigger eval, scenario state, streaks, day diff (C1/D2/D3) ──
+    from ccvm.analytics import monitor_state
+    trig_path = DATA_DIR / "gold" / "triggers" / f"trade_date={as_of_str}" / "triggers.json"
+    monitor = json.loads(trig_path.read_text()) if trig_path.exists() else None
+    streaks = monitor_state.compute_streaks(pq, DATA_DIR, as_of_str)
+    day_diff = monitor_state.build_day_diff(pq, DATA_DIR, as_of_str)
+
     # ── Agreement ──
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     if agr_path.exists():
@@ -110,6 +117,9 @@ def main() -> None:
         output_dir=output_dir,
         gold_eia=gold_eia,
         history_context=history_ctx,
+        monitor=monitor,
+        streaks=streaks,
+        day_diff=day_diff,
     )
 
     md_path = output_dir / f"{as_of_str}.md"

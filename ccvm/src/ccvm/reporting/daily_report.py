@@ -37,6 +37,9 @@ def generate(
     output_dir: Path,
     gold_eia: Optional[pa.Table] = None,
     history_context: Optional[pa.Table] = None,
+    monitor: Optional[dict] = None,
+    streaks: Optional[dict] = None,
+    day_diff: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -45,8 +48,11 @@ def generate(
         "trade_date": trade_date.isoformat(),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "sections": {
+            "what_changed": {"diff": day_diff or {"status": "unavailable"},
+                             "streaks": streaks or {}},
             "market_risk": _market_risk_section(gold_futures, gold_options),
             "history_context": _history_context_section(history_context),
+            "monitor": monitor or {},
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -298,6 +304,40 @@ def _render_markdown(report: dict) -> str:
         "",
     ]
 
+    # ── What changed since the prior session (D3) ──
+    wc = s.get("what_changed", {})
+    diff, streaks = wc.get("diff", {}), wc.get("streaks", {})
+    if diff.get("status") == "available":
+        def _d(key, fmt, scale=1.0):
+            v = diff.get(key)
+            return fmt.format(v * scale) if v is not None else "n/a"
+
+        lines += [f"## What Changed *(vs {diff.get('prior_date')})*", ""]
+        lines.append(
+            f"- Front settle {_d('settle_change', '{:+.2f}$')} "
+            f"| ATM IV {_d('atm_iv_change', '{:+.1f}pp', 100)} "
+            f"| 25Δ RR {_d('rr25_change', '{:+.1f}pp', 100)} "
+            f"| slope {_d('slope_change', '{:+.3f}$/mo')}"
+        )
+        agr_t, agr_p = diff.get("agreement_today"), diff.get("agreement_prior")
+        if agr_t and agr_p:
+            lines.append(
+                f"- Agreement: `{agr_p}` → `{agr_t}`" if agr_t != agr_p
+                else f"- Agreement unchanged: `{agr_t}`"
+                     + (f" ({streaks.get('agreement_state_streak_days')} sessions)"
+                        if streaks.get("agreement_state_streak_days") else "")
+            )
+        for tr in diff.get("scenario_transitions") or []:
+            lines.append(f"- Scenario transition: **{tr}**")
+        streak_bits = []
+        if streaks.get("consecutive_eia_draw_weeks"):
+            streak_bits.append(f"{streaks['consecutive_eia_draw_weeks']} consecutive EIA draw week(s)")
+        if streaks.get("days_in_backwardation"):
+            streak_bits.append(f"{streaks['days_in_backwardation']} session(s) in backwardation")
+        if streak_bits:
+            lines.append(f"- Streaks: {' · '.join(streak_bits)}")
+        lines.append("")
+
     # ── Section 1: Market Risk ──
     lines += ["## 1. Current Market-Implied Risk", ""]
     if fut:
@@ -455,16 +495,40 @@ def _render_markdown(report: dict) -> str:
             )
         lines.append("")
 
-    # ── Section 5: Triggers ──
+    # ── Section 5: Triggers — evaluated daily (C1) ──
     lines += ["## 6. Confirmation / Invalidation Triggers", ""]
-    for sc in scenarios[:3]:  # bull/base/bear
-        name = sc.get("name", "").upper()
-        lines.append(f"**{name}**")
-        for t in sc.get("confirmation_triggers", []):
-            lines.append(f"- ✅ Confirms: {t}")
-        for t in sc.get("invalidation_triggers", []):
-            lines.append(f"- ❌ Invalidates: {t}")
+    monitor = s.get("monitor") or {}
+    trig_results = monitor.get("trigger_results") or []
+    scenario_states = monitor.get("scenarios") or {}
+    if trig_results:
+        lines.append("*Evaluated against gold history each run — "
+                     "✅ fired · ▢ not fired · ◌ not evaluable/manual*")
         lines.append("")
+        for sc_name in ("bull", "base", "bear"):
+            st = scenario_states.get(sc_name, {})
+            status = st.get("status", "live").upper()
+            since = st.get("since", "")
+            fired_c = len(st.get("confirms_fired", []))
+            total_c = st.get("confirms_total_auto", 0)
+            lines.append(f"**{sc_name.upper()}: {status}** *(since {since} · "
+                         f"{fired_c}/{total_c} confirms fired)*")
+            for r in trig_results:
+                if r["scenario"] != sc_name:
+                    continue
+                icon = "✅" if r["fired"] is True else ("▢" if r["fired"] is False else "◌")
+                side = "Confirms" if r["side"] == "confirm" else "Invalidates"
+                lines.append(f"- {icon} {side}: {r['description']}")
+            lines.append("")
+    else:
+        # Fallback: static prose triggers (monitor data unavailable)
+        for sc in scenarios[:3]:  # bull/base/bear
+            name = sc.get("name", "").upper()
+            lines.append(f"**{name}**")
+            for t in sc.get("confirmation_triggers", []):
+                lines.append(f"- ✅ Confirms: {t}")
+            for t in sc.get("invalidation_triggers", []):
+                lines.append(f"- ❌ Invalidates: {t}")
+            lines.append("")
 
     # ── Section 6: Caveats ──
     lines += ["## 7. Data Caveats", ""]

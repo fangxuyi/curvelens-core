@@ -29,6 +29,7 @@ ccvm/data/quality_reports/
 ccvm/data/reports/
 ccvm/data/cme_bulletin/
 ccvm/data/agent_outbox/
+ccvm/data/state/
 
 # Parquet
 *.parquet
