@@ -22,7 +22,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from ccvm.analytics import futures_features, history_context, monitor_state, option_features, agreement
+from ccvm.analytics import (
+    agreement,
+    futures_features,
+    history_context,
+    monitor_state,
+    oi_features,
+    option_features,
+)
 from ccvm.validation.quality_report import delta_check_section
 from ccvm.storage.parquet_store import ParquetStore
 
@@ -120,6 +127,23 @@ def main() -> None:
             logger.warning("No valid option features computed")
     else:
         logger.info("No silver options for %s — skipping option features", as_of_str)
+
+    # ── Open-interest analytics (C2) ──
+    if silver_opt is not None:
+        prior_silver_opt = None
+        if args.prior_date and pq.exists("silver", "options", args.prior_date):
+            prior_silver_opt = pq.read("silver", "options", args.prior_date)
+        oi = oi_features.compute(silver_opt, as_of_str, prior_silver_opt)
+        oi_path = DATA_DIR / "gold" / "oi" / f"trade_date={as_of_str}" / "oi.json"
+        oi_path.parent.mkdir(parents=True, exist_ok=True)
+        oi_path.write_text(json.dumps(oi, indent=2))
+        if oi["expiries"]:
+            e0 = oi["expiries"][0]
+            logger.info(
+                "OI (front %s): P/C=%s  max_pain=%s  top call wall=%s",
+                e0["expiry"], e0["put_call_oi_ratio"], e0["max_pain"],
+                (e0["call_walls"][0]["strike"] if e0["call_walls"] else None),
+            )
 
     # ── History context: percentiles / z-scores vs accumulated gold ──
     ctx = history_context.compute(pq, as_of_str)

@@ -40,6 +40,7 @@ def generate(
     monitor: Optional[dict] = None,
     streaks: Optional[dict] = None,
     day_diff: Optional[dict] = None,
+    oi: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -53,6 +54,7 @@ def generate(
             "market_risk": _market_risk_section(gold_futures, gold_options),
             "history_context": _history_context_section(history_context),
             "monitor": monitor or {},
+            "oi": oi or {},
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -186,6 +188,7 @@ def _history_context_section(ctx) -> dict:
         "rr25_pctile", "rr25_z",
         "bf25_pctile", "bf25_z",
         "skew_slope_pctile", "skew_slope_z",
+        "realized_vol_10d", "realized_vol_21d", "vrp_10d", "vrp_21d",
     ]
     out = {k: d[k][0] for k in keys if k in d}
     out["status"] = "available"
@@ -389,8 +392,40 @@ def _render_markdown(report: dict) -> str:
             f"30d band {_fmt_usd(ctx.get('settle_30d_low'))}–{_fmt_usd(ctx.get('settle_30d_high'))})",
             f"- ATM IV: {_pc('atm_iv_pctile')}  |  25Δ RR: {_pc('rr25_pctile')}  |  25Δ BF: {_pc('bf25_pctile')}",
             f"- Curve slope: {_pc('curve_slope_pctile')}  |  M1-M2: {_pc('m1_m2_pctile')}",
-            "",
         ]
+        # Realized vs implied (B6): constant-contract RV, VRP = IV − RV
+        rv10, vrp10 = ctx.get("realized_vol_10d"), ctx.get("vrp_10d")
+        rv21, vrp21 = ctx.get("realized_vol_21d"), ctx.get("vrp_21d")
+        if rv10 is not None or rv21 is not None:
+            def _rv(rv, vrp, label):
+                if rv is None:
+                    return None
+                v = f" (VRP {vrp*100:+.1f}pp)" if vrp is not None else ""
+                return f"RV {label}: {rv:.1%}{v}"
+            bits = [b for b in (_rv(rv10, vrp10, "10d"), _rv(rv21, vrp21, "21d")) if b]
+            lines.append(f"- Realized vs implied: {'  |  '.join(bits)} — positive VRP = IV rich to realized")
+        lines.append("")
+
+    # ── Options positioning: open interest (C2) ──
+    oi_sec = s.get("oi") or {}
+    for ex in (oi_sec.get("expiries") or [])[:1]:  # front expiry in the brief
+        pc = ex.get("put_call_oi_ratio")
+        mp = ex.get("max_pain")
+        vol_oi = ex.get("volume_oi_ratio")
+        cw = ", ".join(f"${w['strike']:.0f} ({w['oi']/1000:.1f}k)" for w in ex.get("call_walls", []))
+        pw = ", ".join(f"${w['strike']:.0f} ({w['oi']/1000:.1f}k)" for w in ex.get("put_walls", []))
+        doi = ", ".join(f"{d['delta_oi']:+,} {d['cp']}${d['strike']:.0f}"
+                        for d in ex.get("top_delta_oi", []))
+        lines += [
+            f"**Options Positioning — {ex.get('expiry')}** *(source: bulletin OI)*",
+            f"- Put/Call OI: **{pc}**  |  Total OI: {(ex.get('call_oi',0)+ex.get('put_oi',0))/1000:.0f}k"
+            f"  |  Volume/OI: {vol_oi}  |  Max pain: **{_fmt_usd(mp)}**",
+            f"- Call walls: {cw or 'n/a'}",
+            f"- Put walls: {pw or 'n/a'}",
+        ]
+        if doi:
+            lines.append(f"- Largest ΔOI: {doi}")
+        lines.append("")
 
     # ── Section 2: EIA Fundamentals ──
     lines += ["## 2. EIA Weekly Fundamentals", ""]

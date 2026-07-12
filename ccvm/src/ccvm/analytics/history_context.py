@@ -58,6 +58,11 @@ _SCHEMA = pa.schema([
     pa.field("skew_slope", pa.float64()),
     pa.field("skew_slope_pctile", pa.float64()),
     pa.field("skew_slope_z", pa.float64()),
+    # Realized vs implied (B6) — constant-contract close-to-close realized vol
+    pa.field("realized_vol_10d", pa.float64()),
+    pa.field("realized_vol_21d", pa.float64()),
+    pa.field("vrp_10d", pa.float64()),   # atm_iv − realized_vol_10d
+    pa.field("vrp_21d", pa.float64()),   # atm_iv − realized_vol_21d
     pa.field("source_id", pa.string()),
 ])
 
@@ -105,6 +110,34 @@ def _options_metrics(table: pa.Table) -> dict:
         "bf25": d["butterfly_25d"][i],
         "skew_slope": d["skew_slope"][i],
     }
+
+
+def _contract_settle_series(pq_store, dates: list[str], contract_code: str) -> list[float]:
+    """Settles of ONE contract across dates (ascending) — constant-contract
+    series, so realized vol is not polluted by front-month roll jumps."""
+    settles = []
+    for dt in dates:
+        d = pq_store.read("gold", "futures_features", dt).to_pydict()
+        codes = d.get("contract_code") or []
+        if contract_code in codes:
+            s = d["settlement"][codes.index(contract_code)]
+            if s is not None:
+                settles.append(s)
+    return settles
+
+
+def realized_vol(settles: list[float], window: int) -> Optional[float]:
+    """Annualized close-to-close realized vol over the last `window` returns."""
+    if len(settles) < window + 1:
+        return None
+    tail = settles[-(window + 1):]
+    rets = [math.log(tail[i + 1] / tail[i]) for i in range(window)
+            if tail[i] > 0 and tail[i + 1] > 0]
+    if len(rets) < window:
+        return None
+    mean = sum(rets) / len(rets)
+    var = sum((r - mean) ** 2 for r in rets) / len(rets)
+    return math.sqrt(var * 252.0)
 
 
 _METRICS = [
@@ -162,6 +195,22 @@ def compute(pq_store, as_of_str: str, max_lookback: int = 252) -> Optional[pa.Ta
         row[key] = today
         row[f"{base}_pctile"] = percentile_of(vals, today) if today is not None else None
         row[f"{base}_z"] = zscore_of(vals, today) if today is not None else None
+
+    # Realized vs implied (B6): constant-contract RV for today's front contract
+    front_code = None
+    fut_today = pq_store.read("gold", "futures_features", as_of_str).to_pydict()
+    if fut_today.get("contract_code"):
+        front_code = fut_today["contract_code"][0]
+    rv10 = rv21 = None
+    if front_code:
+        settles = _contract_settle_series(pq_store, fut_dates, front_code)
+        rv10 = realized_vol(settles, 10)
+        rv21 = realized_vol(settles, 21)
+    atm_today = row.get("atm_iv")
+    row["realized_vol_10d"] = rv10
+    row["realized_vol_21d"] = rv21
+    row["vrp_10d"] = (atm_today - rv10) if atm_today is not None and rv10 is not None else None
+    row["vrp_21d"] = (atm_today - rv21) if atm_today is not None and rv21 is not None else None
 
     # 30-calendar-day settle band
     from datetime import date, timedelta
