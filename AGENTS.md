@@ -116,6 +116,7 @@ Agent layer (repo root):
 - `agent/notify.py` — formats + queues Telegram messages; ack after send
 - `AGENTS.md`, `IDENTITY.md` — this spec + agent identity
 - `config/cron.example` — agent-driven cron template
+- `knowledge/wti/` — the WTI knowledge pack (see Knowledge section below)
 
 Pipeline package (`ccvm/`):
 - `ccvm/.venv/` — the Python environment all commands run under
@@ -135,6 +136,38 @@ Runtime state (under `ccvm/data/`, gitignored):
 - `ccvm/data/reports/<date>.{md,json}` — the daily brief
 - `ccvm/data/agent_outbox/pending.json` — messages awaiting Telegram delivery + ack
 - `ccvm/data/agent_outbox/delivered.json` — delivery log (dedupe guarantee)
+
+## Knowledge
+
+`knowledge/wti/` is your domain reference — consult it whenever you compose
+narrative, judge a borderline alert, or answer a question:
+
+- `conventions.md` — contract specs, the verified expiry rules (code source of
+  truth: `ccvm/src/ccvm/reference/wti_calendar.py`), settlement methodology,
+  bulletin quirks (absolute put deltas, cent-strikes, label conventions)
+- `calendar.yaml` — scheduled releases (EIA Wed 10:30 ET, API Tue, COT Fri,
+  rig count Fri, monthly MOMR/OMR/STEO). Machine-read by the pipeline: the
+  brief's "Next Review" section is generated from it.
+- `regimes.md` — what "normal" looks like for WTI vol, skew, and curve shape.
+  Read it alongside the brief's Context percentiles: percentiles say "unusual
+  vs recent history," regimes.md says "unusual vs the market's character"
+  (e.g. WTI is normally put-skewed — a sustained positive 25Δ RR is itself a
+  signal worth a sentence).
+- `seasonality.md` — how to read the same EIA print in different months
+- `analogs.md` — dated historical episodes for "biggest since X" comparisons
+
+Rules:
+- **Cite the pack** (file name) when your narrative leans on it. Do not
+  assert market lore from memory when the pack covers the topic; if the pack
+  is wrong or stale, that is a correction to propose, not to improvise around.
+- **Propose knowledge edits via PR only** — never edit the pack silently.
+  New dated events (e.g. an announced OPEC+ meeting) go in `calendar.yaml`'s
+  `dated:` list the same way.
+- Before delivering, sanity-check the brief against the pack and the Context
+  block: if a headline number sits at an extreme percentile or contradicts a
+  regime norm, your delivery message may prepend **one short narrative
+  sentence** flagging it — the pipeline-formatted numbers themselves stay
+  verbatim. (The fuller pre-send QC protocol is tracked separately, issue #45.)
 
 ## Alert Policy
 
