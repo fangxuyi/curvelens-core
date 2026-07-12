@@ -30,3 +30,34 @@ openclaw cron add \
   --timeout-seconds 900 \
   --no-deliver \
   --disabled
+
+# ── Event-calendar runs (D1) — same-day mini-runs, no bulletin needed ──
+# Scheduled per knowledge/wti/calendar.yaml. Both stay silent unless the
+# event is material (EIA: seasonal trigger confirms; COT: |WoW| ≥ 20k lots
+# or 1y percentile ≥90/≤10). Ship --disabled; enable deliberately.
+
+openclaw cron add \
+  --agent curvelens \
+  --name "CurveLens EIA flash" \
+  --cron "35 10 * * 3" \
+  --tz "America/New_York" \
+  --session isolated \
+  --message "From /path/to/CurveLens, run ccvm/.venv/bin/python agent/event_run.py --event eia. If the result is QUIET, NO_DATA, or ALREADY_HANDLED, finish silently. If FLASH_QUEUED, run ccvm/.venv/bin/python agent/notify.py --list-pending and deliver only EIA_FLASH items verbatim (Markdown) via OpenClaw Telegram to telegram:YOUR_CHAT_ID, then ack each sent id with ccvm/.venv/bin/python agent/notify.py --ack <id>. Parse JSON with Python, not jq." \
+  --model "openai/gpt-5.5" \
+  --thinking low \
+  --timeout-seconds 600 \
+  --no-deliver \
+  --disabled
+
+openclaw cron add \
+  --agent curvelens \
+  --name "CurveLens COT update" \
+  --cron "35 15 * * 5" \
+  --tz "America/New_York" \
+  --session isolated \
+  --message "From /path/to/CurveLens, run ccvm/.venv/bin/python agent/event_run.py --event cot. If the result is QUIET, NO_DATA, or ALREADY_HANDLED, finish silently. If UPDATE_QUEUED, run ccvm/.venv/bin/python agent/notify.py --list-pending and deliver only COT_UPDATE items verbatim (Markdown) via OpenClaw Telegram to telegram:YOUR_CHAT_ID, then ack each sent id with ccvm/.venv/bin/python agent/notify.py --ack <id>. Parse JSON with Python, not jq." \
+  --model "openai/gpt-5.5" \
+  --thinking low \
+  --timeout-seconds 600 \
+  --no-deliver \
+  --disabled
