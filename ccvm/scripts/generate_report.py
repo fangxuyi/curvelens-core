@@ -81,6 +81,10 @@ def main() -> None:
     streaks = monitor_state.compute_streaks(pq, DATA_DIR, as_of_str)
     day_diff = monitor_state.build_day_diff(pq, DATA_DIR, as_of_str)
 
+    # ── OI analytics (C2, optional) ──
+    oi_path = DATA_DIR / "gold" / "oi" / f"trade_date={as_of_str}" / "oi.json"
+    oi = json.loads(oi_path.read_text()) if oi_path.exists() else None
+
     # ── Agreement ──
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     if agr_path.exists():
@@ -120,6 +124,7 @@ def main() -> None:
         monitor=monitor,
         streaks=streaks,
         day_diff=day_diff,
+        oi=oi,
     )
 
     md_path = output_dir / f"{as_of_str}.md"
