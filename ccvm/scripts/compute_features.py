@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from ccvm.analytics import (
     agreement,
     cot_features,
+    eia_seasonal,
     futures_features,
     history_context,
     monitor_state,
@@ -152,9 +153,10 @@ def main() -> None:
         cot_path = DATA_DIR / "gold" / "cot" / f"trade_date={as_of_str}" / "cot.json"
         cot_path.parent.mkdir(parents=True, exist_ok=True)
         cot_path.write_text(json.dumps(cot, indent=2))
+        wow = cot["mm_net_wow"]
         logger.info("COT (report %s): MM net %+d  WoW %s  1y %s%%ile",
                     cot["report_date"], cot["mm_net"],
-                    f"{cot[chr(39)+"mm_net_wow"+chr(39)]:+d}" if cot["mm_net_wow"] is not None else "n/a",
+                    f"{wow:+d}" if wow is not None else "n/a",
                     _fmt_pct(cot["mm_net_pctile_1y"]))
 
     # ── History context: percentiles / z-scores vs accumulated gold ──
@@ -206,6 +208,21 @@ def main() -> None:
         eia_supply_signal = ed["supply_signal"][0] if ed["supply_signal"] else None
         eia_scenario_trigger = ed["scenario_trigger"][0] if ed["scenario_trigger"] else None
         logger.info("EIA supply signal: %s  trigger: %s", eia_supply_signal, eia_scenario_trigger)
+
+    # ── Seasonal EIA trigger (B4): surprise vs 5y week-of-year norm ──
+    seasonal = eia_seasonal.compute(DATA_DIR, as_of_str)
+    if seasonal is not None:
+        seas_path = DATA_DIR / "gold" / "eia_seasonal" / f"trade_date={as_of_str}" / "seasonal.json"
+        seas_path.parent.mkdir(parents=True, exist_ok=True)
+        seas_path.write_text(json.dumps(seasonal, indent=2))
+        if seasonal.get("seasonal_available"):
+            logger.info(
+                "EIA seasonal: draw %.0f vs 5y-avg draw %.0f → surprise %.0f MBBL  trigger=%s%s",
+                seasonal["actual_draw_mbbl"], seasonal["seasonal_avg_draw_mbbl"],
+                seasonal["surprise_draw_mbbl"], seasonal["trigger"],
+                "  (DISAGREES with fixed)" if seasonal.get("disagrees_with_fixed") else "",
+            )
+            eia_scenario_trigger = seasonal["trigger"]
 
     agr = agreement.classify(
         front_back_slope=slope_val,

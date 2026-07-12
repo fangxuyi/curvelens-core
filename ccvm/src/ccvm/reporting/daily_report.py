@@ -42,6 +42,7 @@ def generate(
     day_diff: Optional[dict] = None,
     oi: Optional[dict] = None,
     cot: Optional[dict] = None,
+    eia_seasonal: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -57,6 +58,7 @@ def generate(
             "monitor": monitor or {},
             "oi": oi or {},
             "cot": cot or {},
+            "eia_seasonal": eia_seasonal or {},
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -493,6 +495,20 @@ def _render_markdown(report: dict) -> str:
             f"**Supply signal:** `{signal}`  |  **Cushing signal:** `{eia.get('cushing_signal','—').upper()}`  |  **Scenario trigger:** `{trigger}`",
             "",
         ]
+        # Seasonal context (B4): judge the print vs the 5y week-of-year norm
+        seas = s.get("eia_seasonal") or {}
+        if seas.get("seasonal_available"):
+            surp = seas["surprise_draw_mbbl"]
+            lvl = seas.get("level_vs_5y_avg_mbbl")
+            lvl_str = f"; stocks {lvl:+,.0f} MBBL vs 5-yr avg level" if lvl is not None else ""
+            disagree = (f" — *seasonal trigger `{seas['trigger']}` overrides fixed "
+                        f"`{seas['fixed_trigger']}`*" if seas.get("disagrees_with_fixed") else "")
+            lines += [
+                f"**vs 5-yr seasonal:** draw {seas['actual_draw_mbbl']:+,.0f} vs seasonal-avg "
+                f"draw {seas['seasonal_avg_draw_mbbl']:+,.0f} → **surprise {surp:+,.0f} MBBL** "
+                f"(n={seas['seasonal_n_samples']}{lvl_str}){disagree}",
+                "",
+            ]
     else:
         lines.append("*EIA data not available for this date.*\n")
 
