@@ -1,0 +1,54 @@
+# WTI event calendar — machine-readable schedule for scheduled releases.
+#
+# Consumed by ccvm/src/ccvm/knowledge/loader.py:
+#   - the daily brief's "Next Review" section lists upcoming events from here
+#   - (later, D1) event-calendar runs are scheduled from the same file
+#
+# `day` is a weekday code (MON..FRI); times are US Eastern.
+# `dated` holds one-off events (OPEC+ meetings etc.) — the agent may PROPOSE
+# additions via PR, a human approves; never edit silently.
+
+product: wti
+
+recurring:
+  - name: "EIA Weekly Petroleum Status Report"
+    day: WED
+    time_et: "10:30"
+    kind: fundamental
+    note: "covers the week ended the prior Friday; the single biggest scheduled mover"
+  - name: "API Weekly Statistical Bulletin"
+    day: TUE
+    time_et: "16:30"
+    kind: fundamental
+    note: "industry precursor to EIA; sets overnight expectations"
+  - name: "CFTC Commitments of Traders"
+    day: FRI
+    time_et: "15:30"
+    kind: positioning
+    note: "managed-money positioning as of the prior Tuesday"
+  - name: "Baker Hughes rig count"
+    day: FRI
+    time_et: "13:00"
+    kind: supply
+    note: "leading indicator of US shale supply response"
+
+monthly:
+  - name: "EIA Short-Term Energy Outlook (STEO)"
+    window: "first full week, usually Tuesday"
+    kind: forecast
+  - name: "OPEC Monthly Oil Market Report (MOMR)"
+    window: "around the second week"
+    kind: forecast
+  - name: "IEA Oil Market Report (OMR)"
+    window: "mid-month"
+    kind: forecast
+
+# Contract events (option expiry, futures LTD) are NOT listed here — they are
+# computed from ccvm/src/ccvm/reference/wti_calendar.py, the single source of
+# truth for expiry math. The loader merges them in.
+
+dated: []
+  # example:
+  # - name: "OPEC+ ministerial meeting"
+  #   date: 2026-08-03
+  #   kind: opec

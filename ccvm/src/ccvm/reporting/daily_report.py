@@ -231,7 +231,17 @@ def _caveats(quality_report: dict) -> list[str]:
 
 
 def _next_review(trade_date: date, top_catalysts: list[dict]) -> dict:
-    # Find nearest catalyst start date
+    # Scheduled events from the knowledge-pack calendar (B1): weekly releases,
+    # dated one-offs, and contract expiry/LTD dates within the horizon.
+    try:
+        from ..knowledge.loader import upcoming_events
+        scheduled = upcoming_events(trade_date, horizon_days=8)
+    except Exception as exc:  # knowledge pack missing/unparseable — degrade
+        logger_scheduled_error = f"knowledge calendar unavailable: {exc}"
+        scheduled = [{"date": None, "name": logger_scheduled_error,
+                      "time_et": None, "kind": "error"}]
+
+    # Nearest catalyst start date (unchanged)
     upcoming_dates = []
     for e in top_catalysts:
         start = e.get("effective_start")
@@ -247,7 +257,7 @@ def _next_review(trade_date: date, top_catalysts: list[dict]) -> dict:
     next_event = upcoming_dates[0] if upcoming_dates else None
 
     return {
-        "next_eia_release": "Next Wednesday 10:30 ET",
+        "scheduled_events": scheduled,
         "next_catalyst_date": next_event[0].isoformat() if next_event else None,
         "next_catalyst_title": next_event[1] if next_event else None,
     }
@@ -464,8 +474,15 @@ def _render_markdown(report: dict) -> str:
 
     # ── Section 7: Next Review ──
     lines += ["## 8. Next Review", ""]
+    scheduled = next_rev.get("scheduled_events") or []
+    if scheduled:
+        lines.append("**Scheduled** *(from knowledge/wti/calendar.yaml + contract calendar)*")
+        for ev in scheduled:
+            when = ev.get("date") or "?"
+            t = f" {ev['time_et']} ET" if ev.get("time_et") else ""
+            lines.append(f"- {when}{t} — {ev.get('name')} `{ev.get('kind')}`")
+        lines.append("")
     lines += [
-        f"- **EIA release:** {next_rev.get('next_eia_release', 'N/A')}",
         f"- **Next catalyst date:** {next_rev.get('next_catalyst_date', 'N/A')} — {next_rev.get('next_catalyst_title', '')}",
         "",
         "---",
