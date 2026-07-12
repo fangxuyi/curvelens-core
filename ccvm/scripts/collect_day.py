@@ -34,6 +34,7 @@ from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
 from ccvm.collectors.eia import EIACollector
 from ccvm.collectors.rss import RSSNewsCollector
+from ccvm.collectors.yfinance_brent import YFinanceBrentCollector
 from ccvm.collectors.yfinance_futures import YFinanceFuturesCollector
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.raw_store import RawStore
@@ -47,7 +48,7 @@ DATA_DIR = PROJECT_ROOT / "data"
 MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
-_SOURCES = ["yfinance_futures", "cme_bulletin_pdf", "eia", "rss_news", "csv_futures", "all"]
+_SOURCES = ["yfinance_futures", "yfinance_brent", "cme_bulletin_pdf", "eia", "rss_news", "csv_futures", "all"]
 
 
 def main() -> None:
@@ -76,6 +77,12 @@ def main() -> None:
         result = collector.collect(as_of)
         results["yfinance_futures"] = result
         print(f"[yfinance_futures]  {result}")
+
+    if args.source in ("yfinance_brent", "all"):
+        collector = YFinanceBrentCollector(raw_store, manifest_db)
+        result = collector.collect(as_of)
+        results["yfinance_brent"] = result
+        print(f"[yfinance_brent]    {result}")
 
     if args.source in ("cme_bulletin_pdf", "all"):
         collector = CMEBulletinPDFCollector(DATA_DIR, raw_store, manifest_db)

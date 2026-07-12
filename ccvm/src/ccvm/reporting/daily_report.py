@@ -189,6 +189,7 @@ def _history_context_section(ctx) -> dict:
         "bf25_pctile", "bf25_z",
         "skew_slope_pctile", "skew_slope_z",
         "realized_vol_10d", "realized_vol_21d", "vrp_10d", "vrp_21d",
+        "brent_front", "brent_wti_spread", "brent_wti_pctile", "brent_wti_z",
     ]
     out = {k: d[k][0] for k in keys if k in d}
     out["status"] = "available"
@@ -404,6 +405,12 @@ def _render_markdown(report: dict) -> str:
                 return f"RV {label}: {rv:.1%}{v}"
             bits = [b for b in (_rv(rv10, vrp10, "10d"), _rv(rv21, vrp21, "21d")) if b]
             lines.append(f"- Realized vs implied: {'  |  '.join(bits)} — positive VRP = IV rich to realized")
+        # Brent–WTI spread (B5): front-continuous Brent vs WTI front settle
+        bw = ctx.get("brent_wti_spread")
+        if bw is not None:
+            bw_pc = ctx.get("brent_wti_pctile")
+            pc_str = f" ({bw_pc:.0f}%ile)" if bw_pc is not None else ""
+            lines.append(f"- Brent–WTI: {bw:+.2f}$/bbl{pc_str} *(front-continuous approx)*")
         lines.append("")
 
     # ── Options positioning: open interest (C2) ──
