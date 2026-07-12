@@ -41,6 +41,7 @@ def generate(
     streaks: Optional[dict] = None,
     day_diff: Optional[dict] = None,
     oi: Optional[dict] = None,
+    cot: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -55,6 +56,7 @@ def generate(
             "history_context": _history_context_section(history_context),
             "monitor": monitor or {},
             "oi": oi or {},
+            "cot": cot or {},
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -433,6 +435,22 @@ def _render_markdown(report: dict) -> str:
         if doi:
             lines.append(f"- Largest ΔOI: {doi}")
         lines.append("")
+
+    # ── Futures positioning: CFTC COT (B3) ──
+    cot_sec = s.get("cot") or {}
+    if cot_sec.get("mm_net") is not None:
+        wow = cot_sec.get("mm_net_wow")
+        wow_str = f"{wow:+,}" if wow is not None else "n/a"
+        p1 = cot_sec.get("mm_net_pctile_1y")
+        p1_str = f"{p1:.0f}%ile 1y" if p1 is not None else "n/a"
+        lines += [
+            f"**Futures Positioning — CFTC COT** *(report {cot_sec.get('report_date')}; "
+            f"{cot_sec.get('published_note')})*",
+            f"- Managed money net: **{cot_sec['mm_net']:+,}** lots ({wow_str} WoW, {p1_str})",
+            f"- Producer/merchant net: {cot_sec.get('prod_net', 0):+,}  |  "
+            f"Total OI: {cot_sec.get('open_interest', 0):,}",
+            "",
+        ]
 
     # ── Section 2: EIA Fundamentals ──
     lines += ["## 2. EIA Weekly Fundamentals", ""]

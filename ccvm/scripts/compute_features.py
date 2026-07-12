@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ccvm.analytics import (
     agreement,
+    cot_features,
     futures_features,
     history_context,
     monitor_state,
@@ -144,6 +145,17 @@ def main() -> None:
                 e0["expiry"], e0["put_call_oi_ratio"], e0["max_pain"],
                 (e0["call_walls"][0]["strike"] if e0["call_walls"] else None),
             )
+
+    # ── COT positioning context (B3) ──
+    cot = cot_features.compute(DATA_DIR, as_of_str)
+    if cot is not None:
+        cot_path = DATA_DIR / "gold" / "cot" / f"trade_date={as_of_str}" / "cot.json"
+        cot_path.parent.mkdir(parents=True, exist_ok=True)
+        cot_path.write_text(json.dumps(cot, indent=2))
+        logger.info("COT (report %s): MM net %+d  WoW %s  1y %s%%ile",
+                    cot["report_date"], cot["mm_net"],
+                    f"{cot[chr(39)+"mm_net_wow"+chr(39)]:+d}" if cot["mm_net_wow"] is not None else "n/a",
+                    _fmt_pct(cot["mm_net_pctile_1y"]))
 
     # ── History context: percentiles / z-scores vs accumulated gold ──
     ctx = history_context.compute(pq, as_of_str)
