@@ -1,5 +1,7 @@
 # WTI Regime Norms — What "Normal" Looks Like
 
+*Last reviewed: 2026-07-11*
+
 *Reference values for reading the daily numbers. These are long-run norms from
 market history up to the knowledge cutoff; the mechanical percentiles in the
 brief's Context block (gold/history_context) are the live measurement — use

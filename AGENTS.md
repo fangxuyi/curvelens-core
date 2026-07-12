@@ -156,6 +156,11 @@ narrative, judge a borderline alert, or answer a question:
 - `seasonality.md` — how to read the same EIA print in different months
 - `analogs.md` — dated historical episodes for "biggest since X" comparisons
 
+How the pack is generated and maintained — provenance tiers, per-file
+volatility models, the authored→measured migration, and the monthly review
+ritual — is defined in `knowledge/MAINTENANCE.md`. Follow it for any pack
+change you propose.
+
 Rules:
 - **Cite the pack** (file name) when your narrative leans on it. Do not
   assert market lore from memory when the pack covers the topic; if the pack

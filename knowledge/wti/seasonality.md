@@ -1,5 +1,7 @@
 # WTI Seasonality — How to Read the Same Number in Different Months
 
+*Last reviewed: 2026-07-11*
+
 *A 4 MMbbl June crude draw is seasonal; the same draw in January is a signal.
 Judge every weekly print against the season, not just the raw WoW change.*
 

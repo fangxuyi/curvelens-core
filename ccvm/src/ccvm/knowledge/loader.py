@@ -57,6 +57,24 @@ def _next_weekday(after: date, weekday: int) -> date:
     return after + timedelta(days=days)
 
 
+def stale_dated_events(as_of: date, product: str = "wti") -> list[dict]:
+    """Past entries in calendar.yaml's `dated:` list — maintenance debt.
+
+    Per knowledge/MAINTENANCE.md these should be removed once they have
+    passed; upcoming_events() logs a warning when any exist.
+    """
+    stale = []
+    for ev in load_calendar(product).get("dated") or []:
+        try:
+            d = date.fromisoformat(str(ev.get("date")))
+        except (TypeError, ValueError):
+            stale.append(ev)  # unparseable date is also maintenance debt
+            continue
+        if d < as_of:
+            stale.append(ev)
+    return stale
+
+
 def upcoming_events(
     as_of: date,
     horizon_days: int = 8,
@@ -75,6 +93,13 @@ def upcoming_events(
     horizon = as_of + timedelta(days=horizon_days)
     cal = load_calendar(product)
     events: list[dict] = []
+
+    stale = stale_dated_events(as_of, product)
+    if stale:
+        logger.warning(
+            "knowledge/%s/calendar.yaml has %d stale dated event(s) — remove them: %s",
+            product, len(stale), [e.get("name") for e in stale],
+        )
 
     for ev in cal.get("recurring") or []:
         wd = _WEEKDAYS.get(str(ev.get("day", "")).upper())

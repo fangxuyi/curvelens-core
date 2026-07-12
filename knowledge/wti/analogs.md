@@ -1,5 +1,7 @@
 # WTI Historical Analogs — Dated Episodes for Comparison
 
+*Last reviewed: 2026-07-11*
+
 *For "biggest since X" and "this looks like Y" narrative. Dates and magnitudes
 are as-remembered reference points up to the model knowledge cutoff — verify
 specifics before quoting precise figures. The agent may append new episodes

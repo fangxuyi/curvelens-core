@@ -1,5 +1,7 @@
 # WTI Conventions — Contract Specs, Expiry Rules, Data Quirks
 
+*Last reviewed: 2026-07-11*
+
 *Knowledge pack for the CurveLens agent. Cite this file when explaining
 conventions; propose corrections via PR only.*
 
