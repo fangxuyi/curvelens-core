@@ -81,6 +81,10 @@ def main() -> None:
     streaks = monitor_state.compute_streaks(pq, DATA_DIR, as_of_str)
     day_diff = monitor_state.build_day_diff(pq, DATA_DIR, as_of_str)
 
+    # ── Calibration scorecard (C7) ──
+    from ccvm.analytics import scorecard as scorecard_mod
+    scorecard = scorecard_mod.compute(pq, DATA_DIR, as_of_str)
+
     # ── OI analytics (C2, optional) ──
     oi_path = DATA_DIR / "gold" / "oi" / f"trade_date={as_of_str}" / "oi.json"
     oi = json.loads(oi_path.read_text()) if oi_path.exists() else None
@@ -149,6 +153,7 @@ def main() -> None:
         eia_seasonal=eia_seasonal_ctx,
         rnd=rnd_ctx,
         themes=themes,
+        scorecard=scorecard,
     )
 
     md_path = output_dir / f"{as_of_str}.md"

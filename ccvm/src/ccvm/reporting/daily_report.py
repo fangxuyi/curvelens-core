@@ -45,6 +45,7 @@ def generate(
     eia_seasonal: Optional[dict] = None,
     rnd: Optional[dict] = None,
     themes: Optional[list] = None,
+    scorecard: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -67,6 +68,7 @@ def generate(
             "catalysts": _catalysts_section(top_catalysts, themes),
             "agreement": agreement,
             "scenarios": scenarios,
+            "scorecard": scorecard or {},
             "data_caveats": _caveats(quality_report),
             "next_review": _next_review(trade_date, top_catalysts),
         },
@@ -715,6 +717,25 @@ def _render_markdown(report: dict) -> str:
             for t in sc.get("invalidation_triggers", []):
                 lines.append(f"- ❌ Invalidates: {t}")
             lines.append("")
+
+    # ── Calibration scorecard (C7) — rendered once samples accumulate ──
+    sc_card = s.get("scorecard") or {}
+    if sc_card.get("render_ready"):
+        lines += ["## Calibration Scorecard",
+                  f"\n*Agreement-state hit rates over {sc_card.get('dates_covered')} "
+                  f"trade dates — how often each state preceded a move in its "
+                  f"direction (3-session forward).*", "",
+                  "| State | n | fwd 1d | fwd 3d | fwd 5d | hit (3d) |",
+                  "|-------|---|--------|--------|--------|----------|"]
+        for r in sc_card.get("states", []):
+            def _r(key):
+                v = r.get(key)
+                return f"{v:+.2%}" if v is not None else "—"
+            hit = r.get("hit_rate_3d")
+            hit_str = f"{hit:.0%} (n={r.get('n_hits_3d')})" if hit is not None else "—"
+            lines.append(f"| `{r['state']}` | {r['n']} | {_r('avg_fwd_1d')} | "
+                         f"{_r('avg_fwd_3d')} | {_r('avg_fwd_5d')} | {hit_str} |")
+        lines.append("")
 
     # ── Section 6: Caveats ──
     lines += ["## 7. Data Caveats", ""]

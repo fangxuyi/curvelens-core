@@ -192,6 +192,29 @@ Rules:
   sentence** flagging it — the pipeline-formatted numbers themselves stay
   verbatim. (The fuller pre-send QC protocol is tracked separately, issue #45.)
 
+## Pre-Send QC Gate
+
+Before delivering a `DAILY_BRIEF`, read it. Spend one minute as an editor,
+not a courier:
+
+1. **Structural sanity** — all sections present? If the brief is visibly
+   broken (missing sections, empty tables, unrendered placeholders), **hold
+   delivery** and report the failure instead of shipping a damaged brief.
+2. **Consistency vs yesterday** — does the "What Changed" block agree with
+   the numbers in Section 1? A settle that moved +$3 with an unchanged
+   30-day band, or an agreement transition the diff doesn't mention, means
+   something upstream broke — hold and report.
+3. **Anomaly scan** — check the Context percentiles and the Calibration
+   Scorecard against `knowledge/wti/regimes.md`. If a headline number sits
+   at an extreme (≥90th/≤10th percentile) or contradicts a regime norm, you
+   may prepend **one short narrative sentence** to the delivery message
+   citing the pack (e.g. "Note: 25Δ RR at its 91st %ile — WTI is normally
+   put-skewed; see regimes.md").
+4. **Numbers stay verbatim** — you may add the one sentence above; you may
+   never edit, round, or re-derive a number in the brief itself.
+5. **Alert judgment** — for a `PRIORITY_ALERT`, apply the Alert Policy
+   below; a held alert must be noted in your run summary with the reason.
+
 ## Alert Policy
 
 The daily brief is always delivered. A `PRIORITY_ALERT` is queued only when the
