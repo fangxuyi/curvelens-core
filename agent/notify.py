@@ -154,6 +154,26 @@ def _priority_alert_text(date_str: str, sections: dict, agreement: dict, eia_sce
 
 # ── Commands ───────────────────────────────────────────────────────────────
 
+def queue_message(msg_type: str, date_str: str, text: str) -> dict:
+    """Queue one message with the standard <date>:<type> dedup id (D1).
+
+    Used by agent/event_run.py for event-driven messages (EIA_FLASH,
+    COT_UPDATE). Same guarantees as --prepare: a given date can queue each
+    type at most once; already-delivered ids are never re-queued.
+    """
+    msg_id = f"{date_str}:{msg_type}"
+    pending = _load(PENDING_PATH)
+    delivered_ids = {d["id"] for d in _load(DELIVERED_PATH)}
+    if msg_id in delivered_ids or msg_id in {p["id"] for p in pending}:
+        return {"result": "SKIPPED", "id": msg_id, "reason": "already queued or delivered"}
+    pending.append({
+        "id": msg_id, "type": msg_type, "date": date_str,
+        "text": text, "queued_at": _now_iso(),
+    })
+    _save(PENDING_PATH, pending)
+    return {"result": "QUEUED", "id": msg_id, "pending_total": len(pending)}
+
+
 def cmd_prepare(date_str: str) -> None:
     report_json = DATA_DIR / "reports" / f"{date_str}.json"
     if not report_json.exists():

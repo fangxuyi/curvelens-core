@@ -174,9 +174,13 @@ def _build_summary(as_of: date, as_of_str: str) -> dict:
         agreement_state = agr.get("state", agreement_state)
         confidence = agr.get("confidence", confidence)
 
-    # EIA scenario trigger
+    # EIA scenario trigger — prefer the seasonally-adjusted trigger (B4)
+    # over the fixed-threshold one; fall back to gold eia_features.
     eia_scenario = "none"
-    if pq.exists("gold", "eia_features", as_of_str):
+    seas_path = DATA_DIR / "gold" / "eia_seasonal" / f"trade_date={as_of_str}" / "seasonal.json"
+    if seas_path.exists():
+        eia_scenario = json.loads(seas_path.read_text()).get("trigger", "none") or "none"
+    elif pq.exists("gold", "eia_features", as_of_str):
         ed = pq.read("gold", "eia_features", as_of_str).to_pydict()
         eia_scenario = (ed.get("scenario_trigger") or ["none"])[0] or "none"
 

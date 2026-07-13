@@ -106,6 +106,24 @@ approves a futures-only run.
 Parse all JSON with Python, not `jq`, so missing/empty keys do not create shell
 failures.
 
+## Event-Calendar Runs (same-day mini-runs)
+
+Besides the T+1 settlement run, two scheduled mini-runs react to releases the
+same day — no bulletin needed (see `config/cron.example`; schedule sourced
+from `knowledge/wti/calendar.yaml`):
+
+- **EIA flash** (Wed ~10:35 ET): `ccvm/.venv/bin/python agent/event_run.py
+  --event eia`. Collects the fresh EIA data and queues an `EIA_FLASH` only
+  when the seasonally-adjusted trigger confirms (bull/bear) — hours ahead of
+  the settlement brief. `QUIET` is the normal outcome; finish silently.
+- **COT update** (Fri ~15:35 ET): `--event cot`. Queues a `COT_UPDATE` only on
+  a material positioning shift (|WoW| ≥ 20k lots, or 1y percentile ≥90/≤10).
+
+Delivery is identical to the daily run: `notify.py --list-pending`, send the
+queued `EIA_FLASH` / `COT_UPDATE` text verbatim, ack each sent id. The
+`<date>:<type>` dedup ids guarantee an event message can never double-send,
+including against the next morning's settlement run.
+
 ## Repository Layout
 
 The repo has two tiers: the **agent layer** at the root (what the cron run

@@ -60,3 +60,18 @@ class TestMetricExtraction:
     def test_empty_tables(self):
         assert _futures_metrics(pa.table({"contract_code": pa.array([], pa.string())})) == {}
         assert _options_metrics(pa.table({"option_expiry": pa.array([], pa.string())})) == {}
+
+
+class TestBrentSpread:
+    def test_find_and_load_raw_brent(self, tmp_path):
+        from datetime import date
+        import json as _json
+        from ccvm.collectors.yfinance_brent import find_raw_brent, load_brent_closes
+        d = tmp_path / "raw" / "yfinance_brent_front" / "2026-07-10"
+        d.mkdir(parents=True)
+        (d / "brent_front_20260710.json").write_text(
+            _json.dumps({"ticker": "BZ=F", "closes": {"2026-07-10": 76.01}}))
+        assert find_raw_brent(tmp_path, date(2026, 7, 10)) is not None
+        assert find_raw_brent(tmp_path, date(2026, 7, 9)) is None  # file is dated after
+        assert load_brent_closes(tmp_path, date(2026, 7, 10)) == {"2026-07-10": 76.01}
+        assert load_brent_closes(tmp_path, date(2026, 7, 9)) == {}

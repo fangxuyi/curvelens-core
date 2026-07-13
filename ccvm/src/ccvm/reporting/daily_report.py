@@ -41,6 +41,8 @@ def generate(
     streaks: Optional[dict] = None,
     day_diff: Optional[dict] = None,
     oi: Optional[dict] = None,
+    cot: Optional[dict] = None,
+    eia_seasonal: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -55,6 +57,8 @@ def generate(
             "history_context": _history_context_section(history_context),
             "monitor": monitor or {},
             "oi": oi or {},
+            "cot": cot or {},
+            "eia_seasonal": eia_seasonal or {},
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -189,6 +193,7 @@ def _history_context_section(ctx) -> dict:
         "bf25_pctile", "bf25_z",
         "skew_slope_pctile", "skew_slope_z",
         "realized_vol_10d", "realized_vol_21d", "vrp_10d", "vrp_21d",
+        "brent_front", "brent_wti_spread", "brent_wti_pctile", "brent_wti_z",
     ]
     out = {k: d[k][0] for k in keys if k in d}
     out["status"] = "available"
@@ -404,6 +409,12 @@ def _render_markdown(report: dict) -> str:
                 return f"RV {label}: {rv:.1%}{v}"
             bits = [b for b in (_rv(rv10, vrp10, "10d"), _rv(rv21, vrp21, "21d")) if b]
             lines.append(f"- Realized vs implied: {'  |  '.join(bits)} — positive VRP = IV rich to realized")
+        # Brent–WTI spread (B5): front-continuous Brent vs WTI front settle
+        bw = ctx.get("brent_wti_spread")
+        if bw is not None:
+            bw_pc = ctx.get("brent_wti_pctile")
+            pc_str = f" ({bw_pc:.0f}%ile)" if bw_pc is not None else ""
+            lines.append(f"- Brent–WTI: {bw:+.2f}$/bbl{pc_str} *(front-continuous approx)*")
         lines.append("")
 
     # ── Options positioning: open interest (C2) ──
@@ -426,6 +437,22 @@ def _render_markdown(report: dict) -> str:
         if doi:
             lines.append(f"- Largest ΔOI: {doi}")
         lines.append("")
+
+    # ── Futures positioning: CFTC COT (B3) ──
+    cot_sec = s.get("cot") or {}
+    if cot_sec.get("mm_net") is not None:
+        wow = cot_sec.get("mm_net_wow")
+        wow_str = f"{wow:+,}" if wow is not None else "n/a"
+        p1 = cot_sec.get("mm_net_pctile_1y")
+        p1_str = f"{p1:.0f}%ile 1y" if p1 is not None else "n/a"
+        lines += [
+            f"**Futures Positioning — CFTC COT** *(report {cot_sec.get('report_date')}; "
+            f"{cot_sec.get('published_note')})*",
+            f"- Managed money net: **{cot_sec['mm_net']:+,}** lots ({wow_str} WoW, {p1_str})",
+            f"- Producer/merchant net: {cot_sec.get('prod_net', 0):+,}  |  "
+            f"Total OI: {cot_sec.get('open_interest', 0):,}",
+            "",
+        ]
 
     # ── Section 2: EIA Fundamentals ──
     lines += ["## 2. EIA Weekly Fundamentals", ""]
@@ -468,6 +495,20 @@ def _render_markdown(report: dict) -> str:
             f"**Supply signal:** `{signal}`  |  **Cushing signal:** `{eia.get('cushing_signal','—').upper()}`  |  **Scenario trigger:** `{trigger}`",
             "",
         ]
+        # Seasonal context (B4): judge the print vs the 5y week-of-year norm
+        seas = s.get("eia_seasonal") or {}
+        if seas.get("seasonal_available"):
+            surp = seas["surprise_draw_mbbl"]
+            lvl = seas.get("level_vs_5y_avg_mbbl")
+            lvl_str = f"; stocks {lvl:+,.0f} MBBL vs 5-yr avg level" if lvl is not None else ""
+            disagree = (f" — *seasonal trigger `{seas['trigger']}` overrides fixed "
+                        f"`{seas['fixed_trigger']}`*" if seas.get("disagrees_with_fixed") else "")
+            lines += [
+                f"**vs 5-yr seasonal:** draw {seas['actual_draw_mbbl']:+,.0f} vs seasonal-avg "
+                f"draw {seas['seasonal_avg_draw_mbbl']:+,.0f} → **surprise {surp:+,.0f} MBBL** "
+                f"(n={seas['seasonal_n_samples']}{lvl_str}){disagree}",
+                "",
+            ]
     else:
         lines.append("*EIA data not available for this date.*\n")
 

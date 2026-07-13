@@ -24,49 +24,49 @@ EIA_BASE_URL = "https://api.eia.gov/v2"
 # key        : used in filename and to look up spec in fetch()
 # endpoint   : path appended to EIA_BASE_URL
 # facets     : dict of facet_name → list of values
-# length     : rows to fetch (52 weeks ≈ 1 year of weekly history)
+# length     : rows to fetch (1100 rows ≈ 5y×4 interleaved series — powers the seasonal bands, B4)
 SERIES_SPECS: list[dict] = [
     {
         "key": "us_crude_stocks",
         "endpoint": "petroleum/stoc/wstk/data/",
         "facets": {"product": ["EPC0"], "duoarea": ["NUS"]},
-        "length": 52,
+        "length": 1100,
     },
     {
         "key": "cushing_crude_stocks",
         "endpoint": "petroleum/stoc/wstk/data/",
         "facets": {"product": ["EPC0"], "duoarea": ["YCUOK"]},
-        "length": 52,
+        "length": 1100,
     },
     {
         "key": "us_crude_imports",
         "endpoint": "petroleum/move/wkly/data/",
         "facets": {"series": ["WCRIMUS2"]},
-        "length": 52,
+        "length": 1100,
     },
     {
         "key": "us_crude_exports",
         "endpoint": "petroleum/move/wkly/data/",
         "facets": {"series": ["WCREXUS2"]},
-        "length": 52,
+        "length": 1100,
     },
     {
         "key": "us_refinery_utilization",
         "endpoint": "petroleum/pnp/wiup/data/",
         "facets": {"duoarea": ["NUS"]},
-        "length": 52,
+        "length": 1100,
     },
     {
         "key": "us_gasoline_stocks",
         "endpoint": "petroleum/stoc/wstk/data/",
         "facets": {"product": ["EPM0"], "duoarea": ["NUS"]},
-        "length": 52,
+        "length": 1100,
     },
     {
         "key": "us_distillate_stocks",
         "endpoint": "petroleum/stoc/wstk/data/",
         "facets": {"product": ["EPD0"], "duoarea": ["NUS"]},
-        "length": 52,
+        "length": 1100,
     },
 ]
 

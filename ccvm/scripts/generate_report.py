@@ -85,6 +85,14 @@ def main() -> None:
     oi_path = DATA_DIR / "gold" / "oi" / f"trade_date={as_of_str}" / "oi.json"
     oi = json.loads(oi_path.read_text()) if oi_path.exists() else None
 
+    # ── COT positioning (B3, optional) ──
+    cot_path = DATA_DIR / "gold" / "cot" / f"trade_date={as_of_str}" / "cot.json"
+    cot = json.loads(cot_path.read_text()) if cot_path.exists() else None
+
+    # ── EIA seasonal (B4, optional) ──
+    seas_path = DATA_DIR / "gold" / "eia_seasonal" / f"trade_date={as_of_str}" / "seasonal.json"
+    eia_seasonal_ctx = json.loads(seas_path.read_text()) if seas_path.exists() else None
+
     # ── Agreement ──
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     if agr_path.exists():
@@ -125,6 +133,8 @@ def main() -> None:
         streaks=streaks,
         day_diff=day_diff,
         oi=oi,
+        cot=cot,
+        eia_seasonal=eia_seasonal_ctx,
     )
 
     md_path = output_dir / f"{as_of_str}.md"
