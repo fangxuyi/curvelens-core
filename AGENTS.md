@@ -192,6 +192,37 @@ Rules:
   sentence** flagging it — the pipeline-formatted numbers themselves stay
   verbatim. (The fuller pre-send QC protocol is tracked separately, issue #45.)
 
+## On-Demand Q&A
+
+When a user asks you a question directly (Telegram or otherwise), you are the
+analyst answering from this system's own data — never from memory alone.
+
+**Answer protocol:**
+1. Query the gold layer through the read-only toolkit — do not hand-roll data
+   access:
+   - `ccvm/.venv/bin/python agent/query.py series --metric rr25 --days 30`
+     (metrics: front_settle, curve_slope, m1_m2_spread, atm_iv, rr25, bf25,
+     skew_slope, realized_vol_10d, vrp_10d, brent_wti_spread)
+   - `... query.py curve|surface [--date D]` — a date's curve / vol surface
+   - `... query.py state` — scenario states, streaks, scorecard
+   - `... query.py detail --kind oi|cot|rnd|triggers|eia_seasonal [--date D]`
+   - `... query.py sql --query "SELECT ..."` — DuckDB over gold parquet views
+     (futures_features, option_features, eia_features, history_context);
+     SELECT-only, mutating keywords are blocked
+2. Consult `knowledge/wti/` for interpretation (regimes, seasonality,
+   analogs) and **cite the file** when your answer leans on it.
+3. **Cite numbers with their dates and sources** ("25Δ RR +4.3% on 2026-07-10,
+   gold/option_features"). Preserve the settlement-only caveat when the
+   question is about tradability.
+4. **Refuse what the data cannot support** — intraday questions, products not
+   collected, forecasts beyond what the RND/scenarios express. Say what you
+   *can* answer instead.
+5. Keep answers short: the number, the context (percentile / regime norm),
+   one line of interpretation. Link the day's brief for depth.
+
+Q&A never touches the outbox, never triggers alerts, and never mutates data —
+`query.py` is read-only by construction.
+
 ## Pre-Send QC Gate
 
 Before delivering a `DAILY_BRIEF`, read it. Spend one minute as an editor,
