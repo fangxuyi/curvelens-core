@@ -81,6 +81,10 @@ def main() -> None:
     streaks = monitor_state.compute_streaks(pq, DATA_DIR, as_of_str)
     day_diff = monitor_state.build_day_diff(pq, DATA_DIR, as_of_str)
 
+    # ── Calibration scorecard (C7) ──
+    from ccvm.analytics import scorecard as scorecard_mod
+    scorecard = scorecard_mod.compute(pq, DATA_DIR, as_of_str)
+
     # ── OI analytics (C2, optional) ──
     oi_path = DATA_DIR / "gold" / "oi" / f"trade_date={as_of_str}" / "oi.json"
     oi = json.loads(oi_path.read_text()) if oi_path.exists() else None
@@ -116,8 +120,16 @@ def main() -> None:
     catalysts = store.load(as_of)
     catalysts.sort(key=lambda e: e.get("relevance_score", 0), reverse=True)
 
+    # ── C5: dedup near-identical stories, decay past events, cluster themes ──
+    from ccvm.agents.catalyst_dedup import apply_decay, cluster_themes, dedupe
+    catalysts = apply_decay(dedupe(catalysts), as_of)
+    themes = cluster_themes(catalysts)
+
     # ── Scenarios ──
-    scenarios = gen_scenarios(gold_fut, gold_opt, as_of)
+    # ── C6: top catalysts feed the event-scenario slot ──
+    from ccvm.scenarios.scenario_engine import event_shocks_from_catalysts
+    extra = event_shocks_from_catalysts(catalysts)
+    scenarios = gen_scenarios(gold_fut, gold_opt, as_of, extra_shocks=extra or None)
     scenarios_dict = [to_dict(s) for s in scenarios]
 
     # ── Report ──
@@ -140,6 +152,8 @@ def main() -> None:
         cot=cot,
         eia_seasonal=eia_seasonal_ctx,
         rnd=rnd_ctx,
+        themes=themes,
+        scorecard=scorecard,
     )
 
     md_path = output_dir / f"{as_of_str}.md"
