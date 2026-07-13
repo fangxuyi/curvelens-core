@@ -135,6 +135,27 @@ def apply_vol_shock(
     return results
 
 
+_SIGMA_WEEKLY = {"bull": +2.0, "base": 0.0, "bear": -2.0}  # k × σ-implied weekly move
+_WEEK_FRAC = (5.0 / 252.0) ** 0.5
+
+
+def _resolve_sigma_shock(shock: "ScenarioShock", front_settle, front_iv) -> "ScenarioShock":
+    """Resolve a standard shock to σ-based dollars when the surface allows (E3)."""
+    k = _SIGMA_WEEKLY.get(shock.name)
+    if k is None or not front_settle or not front_iv:
+        return shock  # event shocks and missing-surface days keep their sizing
+    shift = round(k * front_settle * front_iv * _WEEK_FRAC, 2)
+    # tilt scales with the shift so curve shape stays proportional
+    scale = abs(shift) / abs(shock.curve_shift_usd) if shock.curve_shift_usd else 0.0
+    from dataclasses import replace
+    return replace(
+        shock,
+        curve_shift_usd=shift,
+        curve_tilt=round(shock.curve_tilt * scale, 4) if scale else shock.curve_tilt,
+        description=f"{shock.description} [{k:+.0f}σ weekly ≈ {shift:+.2f}$]",
+    )
+
+
 def generate(
     gold_futures: pa.Table,
     gold_options: Optional[pa.Table],
@@ -170,7 +191,15 @@ def generate(
         expiry_ivs = [{"option_expiry": k, "atm_iv": v}
                       for k, v in sorted(seen.items())]
 
-    shocks = list(_STANDARD_SHOCKS) + (extra_shocks or [])
+    # E3: σ-based sizing — resolve the standard bull/bear shifts from the
+    # front ATM-IV-implied weekly move instead of a fixed ±$5/bbl (which is a
+    # WTI-scale number). shift = k × F × σ_ATM × √(5/252); k = ±2 (a 2-sigma
+    # week). Self-calibrates across products AND vol regimes; falls back to
+    # the legacy dollar shifts when the surface is missing.
+    front_settle = contracts[0]["settlement"] if contracts else None
+    front_iv = expiry_ivs[0]["atm_iv"] if expiry_ivs else None
+    shocks = [_resolve_sigma_shock(s, front_settle, front_iv) for s in _STANDARD_SHOCKS]
+    shocks += (extra_shocks or [])
     results: list[ScenarioResult] = []
 
     for shock in shocks:
