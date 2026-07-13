@@ -26,6 +26,7 @@ from ccvm.analytics import (
     agreement,
     cot_features,
     eia_seasonal,
+    rnd,
     futures_features,
     history_context,
     monitor_state,
@@ -146,6 +147,19 @@ def main() -> None:
                 e0["expiry"], e0["put_call_oi_ratio"], e0["max_pain"],
                 (e0["call_walls"][0]["strike"] if e0["call_walls"] else None),
             )
+
+    # ── Risk-neutral density (C3) ──
+    if gold_opt is not None and len(gold_opt) > 0:
+        rnd_out = rnd.compute(gold_opt, as_of_str)
+        if rnd_out["expiries"]:
+            rnd_path = DATA_DIR / "gold" / "rnd" / f"trade_date={as_of_str}" / "rnd.json"
+            rnd_path.parent.mkdir(parents=True, exist_ok=True)
+            rnd_path.write_text(json.dumps(rnd_out, indent=2))
+            e0 = rnd_out["expiries"][0]
+            em = e0.get("expected_move_straddle")
+            logger.info("RND (front %s): expected move %s  RN sigma %.2f  skew %+.2f  mass %.2f",
+                        e0["expiry"], f"+/-{em:.2f}" if em else "n/a",
+                        e0["rn_std"], e0["rn_skew"], e0["raw_mass"])
 
     # ── COT positioning context (B3) ──
     cot = cot_features.compute(DATA_DIR, as_of_str)

@@ -89,6 +89,10 @@ def main() -> None:
     cot_path = DATA_DIR / "gold" / "cot" / f"trade_date={as_of_str}" / "cot.json"
     cot = json.loads(cot_path.read_text()) if cot_path.exists() else None
 
+    # ── RND (C3, optional) ──
+    rnd_path = DATA_DIR / "gold" / "rnd" / f"trade_date={as_of_str}" / "rnd.json"
+    rnd_ctx = json.loads(rnd_path.read_text()) if rnd_path.exists() else None
+
     # ── EIA seasonal (B4, optional) ──
     seas_path = DATA_DIR / "gold" / "eia_seasonal" / f"trade_date={as_of_str}" / "seasonal.json"
     eia_seasonal_ctx = json.loads(seas_path.read_text()) if seas_path.exists() else None
@@ -135,6 +139,7 @@ def main() -> None:
         oi=oi,
         cot=cot,
         eia_seasonal=eia_seasonal_ctx,
+        rnd=rnd_ctx,
     )
 
     md_path = output_dir / f"{as_of_str}.md"

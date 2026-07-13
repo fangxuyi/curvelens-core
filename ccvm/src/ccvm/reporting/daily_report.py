@@ -43,6 +43,7 @@ def generate(
     oi: Optional[dict] = None,
     cot: Optional[dict] = None,
     eia_seasonal: Optional[dict] = None,
+    rnd: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -59,6 +60,8 @@ def generate(
             "oi": oi or {},
             "cot": cot or {},
             "eia_seasonal": eia_seasonal or {},
+            "rnd": rnd or {},
+            "term_structure": _term_structure_section(gold_futures, gold_options),
             "eia_fundamentals": _eia_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts),
             "agreement": agreement,
@@ -175,6 +178,47 @@ def _catalysts_section(top_catalysts: list[dict]) -> dict:
             for i, e in enumerate(top_catalysts[:5])
         ],
     }
+
+
+def _term_structure_section(gold_futures, gold_options) -> dict:
+    """Vol + futures term structure (C4) from tables already in hand."""
+    out: dict = {"status": "unavailable"}
+
+    # Vol strip: one row per expiry (surface metrics are constant within expiry)
+    if gold_options is not None and len(gold_options) > 0:
+        od = gold_options.to_pydict()
+        seen: dict[str, dict] = {}
+        for i in range(len(od["option_expiry"])):
+            exp = od["option_expiry"][i]
+            if exp not in seen and od["atm_iv"][i] is not None:
+                seen[exp] = {"expiry": exp, "atm_iv": od["atm_iv"][i],
+                             "rr25": od["risk_reversal_25d"][i]}
+        strip = [seen[e] for e in sorted(seen)][:6]
+        out["vol_strip"] = strip
+        if len(strip) >= 2 and strip[0]["atm_iv"] and strip[1]["atm_iv"]:
+            out["front_2nd_iv_spread"] = strip[0]["atm_iv"] - strip[1]["atm_iv"]
+        out["status"] = "available"
+
+    # Futures spreads: M1−M3/M6/M12 + annualized front roll yield
+    if gold_futures is not None and len(gold_futures) > 0:
+        fd = gold_futures.to_pydict()
+        settles = fd["settlement"]
+        codes = fd["contract_code"]
+        m1 = settles[0] if settles else None
+
+        def _spread(n):
+            return (m1 - settles[n], codes[n]) if m1 is not None and len(settles) > n \
+                and settles[n] is not None else (None, None)
+
+        for label, n in (("m1_m3", 2), ("m1_m6", 5), ("m1_m12", 11)):
+            v, code = _spread(n)
+            out[label] = v
+            out[f"{label}_code"] = code
+        if m1 and len(settles) > 1 and settles[1]:
+            # positive = backwardation = positive carry for a rolling long
+            out["roll_yield_annualized"] = (m1 - settles[1]) / m1 * 12.0
+        out["status"] = "available"
+    return out
 
 
 def _history_context_section(ctx) -> dict:
@@ -453,6 +497,53 @@ def _render_markdown(report: dict) -> str:
             f"Total OI: {cot_sec.get('open_interest', 0):,}",
             "",
         ]
+
+    # ── Market-implied distribution (C3, Breeden–Litzenberger) ──
+    rnd_sec = s.get("rnd") or {}
+    for ex in (rnd_sec.get("expiries") or [])[:1]:  # front expiry in the brief
+        em = ex.get("expected_move_straddle")
+        em_str = f"±${em:.2f}" if em is not None else "n/a"
+        ladder = ex.get("prob_ladder") or {}
+        ladder_str = " · ".join(
+            f"P(>${k.split('_')[-1]}): {v:.0%}" for k, v in sorted(
+                ladder.items(), key=lambda kv: float(kv[0].split("_")[-1]))
+        )
+        lines += [
+            f"**Market-Implied Distribution — {ex.get('expiry')}** "
+            f"*(Breeden–Litzenberger on the settlement curve)*",
+            f"- Expected move to expiry: **{em_str}** (straddle)  |  "
+            f"RN σ: ${ex.get('rn_std'):.2f}  |  RN skew: {ex.get('rn_skew'):+.2f}",
+        ]
+        if ladder_str:
+            lines.append(f"- {ladder_str}")
+        lines.append(f"- *diagnostics: {ex.get('n_strikes')} strikes, "
+                     f"raw mass {ex.get('raw_mass'):.2f} (→1.00 = clean grid)*")
+        lines.append("")
+
+    # ── Term structure (C4) ──
+    ts = s.get("term_structure") or {}
+    if ts.get("status") == "available":
+        strip = ts.get("vol_strip") or []
+        if strip:
+            iv_str = " → ".join(f"{r['expiry'][5:]}: {r['atm_iv']:.1%}" for r in strip)
+            rr_str = " / ".join(f"{r['rr25']:+.1%}" if r.get("rr25") is not None else "n/a"
+                                for r in strip)
+            f2 = ts.get("front_2nd_iv_spread")
+            f2_str = f"  *(front−2nd: {f2*100:+.1f}pp)*" if f2 is not None else ""
+            lines += ["**Term Structure**",
+                      f"- ATM IV strip: {iv_str}{f2_str}",
+                      f"- 25Δ RR by expiry: {rr_str}"]
+        spreads = []
+        for label, key in (("M1−M3", "m1_m3"), ("M1−M6", "m1_m6"), ("M1−M12", "m1_m12")):
+            v = ts.get(key)
+            if v is not None:
+                spreads.append(f"{label}: {v:+.2f}")
+        ry = ts.get("roll_yield_annualized")
+        if ry is not None:
+            spreads.append(f"roll yield: {ry:+.1%}/yr")
+        if spreads:
+            lines.append(f"- Futures: {'  |  '.join(spreads)}")
+        lines.append("")
 
     # ── Section 2: EIA Fundamentals ──
     lines += ["## 2. EIA Weekly Fundamentals", ""]
