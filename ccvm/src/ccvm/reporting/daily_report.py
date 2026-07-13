@@ -44,6 +44,7 @@ def generate(
     cot: Optional[dict] = None,
     eia_seasonal: Optional[dict] = None,
     rnd: Optional[dict] = None,
+    themes: Optional[list] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -63,7 +64,7 @@ def generate(
             "rnd": rnd or {},
             "term_structure": _term_structure_section(gold_futures, gold_options),
             "eia_fundamentals": _eia_section(gold_eia),
-            "catalysts": _catalysts_section(top_catalysts),
+            "catalysts": _catalysts_section(top_catalysts, themes),
             "agreement": agreement,
             "scenarios": scenarios,
             "data_caveats": _caveats(quality_report),
@@ -157,16 +158,20 @@ def _eia_section(gold_eia: Optional[pa.Table]) -> dict:
     }
 
 
-def _catalysts_section(top_catalysts: list[dict]) -> dict:
-    # Rank is the position in the globally score-sorted list. The stored
-    # relevance_rank is per-extraction-batch and collides across batches
-    # (multiple runs per day produced 1,1,2,1,2 in the brief).
+def _catalysts_section(top_catalysts: list[dict], themes: Optional[list] = None) -> dict:
+    # Rank is the position in the globally score-sorted list (post dedup/decay).
+    # The stored relevance_rank is per-extraction-batch and collides across
+    # batches (multiple runs per day produced 1,1,2,1,2 in the brief).
     return {
         "count": len(top_catalysts),
+        "themes": themes or [],
         "top_events": [
             {
                 "rank": i + 1,
-                "score": e.get("relevance_score"),
+                "score": e.get("decayed_score", e.get("relevance_score")),
+                "raw_score": e.get("relevance_score"),
+                "decay_days": e.get("decay_days"),
+                "sources": e.get("duplicate_count", 1),
                 "event_id": e.get("event_id"),
                 "title": e.get("title"),
                 "direction": e.get("direction"),
@@ -608,13 +613,23 @@ def _render_markdown(report: dict) -> str:
     if cats["count"] == 0:
         lines.append("*No catalyst events on record for this date.*\n")
     else:
-        lines.append(f"*{cats['count']} event(s) extracted and ranked.*\n")
-        lines.append("| # | Score | Direction | Title | Horizon |")
-        lines.append("|---|-------|-----------|-------|---------|")
+        lines.append(f"*{cats['count']} distinct event(s) after dedup; "
+                     f"scores decay 5%/day past the event start.*\n")
+        # Theme summary (C5)
+        themes = cats.get("themes") or []
+        if themes:
+            theme_str = " · ".join(
+                f"{t['event_type']}/{t['direction']} ×{t['count']}" for t in themes[:5])
+            lines.append(f"**Themes:** {theme_str}\n")
+        lines.append("| # | Score | Src | Direction | Title | Horizon |")
+        lines.append("|---|-------|-----|-----------|-------|---------|")
         for ev in cats["top_events"]:
             title = (ev.get("title") or "")[:60]
+            score = ev.get("score")
+            decay = ev.get("decay_days")
+            score_str = f"{score}" + (f" (−{decay}d)" if decay else "")
             lines.append(
-                f"| {ev.get('rank')} | {ev.get('score')} | "
+                f"| {ev.get('rank')} | {score_str} | ×{ev.get('sources', 1)} | "
                 f"{ev.get('direction')} | {title} | {ev.get('affected_horizon')} |"
             )
         lines.append("")
@@ -638,10 +653,14 @@ def _render_markdown(report: dict) -> str:
         name = sc.get("name", "").upper()
         desc = sc.get("description", "")
         fi = sc.get("front_month_impact", 0)
+        # A5: the old "Curve P&L estimate: sum of shocks × 1 contract each" was
+        # a placeholder that implied a position nobody holds — show the honest
+        # per-contract quantities instead.
+        avg_shift = sc.get("avg_curve_shift")
+        avg_str = f"  |  **Avg curve shift:** {avg_shift:+.2f} $/bbl" if avg_shift is not None else ""
         lines += [
             f"### {name}: {desc}",
-            f"- **Front-month impact:** {fi:+.2f} $/bbl",
-            f"- **Curve P&L estimate:** {sc.get('curve_pnl_estimate', 0):+.2f} $/bbl × contract count",
+            f"- **Front-month impact:** {fi:+.2f} $/bbl{avg_str}",
         ]
         shocked = sc.get("shocked_settlements", [])
         if shocked:

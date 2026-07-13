@@ -38,7 +38,7 @@ class ScenarioResult:
     shocked_settlements: list[dict]  # {contract_code, delivery_month, base, shocked, diff}
     vol_shifts: list[dict]           # {option_expiry, base_atm_iv, shocked_iv}
     front_month_impact: float        # $/bbl change at front month
-    curve_pnl_estimate: float        # sum of shocks × 1 contract each
+    avg_curve_shift: float           # mean shocked−base across contracts ($/bbl, per contract)
     confirmation_triggers: list[str]
     invalidation_triggers: list[str]
     as_of_date: str
@@ -178,7 +178,7 @@ def generate(
         vol_shifts = apply_vol_shock(expiry_ivs, shock)
 
         front_impact = shocked_settlements[0]["diff"] if shocked_settlements else 0.0
-        curve_pnl = sum(s["diff"] for s in shocked_settlements)
+        avg_shift = (sum(s["diff"] for s in shocked_settlements) / len(shocked_settlements)) if shocked_settlements else 0.0
 
         results.append(ScenarioResult(
             name=shock.name,
@@ -186,7 +186,7 @@ def generate(
             shocked_settlements=shocked_settlements,
             vol_shifts=vol_shifts,
             front_month_impact=round(front_impact, 3),
-            curve_pnl_estimate=round(curve_pnl, 3),
+            avg_curve_shift=round(avg_shift, 3),
             confirmation_triggers=shock.confirmation_triggers,
             invalidation_triggers=shock.invalidation_triggers,
             as_of_date=as_of_date.isoformat(),
@@ -197,3 +197,53 @@ def generate(
 
 def to_dict(result: ScenarioResult) -> dict:
     return asdict(result)
+
+
+# ── Event scenarios from catalysts (C6) ─────────────────────────────────────
+
+_MAGNITUDE_SHOCK_USD = {"high": 6.0, "medium": 4.0, "low": 2.0, "unknown": 2.0}
+_EVENT_MIN_SCORE = 70
+
+
+def event_shocks_from_catalysts(events: list[dict]) -> list[ScenarioShock]:
+    """Build event scenarios from the top deduped/decayed catalysts (C6).
+
+    Fills the engine's long-unused event slot: the strongest bullish_supply
+    and bearish_demand catalysts (decayed score ≥ 70) each become a shock,
+    sized by extracted magnitude and tilted toward the prompt when the
+    affected horizon is near-dated. Triggers reference the event itself so
+    the agent can judge resolution.
+    """
+    from ..agents.catalyst_dedup import top_directional
+
+    shocks: list[ScenarioShock] = []
+    specs = [
+        ("bullish_supply", +1.0, "event_bull"),
+        ("bearish_demand", -1.0, "event_bear"),
+    ]
+    for direction, sign, name in specs:
+        ev = top_directional(events, direction)
+        if ev is None:
+            continue
+        score = ev.get("decayed_score", ev.get("relevance_score", 0))
+        if score < _EVENT_MIN_SCORE:
+            continue
+        mag = _MAGNITUDE_SHOCK_USD.get(ev.get("magnitude", "unknown"), 2.0)
+        prompt_horizon = ev.get("affected_horizon") in ("prompt_1m", "prompt_3m")
+        title = (ev.get("title") or "")[:70]
+        shocks.append(ScenarioShock(
+            name=name,
+            description=f"Event: {title}",
+            curve_shift_usd=sign * mag,
+            curve_tilt=(-0.25 if prompt_horizon else -0.10) * sign,
+            vol_shift_pct=+0.04,
+            confirmation_triggers=[
+                f"event develops as reported (score {score}, {ev.get('magnitude')} magnitude)",
+                "front-month follows through in the event direction",
+            ],
+            invalidation_triggers=[
+                "event resolves or is contradicted by primary sources",
+                "front-month retraces the initial event move",
+            ],
+        ))
+    return shocks

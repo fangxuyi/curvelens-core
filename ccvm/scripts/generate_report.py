@@ -116,8 +116,16 @@ def main() -> None:
     catalysts = store.load(as_of)
     catalysts.sort(key=lambda e: e.get("relevance_score", 0), reverse=True)
 
+    # ── C5: dedup near-identical stories, decay past events, cluster themes ──
+    from ccvm.agents.catalyst_dedup import apply_decay, cluster_themes, dedupe
+    catalysts = apply_decay(dedupe(catalysts), as_of)
+    themes = cluster_themes(catalysts)
+
     # ── Scenarios ──
-    scenarios = gen_scenarios(gold_fut, gold_opt, as_of)
+    # ── C6: top catalysts feed the event-scenario slot ──
+    from ccvm.scenarios.scenario_engine import event_shocks_from_catalysts
+    extra = event_shocks_from_catalysts(catalysts)
+    scenarios = gen_scenarios(gold_fut, gold_opt, as_of, extra_shocks=extra or None)
     scenarios_dict = [to_dict(s) for s in scenarios]
 
     # ── Report ──
@@ -140,6 +148,7 @@ def main() -> None:
         cot=cot,
         eia_seasonal=eia_seasonal_ctx,
         rnd=rnd_ctx,
+        themes=themes,
     )
 
     md_path = output_dir / f"{as_of_str}.md"
