@@ -45,21 +45,23 @@ def classify(
       evidence          list of supporting signals
 
     E2: the slope signal is judged in price-relative units (slope ÷ front
-    price, per month) so thresholds carry across products. When
-    front_settlement is missing, a WTI-scale reference price keeps legacy
-    behavior identical.
+    price, per month) so thresholds carry across products. front_settlement
+    is therefore a required input like slope and ATM IV — a missing settle
+    means the classification cannot be normalized honestly, so it degrades
+    to insufficient_data the same way the other missing inputs do (no silent
+    reference-price assumption).
     """
     evidence: list[str] = []
 
-    if front_back_slope is None or atm_iv is None:
+    if front_back_slope is None or atm_iv is None or not front_settlement:
         return {
             "state": "insufficient_data",
             "confidence": "low",
-            "evidence": ["missing futures slope or ATM IV"],
+            "evidence": ["missing futures slope, ATM IV, or front settlement"],
         }
 
     # ── Futures signal (price-relative slope) ──
-    ref_price = front_settlement if front_settlement else 70.0  # WTI-scale fallback
+    ref_price = front_settlement
     slope_pct = front_back_slope / ref_price
     if slope_pct < _SLOPE_BACKWARDATION_PCT:
         futures_signal = "upside"
