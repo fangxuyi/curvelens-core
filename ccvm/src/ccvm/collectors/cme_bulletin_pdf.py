@@ -16,9 +16,10 @@ Data row column order (left→right):
   | SETT_PRICE | [sign | UNCH] | PT_CHGE | DELTA | EXERCISES
   | OC_VOLUME | GLOBEX_VOLUME | PNT_VOLUME | OPEN_INTEREST | [OI_SIGN | UNCH] | OI_CHG
 
-Expiry convention:
-  "AUG26" → option expires on 3rd Friday of August 2026
-           → underlying = CL September 2026 (CLU26)
+Expiry convention (per product profile + calendar module):
+  "AUG26" → option expiry from the product calendar (WTI: futures LTD − 3
+  business days → 2026-08-17); underlying offset by underlying_month_offset
+  (WTI: +1 → CLU26)
 """
 from __future__ import annotations
 
@@ -32,7 +33,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from ..reference.wti_calendar import option_expiry_date
+from ..reference.product import get_product
 from ..storage.manifest_db import ManifestDB
 from ..storage.raw_store import RawStore
 
@@ -57,18 +58,20 @@ def _expiry_code_to_option_info(code: str) -> tuple[date, str, str]:
     """
     'AUG26' → (option_expiry, underlying_contract, underlying_delivery_month)
 
-    Bulletin label month = option expiry month; underlying = next calendar
-    month's CL futures. The expiry date comes from the WTI calendar module
-    (single source of truth): LO expiry = futures LTD − 3 business days,
-    holiday-aware. E.g. AUG26 → underlying CLU26 (Sep delivery), expiry
-    2026-08-17 (verified vs the ICE WTI American options schedule).
+    Bulletin label month = option expiry month; the underlying is offset by
+    the product profile's underlying_month_offset (WTI: +1 — AUG26 label →
+    CLU26). The expiry date comes from the product's calendar module (single
+    source of truth; for WTI: option expiry = futures LTD − 3 business days,
+    holiday-aware, verified vs the ICE schedule).
     """
+    p = get_product()
     month_num = _MONTH_NAME_TO_NUM[code[:3].upper()]
     year = 2000 + int(code[3:])
-    und_month = month_num % 12 + 1
-    und_year = year + (1 if month_num == 12 else 0)
-    option_expiry = option_expiry_date(und_year, und_month)
-    underlying_contract = f"CL{_MONTH_NUM_TO_LETTER[und_month]}{str(und_year)[2:]}"
+    total = month_num + p.bulletin.underlying_month_offset - 1
+    und_month = total % 12 + 1
+    und_year = year + total // 12
+    option_expiry = p.calendar.option_expiry_date(und_year, und_month)
+    underlying_contract = f"{p.futures_prefix}{_MONTH_NUM_TO_LETTER[und_month]}{str(und_year)[2:]}"
     underlying_delivery_month = f"{und_year:04d}-{und_month:02d}"
     return option_expiry, underlying_contract, underlying_delivery_month
 
@@ -212,8 +215,13 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
 
         # ── Detect product section headers ──
         if _PRODUCT_HEADER_RE.match(stripped):
-            lo_call = bool(re.search(r'^LO\s+CALL\s+NYMEX\s+CRUDE\s+OIL\s+OPTIONS', stripped, re.IGNORECASE))
-            lo_put = bool(re.search(r'^LO\s+PUT\s+NYMEX\s+CRUDE\s+OIL\s+OPTIONS', stripped, re.IGNORECASE))
+            # Section headers from the product profile (E1): e.g. "LO CALL" /
+            # "LO PUT" for WTI, "LN CALL"/"LN PUT" for Henry Hub.
+            p = get_product()
+            hdr_call = re.escape(p.bulletin.product_header_call).replace(r"\ ", r"\s+")
+            hdr_put = re.escape(p.bulletin.product_header_put).replace(r"\ ", r"\s+")
+            lo_call = bool(re.match(rf"^{hdr_call}\s+\S", stripped, re.IGNORECASE))
+            lo_put = bool(re.match(rf"^{hdr_put}\s+\S", stripped, re.IGNORECASE))
             if lo_call:
                 in_lo_call, in_lo_put = True, False
             elif lo_put:
@@ -260,7 +268,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             continue
 
         call_put = "C" if in_lo_call else "P"
-        strike = row['strike_cents'] / 100.0
+        strike = row["strike_cents"] / get_product().bulletin.strike_scale
 
         # Negate put delta (bulletin shows absolute value; convention is negative)
         raw_delta = row['delta']
@@ -273,7 +281,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
         records.append({
             "trade_date": trade_date.isoformat(),
             "option_expiry": option_expiry.isoformat(),
-            "option_symbol": f"LO{current_expiry_code}{call_put}{row['strike_cents']:05d}",
+            "option_symbol": f"{get_product().options_prefix}{current_expiry_code}{call_put}{row['strike_cents']:05d}",
             "underlying_contract": underlying_contract,
             "underlying_delivery_month": underlying_delivery_month,
             "strike": strike,

@@ -42,3 +42,19 @@ market:
 
   # Quality thresholds
   max_daily_move_pct: 15.0  # warn if settlement moves more than this %
+
+  # ── Product profile (E1): everything the code previously hardcoded ──
+  display_name: "WTI"                    # used in report/dashboard copy
+  futures_prefix: "CL"                   # contract codes: CL + month letter + yy
+  options_prefix: "LO"                   # bulletin product + option symbols
+  yfinance_contract_suffix: ".NYM"       # CLQ26.NYM
+  calendar_module: "ccvm.reference.wti_calendar"   # expiry rules (E5 pattern)
+  knowledge_pack: "wti"                  # knowledge/<pack>/
+  fundamentals_provider: "eia_weekly_petroleum"    # E4 registry key
+
+  bulletin:
+    # CME daily bulletin parsing (Section 63 = Energy Options)
+    product_header_call: "LO CALL"
+    product_header_put: "LO PUT"
+    strike_scale: 100                    # strikes printed in cents: 6850 = $68.50
+    underlying_month_offset: 1           # AUG26 label → CLU26 (next month) underlying

@@ -91,6 +91,15 @@ def generate(
     return report
 
 
+def _product_display() -> str:
+    """Product display name from the profile (E1) — 'WTI', 'Henry Hub', ..."""
+    try:
+        from ..reference.product import get_product
+        return get_product().display_name
+    except Exception:
+        return "WTI"
+
+
 def _market_risk_section(
     gold_futures: Optional[pa.Table],
     gold_options: Optional[pa.Table],
@@ -409,7 +418,7 @@ def _render_markdown(report: dict) -> str:
         dte = fut.get("days_to_expiry")
         structure = "CONTANGO" if fut.get("contango") else "BACKWARDATION"
         lines += [
-            f"**WTI Futures** (source: `{fut.get('feature_source')}`)",
+            f"**{_product_display()} Futures** (source: `{fut.get('feature_source')}`)",
             f"- Front contract: **{fut.get('front_contract')}** @ **{_fmt_usd(fut.get('front_settlement'))}/bbl**"
             + (f"  ({ret1d_str} 1-day)" if ret1d is not None else ""),
             f"- Days to expiry: **{dte}**" if dte is not None else "",
@@ -757,7 +766,7 @@ def _render_markdown(report: dict) -> str:
         f"- **Next catalyst date:** {next_rev.get('next_catalyst_date', 'N/A')} — {next_rev.get('next_catalyst_title', '')}",
         "",
         "---",
-        "*CurveLens — WTI futures and options daily analytics. "
+        f"*CurveLens — {_product_display()} futures and options daily analytics. "
         "Settlement data only; does not establish executability or confirmed mispricing.*",
     ]
 

@@ -32,7 +32,8 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
-from ccvm.collectors.eia import EIACollector
+from ccvm.fundamentals import get_provider
+from ccvm.reference.product import get_product
 from ccvm.collectors.rss import RSSNewsCollector
 from ccvm.collectors.cftc_cot import CFTCCOTCollector
 from ccvm.collectors.yfinance_brent import YFinanceBrentCollector
@@ -98,7 +99,12 @@ def main() -> None:
         print(f"[cme_bulletin_pdf]  {result}")
 
     if args.source in ("eia", "all"):
-        collector = EIACollector(raw_store, manifest_db)
+        # E4: the fundamentals collector comes from the product profile registry
+        provider = get_provider(get_product().fundamentals_provider)
+        collector = provider.collector_cls(raw_store, manifest_db) if provider else None
+    if args.source in ("eia", "all") and collector is None:
+        print("[fundamentals]      skipped — product has no fundamentals_provider")
+    elif args.source in ("eia", "all"):
         result = collector.collect(as_of)
         results["eia"] = result
         print(f"[eia]               {result}")

@@ -22,9 +22,9 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-_EXTRACTION_PROMPT = """\
+_EXTRACTION_PROMPT_TEMPLATE = """\
 You are a commodity market analyst. Extract ONE primary catalyst event from the text below.
-A catalyst is a concrete, dated supply or demand development that materially affects WTI crude oil prices.
+A catalyst is a concrete, dated supply or demand development that materially affects {product_name} prices.
 
 Return a JSON object with exactly these fields:
 {
@@ -32,7 +32,7 @@ Return a JSON object with exactly these fields:
   "title": "concise one-line title (max 80 chars)",
   "effective_start": "YYYY-MM-DD or null if unknown",
   "effective_end": "YYYY-MM-DD or null if open-ended",
-  "commodity": "crude_oil",
+  "commodity": "{commodity_key}",
   "region": "geographic region or Global",
   "direction": one of [bullish_supply, bearish_demand, two_sided, unclear],
   "magnitude": one of [low, medium, high, unknown],
@@ -44,7 +44,7 @@ Return a JSON object with exactly these fields:
 Rules:
 - effective_start and effective_end must be ISO dates or null.
 - direction: bullish_supply = supply reduction (price-positive); bearish_demand = demand reduction.
-- magnitude: high = >$5/bbl impact potential; medium = $1-5; low = <$1.
+- magnitude: high = large price-impact potential for {product_name} (multi-percent move); medium = moderate; low = minor.
 - If no clear catalyst exists, set title to no_catalyst_found with nulls.
 
 Return ONLY the JSON object. No explanation.
@@ -78,7 +78,15 @@ def extract(
         logger.error("claude CLI not found in PATH — install Claude Code")
         return None
 
-    prompt = _EXTRACTION_PROMPT + text[:4000]
+    # E6: the prompt is templated from the product profile — "WTI crude oil"
+    # becomes "Henry Hub natural gas" on an NG deployment with zero code change.
+    from ..reference.product import get_product
+    p = get_product()
+    # str.replace, not .format(): the template body is full of literal JSON
+    # braces that .format() would treat as placeholders.
+    prompt = (_EXTRACTION_PROMPT_TEMPLATE
+              .replace("{product_name}", p.name)
+              .replace("{commodity_key}", p.key)) + text[:4000]
 
     try:
         result = subprocess.run(

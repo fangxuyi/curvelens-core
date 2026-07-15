@@ -34,11 +34,16 @@ KNOWLEDGE_DIR = _REPO_ROOT / "knowledge"
 _WEEKDAYS = {"MON": 0, "TUE": 1, "WED": 2, "THU": 3, "FRI": 4, "SAT": 5, "SUN": 6}
 
 
-def knowledge_path(product: str = "wti") -> Path:
-    return KNOWLEDGE_DIR / product
+def _default_pack() -> str:
+    from ..reference.product import get_product
+    return get_product().knowledge_pack
 
 
-def load_calendar(product: str = "wti") -> dict:
+def knowledge_path(product: str = None) -> Path:
+    return KNOWLEDGE_DIR / (product or _default_pack())
+
+
+def load_calendar(product: str = None) -> dict:
     """Parse knowledge/<product>/calendar.yaml; {} if absent/unparseable."""
     path = knowledge_path(product) / "calendar.yaml"
     if not path.exists():
@@ -57,7 +62,7 @@ def _next_weekday(after: date, weekday: int) -> date:
     return after + timedelta(days=days)
 
 
-def stale_dated_events(as_of: date, product: str = "wti") -> list[dict]:
+def stale_dated_events(as_of: date, product: str = None) -> list[dict]:
     """Past entries in calendar.yaml's `dated:` list — maintenance debt.
 
     Per knowledge/MAINTENANCE.md these should be removed once they have
@@ -78,7 +83,7 @@ def stale_dated_events(as_of: date, product: str = "wti") -> list[dict]:
 def upcoming_events(
     as_of: date,
     horizon_days: int = 8,
-    product: str = "wti",
+    product: str = None,
 ) -> list[dict]:
     """
     Scheduled events within (as_of, as_of + horizon_days], sorted by date.

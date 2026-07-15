@@ -16,6 +16,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import yfinance as yf
 
+from ..reference.product import get_product
 from ..storage.manifest_db import ManifestDB
 from ..storage.raw_store import RawStore
 
@@ -30,9 +31,11 @@ MONTH_LETTERS = {
 def _active_cl_contracts(as_of_date: date, num_months: int = 12) -> list[tuple[str, str, str]]:
     """
     Return list of (yf_ticker, contract_code, delivery_month) for the next N calendar months.
-    WTI front month rolls before the 20th of the prior month, so start 2 months out
-    to avoid including an already-expired contract.
+    The front month rolls before the 20th of the prior month, so start 2 months out
+    to avoid including an already-expired contract. Prefix/suffix come from the
+    product profile (E1): WTI → CLQ26.NYM, NG → NGQ26.NYM, ...
     """
+    p = get_product()
     contracts = []
     # Start offset: skip current month (likely expired) and next (may be about to expire)
     offset = 1
@@ -42,9 +45,10 @@ def _active_cl_contracts(as_of_date: date, num_months: int = 12) -> list[tuple[s
         year = as_of_date.year + total // 12
         letter = MONTH_LETTERS[month]
         year_2d = str(year)[2:]
+        code = f"{p.futures_prefix}{letter}{year_2d}"
         contracts.append((
-            f"CL{letter}{year_2d}.NYM",
-            f"CL{letter}{year_2d}",
+            f"{code}{p.yfinance_contract_suffix}",
+            code,
             f"{year:04d}-{month:02d}",
         ))
     return contracts
