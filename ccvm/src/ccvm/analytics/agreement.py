@@ -18,15 +18,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Thresholds (approximate; tune after accumulating history)
-_SLOPE_BACKWARDATION = -0.10   # $/month → backwardation = upside risk
-_SLOPE_CONTANGO = 0.10         # $/month → contango = downside / supply glut
+# Thresholds (E2: normalized to price-relative units so they carry across
+# products — ±0.10 $/month on a $70 WTI handle ≈ ±0.14%/month; meaningless
+# on a $3.50 gas handle. RR/IV thresholds are already unitless vol points.)
+_SLOPE_BACKWARDATION_PCT = -0.0014   # slope/front_price per month → upside risk
+_SLOPE_CONTANGO_PCT = 0.0014         # → downside / supply glut
 _RR_UPSIDE = 0.02              # risk reversal > 2% → call skew (upside bid)
 _RR_DOWNSIDE = -0.02           # risk reversal < -2% → put skew (downside bid)
 
 
 def classify(
-    front_back_slope: Optional[float],    # from futures features
+    front_back_slope: Optional[float],    # from futures features ($/month)
     contango_flag: Optional[bool],
     risk_reversal_25d: Optional[float],   # from option surface
     atm_iv: Optional[float],
@@ -34,37 +36,49 @@ def classify(
     prior_slope: Optional[float],
     eia_supply_signal: Optional[str] = None,    # "draw" / "build" / "neutral" / None
     eia_scenario_trigger: Optional[str] = None, # "bull_confirmed" / "bear_watch" / "bear_confirmed" / "none"
+    front_settlement: Optional[float] = None,   # E2: normalizes slope to %/month
 ) -> dict:
     """
     Return a dict with:
       state             (one of the 8 states above)
       confidence        "high" / "medium" / "low"
       evidence          list of supporting signals
+
+    E2: the slope signal is judged in price-relative units (slope ÷ front
+    price, per month) so thresholds carry across products. front_settlement
+    is therefore a required input like slope and ATM IV — a missing settle
+    means the classification cannot be normalized honestly, so it degrades
+    to insufficient_data the same way the other missing inputs do (no silent
+    reference-price assumption).
     """
     evidence: list[str] = []
 
-    if front_back_slope is None or atm_iv is None:
+    if front_back_slope is None or atm_iv is None or not front_settlement:
         return {
             "state": "insufficient_data",
             "confidence": "low",
-            "evidence": ["missing futures slope or ATM IV"],
+            "evidence": ["missing futures slope, ATM IV, or front settlement"],
         }
 
-    # ── Futures signal ──
-    if front_back_slope < _SLOPE_BACKWARDATION:
+    # ── Futures signal (price-relative slope) ──
+    ref_price = front_settlement
+    slope_pct = front_back_slope / ref_price
+    if slope_pct < _SLOPE_BACKWARDATION_PCT:
         futures_signal = "upside"
-        evidence.append(f"backwardation: slope={front_back_slope:.2f}$/month")
-    elif front_back_slope > _SLOPE_CONTANGO:
+        evidence.append(
+            f"backwardation: slope={front_back_slope:.2f}$/month ({slope_pct:.2%}/mo)")
+    elif slope_pct > _SLOPE_CONTANGO_PCT:
         futures_signal = "downside"
-        evidence.append(f"contango: slope={front_back_slope:.2f}$/month")
+        evidence.append(
+            f"contango: slope={front_back_slope:.2f}$/month ({slope_pct:.2%}/mo)")
     else:
         futures_signal = "neutral"
         evidence.append(f"flat curve: slope={front_back_slope:.2f}$/month")
 
-    # ── Slope change ──
+    # ── Slope change (also price-relative: 0.07%/mo ≈ $0.05 on WTI) ──
     if prior_slope is not None:
         slope_change = front_back_slope - prior_slope
-        if abs(slope_change) > 0.05:
+        if abs(slope_change / ref_price) > 0.0007:
             evidence.append(f"slope moved {slope_change:+.2f}$/month vs prior day")
 
     # ── Options signal (risk reversal) ──

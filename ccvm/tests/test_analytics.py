@@ -209,32 +209,39 @@ import math
 # ──────────────────────────────────────────────────────────────────────────────
 
 class TestAgreement:
+    # front_settlement is a required input (E2): thresholds are price-relative
+    # and there is deliberately no fallback reference price.
     def test_confirmed_upside(self):
-        r = agreement.classify(-0.50, False, 0.05, 0.30, None, None)
+        r = agreement.classify(-0.50, False, 0.05, 0.30, None, None, front_settlement=70.0)
         assert r["state"] == "confirmed_upside_risk"
         assert r["confidence"] == "high"
 
     def test_confirmed_downside(self):
-        r = agreement.classify(0.50, True, -0.05, 0.30, None, None)
+        r = agreement.classify(0.50, True, -0.05, 0.30, None, None, front_settlement=70.0)
         assert r["state"] == "confirmed_downside_risk"
 
     def test_cross_disagreement_backwardation_put_skew(self):
-        r = agreement.classify(-0.50, False, -0.05, 0.30, None, None)
+        r = agreement.classify(-0.50, False, -0.05, 0.30, None, None, front_settlement=70.0)
         assert r["state"] == "cross_market_disagreement"
 
     def test_no_material_change_flat(self):
-        r = agreement.classify(0.0, True, 0.0, 0.25, 0.25, 0.0)
+        r = agreement.classify(0.0, True, 0.0, 0.25, 0.25, 0.0, front_settlement=70.0)
         assert r["state"] == "no_material_change"
 
     def test_insufficient_data_when_slope_none(self):
         r = agreement.classify(None, None, None, None, None, None)
         assert r["state"] == "insufficient_data"
 
+    def test_insufficient_data_when_settlement_missing(self):
+        # no silent reference-price fallback (PR #1 review)
+        r = agreement.classify(-0.50, False, 0.05, 0.30, None, None)
+        assert r["state"] == "insufficient_data"
+
     def test_evidence_list_populated(self):
-        r = agreement.classify(-0.50, False, 0.05, 0.30, 0.28, -0.40)
+        r = agreement.classify(-0.50, False, 0.05, 0.30, 0.28, -0.40, front_settlement=70.0)
         assert len(r["evidence"]) > 0
 
     def test_futures_only_repricing(self):
         # Futures moved (backwardation), options unknown (rr=None), IV flat
-        r = agreement.classify(-0.50, False, None, 0.30, 0.30, 0.0)
+        r = agreement.classify(-0.50, False, None, 0.30, 0.30, 0.0, front_settlement=70.0)
         assert r["state"] in ("futures_only_repricing", "no_material_change")

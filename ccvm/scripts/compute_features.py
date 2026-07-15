@@ -240,6 +240,7 @@ def main() -> None:
 
     agr = agreement.classify(
         front_back_slope=slope_val,
+        front_settlement=d["settlement"][0] if d.get("settlement") else None,
         contango_flag=contango_val,
         risk_reversal_25d=rr25,
         atm_iv=atm_iv,
