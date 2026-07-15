@@ -25,9 +25,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-from ccvm.parsers import bronze_eia, bronze_futures, bronze_options
-from ccvm.normalizers import silver_futures, silver_options, silver_eia
-from ccvm.analytics import eia_features
+from ccvm.parsers import bronze_futures, bronze_options
+from ccvm.normalizers import silver_futures, silver_options
+from ccvm.fundamentals import get_provider
+from ccvm.reference.product import get_product
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.parquet_store import ParquetStore
 from ccvm.validation import quality_report
@@ -115,7 +116,10 @@ def main() -> None:
             logger.error("Failed to normalize options %s: %s", raw_path.name, exc)
 
     # --- Bronze + Silver + Gold: EIA ---
-    eia_entries = [e for e in date_entries if "eia" in e.get("source_id", "")]
+    # E4: fundamentals stages come from the product profile registry
+    provider = get_provider(get_product().fundamentals_provider)
+    frag = provider.source_id_fragment if provider else "\x00none"
+    eia_entries = [e for e in date_entries if provider and frag in e.get("source_id", "")]
     silver_eia_table = None
     bronze_eia_tables = []
     for entry in eia_entries:
@@ -125,7 +129,7 @@ def main() -> None:
             continue
         sha256 = entry["sha256"]
         try:
-            bronze_table = bronze_eia.parse(raw_path, sha256)
+            bronze_table = provider.bronze.parse(raw_path, sha256)
             logger.info("Bronze EIA: %d rows from %s", len(bronze_table), raw_path.name)
             bronze_eia_tables.append(bronze_table)
         except Exception as exc:
@@ -136,12 +140,12 @@ def main() -> None:
         combined_bronze = pa.concat_tables(bronze_eia_tables)
         pq_store.write("bronze", "eia", as_of_str, combined_bronze)
 
-        silver_eia_table = silver_eia.normalize(combined_bronze, as_of)
+        silver_eia_table = provider.silver.normalize(combined_bronze, as_of)
         pq_store.write("silver", "eia", as_of_str, silver_eia_table)
         pass_n = sum(1 for s in silver_eia_table.column("silver_status").to_pylist() if s == "PASS")
         logger.info("Silver EIA: %d rows, %d PASS", len(silver_eia_table), pass_n)
 
-        gold_eia_table = eia_features.compute(silver_eia_table, as_of)
+        gold_eia_table = provider.features.compute(silver_eia_table, as_of)
         pq_store.write("gold", "eia_features", as_of_str, gold_eia_table)
         gd = gold_eia_table.to_pydict()
         logger.info(

@@ -3,7 +3,7 @@ Bronze → Silver normalization for WTI futures settlements.
 
 Silver layer adds:
   - last_trade_date         from WTI calendar
-  - option_expiry_date      from WTI calendar
+  - option_expiry_date      from the product profile calendar module (E1)
   - days_to_expiry          integer days from trade_date to last_trade_date
   - curve_position          1-indexed position in the active curve (1=front)
   - silver_status           PASS / WARN / FAIL per row
@@ -25,11 +25,7 @@ from datetime import date
 import pyarrow as pa
 import pyarrow.compute as pc
 
-from ..reference.wti_calendar import (
-    futures_last_trade_date,
-    option_expiry_date,
-    parse_contract_code,
-)
+from ..reference.product import get_product
 
 _MAX_SETTLEMENT = 500.0
 _MIN_SETTLEMENT = 1.0
@@ -78,7 +74,7 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
         settlement = bronze_dicts["settlement"][i]
 
         # Parse contract code to get calendar info
-        parsed = parse_contract_code(cc)
+        parsed = get_product().parse_contract_code(cc)
         status = "PASS"
         note = ""
 
@@ -91,8 +87,9 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
                 note = f"unparseable_contract_code:{cc}"
         else:
             dy, dm_int = parsed
-            ltd = futures_last_trade_date(dy, dm_int)
-            opt_exp = option_expiry_date(dy, dm_int)
+            cal = get_product().calendar
+            ltd = cal.futures_last_trade_date(dy, dm_int)
+            opt_exp = cal.option_expiry_date(dy, dm_int)
             ltd_str = ltd.isoformat()
             opt_exp_str = opt_exp.isoformat()
             days_to_exp = (ltd - as_of_date).days
