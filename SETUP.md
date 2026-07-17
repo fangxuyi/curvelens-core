@@ -2,23 +2,23 @@
 
 *How to stand up a deployment, and what porting to a new commodity requires.*
 
-One deployment = **one product**. The engine (collectors, normalizers, BAW/RND
-analytics, trigger state machine, scenario engine, reporting, agent layer) is
-product-agnostic; everything product-specific is declared in a **product
-profile** and its companion artifacts. `CCVM_PRODUCT` selects the profile
-(default `wti`).
+One repository supports **many products**. Each running agent selects one of
+them. The engine (collectors, normalizers, BAW/RND analytics, trigger state
+machine, scenario engine, reporting, agent layer) is product-agnostic;
+everything product-specific is declared in a **product profile** and its
+companion artifacts. `CCVM_PRODUCT` selects the profile (default `wti`).
 
 ```
 curvelens-core/
-├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   agent spec + identity
+├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   shared rules + identity
 ├── agent/            run_pipeline.py · notify.py · event_run.py · query.py
-├── config/cron.example             OpenClaw cron templates (ship --disabled)
+├── deployments/<product>/          product runbook + cron template
 ├── knowledge/<pack>/               ← product knowledge pack + MAINTENANCE.md
 └── ccvm/                            the deterministic engine
     ├── scripts/                     5 pipeline stages
     ├── config/markets/<product>.yaml  ← product profile (load-bearing)
     ├── src/ccvm/                    package (reference/product.py = profile loader)
-    └── data/                        runtime state (gitignored)
+    └── data/<product>/              isolated runtime state (gitignored)
 ```
 
 ---
@@ -41,8 +41,16 @@ git clone https://github.com/fangxuyi/curvelens-core.git && cd curvelens-core
 python3 -m venv ccvm/.venv
 ccvm/.venv/bin/pip install -r ccvm/requirements.txt python-dotenv feedparser httpx
 cp ccvm/.env.example ccvm/.env        # fill in EIA_API_KEY (or your provider's key)
-export CCVM_PRODUCT=wti               # deployment's product (default wti)
+export CCVM_PRODUCT=wti               # deployment's product; always explicit
 ```
+
+That is the only product-specific setup required. Runtime state automatically
+resolves to `ccvm/data/wti/` (or `ccvm/data/gold/`). `CCVM_DATA_DIR` is an
+optional advanced override for migration or external storage.
+
+> Upgrading an older WTI installation whose state is directly under
+> `ccvm/data/`? Temporarily set `CCVM_DATA_DIR="$PWD/ccvm/data"` until that state
+> is moved into `ccvm/data/wti/`. This avoids losing delivery dedup history.
 
 **Smoke test**
 ```bash
@@ -56,17 +64,17 @@ ccvm/.venv/bin/python agent/run_pipeline.py --date YYYY-MM-DD
 # → NEED_CME_PDF (fetch the bulletin)  |  OK (brief written)  |  ERROR <stage>
 ```
 
-**Agent + schedules**: register the OpenClaw agent with this repo as its
-working directory, then adapt `config/cron.example` — daily T+1 settlement run
-(half-hourly retry window + `notify.py --is-new` freshness gate), plus the
-event-calendar runs (EIA flash, COT update). Templates ship `--disabled` with a
-`telegram:YOUR_CHAT_ID` placeholder: fill the real chat id **at registration
-time only** — never commit one. Delivery/dedup state lives in
-`ccvm/data/agent_outbox/` (gitignored).
+**Agent + schedules**: register a separate OpenClaw agent for each product.
+Give it the onboarding instruction in `deployments/README.md`; it must read the
+root framework rules plus exactly one `deployments/<product>/AGENTS.md`.
+Adapt only that deployment's cron template. Production templates ship disabled
+with delivery placeholders; fill destinations at registration time only and
+never commit them. Delivery/dedup state lives below the automatically isolated
+`ccvm/data/<product>/agent_outbox/`.
 
 ---
 
-## 2. Porting to a new commodity — the four artifacts
+## 2. Porting to a new commodity — the five artifacts
 
 The shared engine has no WTI market defaults other than selecting the `wti`
 deployment when `CCVM_PRODUCT` is unset. A port authors these:
@@ -95,6 +103,8 @@ reference (all under the top-level `market:` mapping):
 | `bulletin.url` | CME Section 63 URL | agent preflight/download instructions |
 | `bulletin.strike_scale` | `100` (cents → $) | strike conversion — **verify per product!** |
 | `bulletin.underlying_month_offset` | `1` (AUG label → Sep contract) | label → underlying mapping |
+| `bulletin.underlying_month_map` | Gold serial-month map | non-linear option month → futures mapping; use instead of offset |
+| `bulletin.expiry_basis` | `underlying_month` or `option_month` | selects the calendar rule input |
 | `benchmark` | Brent / `BZ=F` | optional relative-value context; omit for none |
 | `news.keywords`, `news.sources` | energy terms/feeds | product-scoped catalyst collection; omit for none |
 | `cot` | CFTC code/label | optional positioning context; omit for none |
@@ -143,6 +153,17 @@ Also configure `news` in the product profile and author a product event
 taxonomy if catalyst extraction is wanted (the extractor prompt is templated
 from the profile).
 
+### 2.5 Deployment runbook — `deployments/<product>/`
+
+Create a product-scoped `AGENTS.md` and a disabled `cron.example`. The runbook
+declares exact environment variables, bulletin/downloader behavior, supported
+event mini-runs, QC gates, delivery policy, and maturity status. The root
+identity files are shared; do not duplicate them for each product.
+
+An agent registration must instruct the agent to read root `AGENTS.md` and
+exactly one deployment runbook. Never put product schedules or delivery policy
+back into root instructions.
+
 ---
 
 ## 3. Port validation protocol
@@ -161,7 +182,15 @@ from the profile).
 
 ## 4. Running two products
 
-Two deployments: separate clones (or checkouts), separate `CCVM_PRODUCT`,
-venvs, data dirs, OpenClaw agents, and cron sets. No shared state by design —
-storage, outbox ids, and cron templates all assume one product. (Two energy
-products will each download the same Section-63 bulletin PDF; harmless.)
+Two deployments share one checkout and venv, but each has its own
+`CCVM_PRODUCT`, OpenClaw agent, cron set, and delivery destination. The
+framework automatically isolates all runtime state:
+
+```text
+CCVM_PRODUCT=wti  -> ccvm/data/wti/
+CCVM_PRODUCT=gold -> ccvm/data/gold/
+```
+
+That includes manifests, market data, reports, monitor state, and outboxes.
+Use `CCVM_DATA_DIR` only when deliberately migrating existing state or storing
+data outside the checkout; never point two products at the same override.

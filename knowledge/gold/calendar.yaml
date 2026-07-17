@@ -1,0 +1,8 @@
+# Gold scheduled-event seed. Add dated FOMC/CPI/NFP events only when sourced;
+# remove them after they pass per knowledge/MAINTENANCE.md.
+recurring:
+  - name: CFTC Commitments of Traders update
+    day: FRI
+    time_et: "15:30"
+    kind: positioning
+dated: []

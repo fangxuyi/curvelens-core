@@ -3,11 +3,11 @@
 
 Runs the full 5-stage pipeline for one trade date and prints a single line of
 JSON to stdout describing the outcome. Designed to be invoked as one tool call
-by the standalone CurveLens agent (see AGENTS.md Runtime Model), rather than
+by the selected product deployment agent (see `deployments/<product>/AGENTS.md`), rather than
 having the agent orchestrate five separate scripts from a prompt.
 
 Stages (each an isolated subprocess of the current interpreter):
-    1. collect_day.py       raw ingest (yfinance futures, CME PDF, EIA, RSS)
+    1. collect_day.py       raw ingest (futures, CME PDF, optional fundamentals, RSS)
     2. normalize_day.py     raw → bronze → silver + quality report
     3. compute_features.py  silver → gold (curve, BAW vol surface, agreement)
     4. extract_catalysts.py RSS articles → ranked catalyst events (needs claude CLI)
@@ -22,7 +22,7 @@ stdout is exactly one JSON object. Human-readable progress goes to stderr.
 
 Result shapes:
     {"result": "NEED_CME_PDF", "date": ..., "pdf_path": ..., "url": ...}
-        The CME LO option bulletin for this date is not on disk. The agent must
+        The configured CME option bulletin for this date is not on disk. The agent must
         download it (CME is Akamai bot-protected, so the deterministic pipeline
         cannot fetch it itself) to pdf_path, then re-run.
     {"result": "OK", "date": ..., "report_md": ..., "report_json": ...,
@@ -45,9 +45,11 @@ from zoneinfo import ZoneInfo
 REPO_ROOT = Path(__file__).parent.parent
 CCVM_DIR = REPO_ROOT / "ccvm"
 SCRIPTS = CCVM_DIR / "scripts"
-DATA_DIR = CCVM_DIR / "data"
 
 sys.path.insert(0, str(CCVM_DIR / "src"))
+from ccvm.runtime import data_dir
+
+DATA_DIR = data_dir()
 
 # Agreement states / EIA scenarios that warrant an immediate priority alert
 # rather than just the routine daily brief.
@@ -124,11 +126,11 @@ def main() -> None:
             "date": as_of_str,
             "pdf_path": str(pdf_path),
             "url": product.bulletin.url,
-            "detail": ("Download the Section 63 Energy Options bulletin for this "
-                       "date and save it to pdf_path, then re-run."),
+            "detail": ("Download the product profile's configured CME bulletin "
+                       "for this date and save it to pdf_path, then re-run."),
         })
 
-    # ── Stage 1: collect (futures + CME PDF + EIA + RSS) ──
+    # ── Stage 1: collect (futures + CME PDF + optional fundamentals + RSS) ──
     _run_stage("collect", ["collect_day.py", "--date", as_of_str, "--source", "all"],
                required=True)
 

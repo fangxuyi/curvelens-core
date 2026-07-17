@@ -9,8 +9,8 @@ Usage:
     python scripts/collect_day.py --date 2026-06-24 --source all
 
 Option data (cme_bulletin_pdf):
-    Requires data/cme_bulletin/<YYYY-MM-DD>.pdf downloaded manually from:
-    https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf
+    Requires data/cme_bulletin/<YYYY-MM-DD>.pdf downloaded from the URL in the
+    active product profile.
 
 After running with --source all, extract catalyst events with:
     python scripts/extract_catalysts.py --date 2026-06-24
@@ -40,13 +40,14 @@ from ccvm.collectors.yfinance_brent import YFinanceBenchmarkCollector
 from ccvm.collectors.yfinance_futures import YFinanceFuturesCollector
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.raw_store import RawStore
+from ccvm.runtime import data_dir
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = data_dir()
 MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 

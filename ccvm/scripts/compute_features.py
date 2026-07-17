@@ -35,12 +35,13 @@ from ccvm.analytics import (
 )
 from ccvm.validation.quality_report import delta_check_section
 from ccvm.storage.parquet_store import ParquetStore
+from ccvm.runtime import data_dir
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = data_dir()
 
 
 def _fmt_pct(v) -> str:

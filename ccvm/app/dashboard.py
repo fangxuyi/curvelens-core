@@ -1,5 +1,5 @@
 """
-CurveLens Streamlit Dashboard — Crude Terminal.
+CurveLens product dashboard.
 
 Run:
     streamlit run app/dashboard.py
@@ -28,7 +28,9 @@ try:
 except ImportError:
     _PLOTLY = False
 
-DATA_DIR    = _REPO_ROOT / "data"
+from ccvm.runtime import data_dir
+
+DATA_DIR    = data_dir()
 GOLD_DIR    = DATA_DIR / "gold"
 QUALITY_DIR = DATA_DIR / "quality_reports"
 REPORTS_DIR = DATA_DIR / "reports"
@@ -123,8 +125,8 @@ def _plot_layout(**kw) -> dict:
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="CurveLens — Crude Terminal",
-    page_icon="🛢",
+    page_title=f"CurveLens — {PRODUCT.display_name} Terminal",
+    page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded",
 )

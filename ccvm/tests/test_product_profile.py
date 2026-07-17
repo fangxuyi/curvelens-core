@@ -13,6 +13,7 @@ class TestWTIProfile:
         assert p.yfinance_contract_suffix == ".NYM"
         assert p.bulletin.strike_scale == 100
         assert p.bulletin.underlying_month_offset == 1
+        assert p.bulletin.expiry_basis == "underlying_month"
         assert p.fundamentals_provider == "eia_weekly_petroleum"
         assert p.cot_contract_market_code == "067651"
         assert p.cot_contract_label == "WTI-PHYSICAL NYMEX"
@@ -29,6 +30,13 @@ class TestWTIProfile:
         assert p.parse_contract_code("CLQ26") == (2026, 8)
         assert p.parse_contract_code("NGQ26") is None      # wrong prefix
         assert p.parse_contract_code("CLA26") is None      # bad month letter
+
+    def test_option_contract_info_uses_wti_offset(self):
+        from datetime import date
+        expiry, contract, delivery_month = get_product("wti").option_contract_info(2026, 8)
+        assert expiry == date(2026, 8, 17)
+        assert contract == "CLU26"
+        assert delivery_month == "2026-09"
 
     def test_unknown_product_raises(self):
         with pytest.raises(FileNotFoundError):
