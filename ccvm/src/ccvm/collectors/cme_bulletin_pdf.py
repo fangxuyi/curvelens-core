@@ -1,7 +1,8 @@
 """
 CME Daily Bulletin PDF parser for profile-configured option settlements.
 
-Reads Section 63 Energy Options PDFs saved at data/cme_bulletin/<date>.pdf.
+Reads the product profile's CME option bulletin saved at
+data/cme_bulletin/<date>.pdf.
 Parses the configured CALL and PUT sections and outputs records in the bronze
 format {"settlements": [...]} so that normalize_day.py picks them up unchanged.
 
@@ -18,8 +19,8 @@ Data row column order (left→right):
 
 Expiry convention (per product profile + calendar module):
   "AUG26" → option expiry from the product calendar (WTI: futures LTD − 3
-  business days → 2026-08-17); underlying offset by underlying_month_offset
-  (WTI: +1 → CLU26)
+  business days → 2026-08-17). The product profile maps the option month to
+  its underlying (a constant offset for WTI; a serial-month map for Gold).
 """
 from __future__ import annotations
 
@@ -53,24 +54,15 @@ def _expiry_code_to_option_info(code: str) -> tuple[date, str, str]:
     """
     'AUG26' → (option_expiry, underlying_contract, underlying_delivery_month)
 
-    Bulletin label month = option expiry month; the underlying is offset by
-    the product profile's underlying_month_offset (WTI: +1 — AUG26 label →
-    CLU26). The expiry date comes from the product's calendar module (single
-    source of truth; for WTI: option expiry = futures LTD − 3 business days,
-    holiday-aware, verified vs the ICE schedule).
+    The product profile owns both option-month → underlying mapping and whether
+    the expiry rule is keyed by option month or underlying month.
     """
     p = get_product()
     if p.bulletin is None:
         raise ValueError(f"Product {p.key!r} has no bulletin configuration")
     month_num = _MONTH_NAME_TO_NUM[code[:3].upper()]
     year = 2000 + int(code[3:])
-    total = month_num + p.bulletin.underlying_month_offset - 1
-    und_month = total % 12 + 1
-    und_year = year + total // 12
-    option_expiry = p.calendar.option_expiry_date(und_year, und_month)
-    underlying_contract = p.contract_code(und_year, und_month)
-    underlying_delivery_month = f"{und_year:04d}-{und_month:02d}"
-    return option_expiry, underlying_contract, underlying_delivery_month
+    return p.option_contract_info(year, month_num)
 
 
 def _pdftotext(pdf_path: Path) -> str:

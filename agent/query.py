@@ -30,8 +30,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CCVM_DIR = REPO_ROOT / "ccvm"
-DATA_DIR = CCVM_DIR / "data"
 sys.path.insert(0, str(CCVM_DIR / "src"))
+from ccvm.runtime import data_dir
+
+DATA_DIR = data_dir()
 
 SERIES_METRICS = [
     "front_settle", "curve_slope", "m1_m2_spread", "atm_iv", "rr25", "bf25",

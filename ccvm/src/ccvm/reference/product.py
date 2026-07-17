@@ -19,6 +19,7 @@ from __future__ import annotations
 import importlib
 import os
 from dataclasses import dataclass, field
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from types import ModuleType
@@ -36,6 +37,17 @@ class BulletinSpec:
     url: str
     strike_scale: float = 1.0
     underlying_month_offset: int = 0
+    underlying_month_map: tuple[tuple[int, int], ...] = ()
+    expiry_basis: str = "underlying_month"
+
+    def underlying_month(self, option_year: int, option_month: int) -> tuple[int, int]:
+        """Map a bulletin option month to its underlying futures month."""
+        mapping = dict(self.underlying_month_map)
+        if mapping:
+            month = mapping[option_month]
+            return option_year + (1 if month < option_month else 0), month
+        total = option_month + self.underlying_month_offset - 1
+        return option_year + total // 12, total % 12 + 1
 
 
 @dataclass(frozen=True)
@@ -119,6 +131,31 @@ class Product:
     def contract_code(self, year: int, month: int) -> str:
         return f"{self.futures_prefix}{self.month_letters[month]}{str(year)[2:]}"
 
+    def option_contract_info(
+        self, option_year: int, option_month: int,
+    ) -> tuple[date, str, str]:
+        """Resolve bulletin option month to expiry and underlying contract."""
+        if self.bulletin is None:
+            raise ValueError(f"Product {self.key!r} has no bulletin configuration")
+        underlying_year, underlying_month = self.bulletin.underlying_month(
+            option_year, option_month,
+        )
+        if self.bulletin.expiry_basis == "option_month":
+            expiry = self.calendar.option_expiry_for_option_month(
+                option_year, option_month,
+            )
+        elif self.bulletin.expiry_basis == "underlying_month":
+            expiry = self.calendar.option_expiry_date(
+                underlying_year, underlying_month,
+            )
+        else:
+            raise ValueError(
+                f"Unsupported bulletin expiry_basis: {self.bulletin.expiry_basis!r}"
+            )
+        contract = self.contract_code(underlying_year, underlying_month)
+        delivery_month = f"{underlying_year:04d}-{underlying_month:02d}"
+        return expiry, contract, delivery_month
+
 
 def _load_yaml(key: str) -> dict:
     path = _CONFIG_DIR / f"{key}.yaml"
@@ -151,12 +188,26 @@ def load_product(key: str) -> Product:
         missing = [name for name in required if not b.get(name)]
         if missing:
             raise ValueError(f"Product profile {key!r} bulletin missing: {missing}")
+        month_map = b.get("underlying_month_map", {}) or {}
+        expiry_basis = str(b.get("expiry_basis", "underlying_month"))
+        if month_map and set(int(k) for k in month_map) != set(range(1, 13)):
+            raise ValueError(
+                f"Product profile {key!r} underlying_month_map must cover months 1..12"
+            )
+        if expiry_basis not in {"option_month", "underlying_month"}:
+            raise ValueError(
+                f"Product profile {key!r} has invalid expiry_basis {expiry_basis!r}"
+            )
         bulletin = BulletinSpec(
             product_header_call=b["product_header_call"],
             product_header_put=b["product_header_put"],
             url=b["url"],
             strike_scale=float(b.get("strike_scale", 1)),
             underlying_month_offset=int(b.get("underlying_month_offset", 0)),
+            underlying_month_map=tuple(
+                sorted((int(k), int(v)) for k, v in month_map.items())
+            ),
+            expiry_basis=expiry_basis,
         )
     return Product(
         key=key,

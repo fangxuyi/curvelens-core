@@ -32,12 +32,13 @@ from ccvm.reference.product import get_product
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.parquet_store import ParquetStore
 from ccvm.validation import quality_report
+from ccvm.runtime import data_dir
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = data_dir()
 MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 QUALITY_DIR = DATA_DIR / "quality_reports"
 

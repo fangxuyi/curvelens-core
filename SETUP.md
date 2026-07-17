@@ -95,6 +95,8 @@ reference (all under the top-level `market:` mapping):
 | `bulletin.url` | CME Section 63 URL | agent preflight/download instructions |
 | `bulletin.strike_scale` | `100` (cents → $) | strike conversion — **verify per product!** |
 | `bulletin.underlying_month_offset` | `1` (AUG label → Sep contract) | label → underlying mapping |
+| `bulletin.underlying_month_map` | Gold serial-month map | non-linear option month → futures mapping; use instead of offset |
+| `bulletin.expiry_basis` | `underlying_month` or `option_month` | selects the calendar rule input |
 | `benchmark` | Brent / `BZ=F` | optional relative-value context; omit for none |
 | `news.keywords`, `news.sources` | energy terms/feeds | product-scoped catalyst collection; omit for none |
 | `cot` | CFTC code/label | optional positioning context; omit for none |
@@ -161,7 +163,10 @@ from the profile).
 
 ## 4. Running two products
 
-Two deployments: separate clones (or checkouts), separate `CCVM_PRODUCT`,
-venvs, data dirs, OpenClaw agents, and cron sets. No shared state by design —
-storage, outbox ids, and cron templates all assume one product. (Two energy
-products will each download the same Section-63 bulletin PDF; harmless.)
+Two deployments may share one checkout and venv, but must use separate
+`CCVM_PRODUCT`, `CCVM_DATA_DIR`, OpenClaw agents, and cron sets. No runtime
+state is shared: manifests, market data, reports, monitor state, and outbox all
+resolve below `CCVM_DATA_DIR`. If the variable is omitted, the backward-
+compatible default remains `ccvm/data`. Never point two products at that same
+directory. (Two energy products may each download the same Section-63 bulletin
+PDF into their own data root; harmless.)

@@ -28,9 +28,11 @@ from zoneinfo import ZoneInfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CCVM_DIR = REPO_ROOT / "ccvm"
-DATA_DIR = CCVM_DIR / "data"
 sys.path.insert(0, str(CCVM_DIR / "src"))
 sys.path.insert(0, str(REPO_ROOT / "agent"))
+from ccvm.runtime import data_dir
+
+DATA_DIR = data_dir()
 
 _COT_WOW_THRESHOLD = 20_000
 _COT_PCTILE_HI, _COT_PCTILE_LO = 90.0, 10.0

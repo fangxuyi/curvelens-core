@@ -148,7 +148,7 @@ class YFinanceFuturesCollector:
         run_id = str(uuid.uuid4())
         as_of_str = as_of_date.isoformat()
         self.manifest_db.start_run(run_id, self.source_id, as_of_str)
-        filename = f"yf_cl_futures_{as_of_date.strftime('%Y%m%d')}.json"
+        filename = f"yf_{get_product().key}_futures_{as_of_date.strftime('%Y%m%d')}.json"
 
         try:
             records = self.fetch_and_parse(as_of_date)

@@ -117,25 +117,37 @@ def check_futures_settlements(records: list[dict], source_id: str) -> QualityRes
 
 def _infer_correct_underlying(option_expiry_str: str) -> tuple[str, str] | None:
     """
-    Given option_expiry date string (YYYY-MM-DD), infer the expected
-    underlying futures delivery month.
-    The delivery offset and month-code mapping come from the product profile.
+    Given an option expiry date, infer the expected underlying futures month
+    by resolving nearby bulletin option months through the product profile.
+    This supports both constant offsets (WTI) and serial-month maps (Gold).
     Returns (expected_delivery_month_str, expected_contract_letter).
     """
     m = re.match(r"^(\d{4})-(\d{2})-\d{2}$", option_expiry_str)
     if not m:
         return None
-    year, month = int(m.group(1)), int(m.group(2))
-    bulletin = get_product().bulletin
-    if bulletin is None:
+    expiry = date.fromisoformat(option_expiry_str)
+    product = get_product()
+    if product.bulletin is None:
         return None
-    total = month + bulletin.underlying_month_offset - 1
-    dm_month = total % 12 + 1
-    dm_year = year + total // 12
-    dm_str = f"{dm_year:04d}-{dm_month:02d}"
-    # Find contract letter for dm_month
-    letter = get_product().month_letters.get(dm_month)
-    return dm_str, letter
+    # Expiration normally falls in the option month or the immediately
+    # preceding month. Include one extra month for holiday-shifted conventions.
+    for offset in range(3):
+        total = expiry.month + offset - 1
+        option_month = total % 12 + 1
+        option_year = expiry.year + total // 12
+        try:
+            candidate_expiry, _, delivery_month = product.option_contract_info(
+                option_year, option_month,
+            )
+        except (KeyError, ValueError):
+            continue
+        if candidate_expiry == expiry:
+            dm_month = int(delivery_month[5:7])
+            return delivery_month, product.month_letters.get(dm_month)
+    # Compatibility for legacy fixtures whose expiry date predates the
+    # corrected calendar but whose expiry month still encodes the option label.
+    dm_year, dm_month = product.bulletin.underlying_month(expiry.year, expiry.month)
+    return f"{dm_year:04d}-{dm_month:02d}", product.month_letters.get(dm_month)
 
 
 def check_option_settlements(

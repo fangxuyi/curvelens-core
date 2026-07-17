@@ -34,8 +34,10 @@ from pathlib import Path
 # This script lives in CurveLens/agent/; the pipeline's data lives in
 # CurveLens/ccvm/data/.
 REPO_ROOT = Path(__file__).parent.parent
-DATA_DIR = REPO_ROOT / "ccvm" / "data"
 sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
+from ccvm.runtime import data_dir
+
+DATA_DIR = data_dir()
 OUTBOX_DIR = DATA_DIR / "agent_outbox"
 PENDING_PATH = OUTBOX_DIR / "pending.json"
 DELIVERED_PATH = OUTBOX_DIR / "delivered.json"
