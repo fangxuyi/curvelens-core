@@ -24,7 +24,7 @@ openclaw cron add \
   --cron "*/30 2-6 * * 2-6" \
   --tz "America/New_York" \
   --session isolated \
-  --message "From /path/to/curvelens-core, read AGENTS.md and deployments/wti/AGENTS.md and follow both exactly. Set CCVM_PRODUCT=wti and CCVM_DATA_DIR=/absolute/path/to/wti-data on every pipeline and notify command. This cron reruns every half hour across the early-morning window; never duplicate Telegram by using the freshness gate. Use the WTI headed Playwright downloader from the deployment runbook. If it fails, finish CME_PDF_UNAVAILABLE and send nothing. Parse its JSON with Python; use date as <pdf-date> and path as the saved PDF path. Run notify.py --is-new, then the pipeline only for a new date. On success prepare and list pending messages, deliver each text verbatim via Telegram, and ack each successful send. Never fabricate data or use --force-pdf without approval." \
+  --message "From /path/to/curvelens-core, operate the WTI deployment. Read AGENTS.md and deployments/wti/AGENTS.md. Set CCVM_PRODUCT=wti on every runtime command. This cron reruns every half hour across the early-morning window; never duplicate Telegram by using the freshness gate. Use the WTI headed Playwright downloader from the deployment runbook. If it fails, finish CME_PDF_UNAVAILABLE and send nothing. Parse its JSON with Python; use date as <pdf-date> and path as the saved PDF path. Run notify.py --is-new, then the pipeline only for a new date. On success prepare and list pending messages, deliver each text verbatim via Telegram, and ack each successful send. Never fabricate data or use --force-pdf without approval." \
   --model "openai/gpt-5.5" \
   --thinking low \
   --timeout-seconds 900 \
@@ -42,7 +42,7 @@ openclaw cron add \
   --cron "35 10 * * 3" \
   --tz "America/New_York" \
   --session isolated \
-  --message "From /path/to/curvelens-core, read AGENTS.md and deployments/wti/AGENTS.md. Set CCVM_PRODUCT=wti and CCVM_DATA_DIR=/absolute/path/to/wti-data, then run ccvm/.venv/bin/python agent/event_run.py --event eia. If the result is QUIET, NO_DATA, or ALREADY_HANDLED, finish silently. If FLASH_QUEUED, list pending messages and deliver only EIA_FLASH items verbatim via Telegram to telegram:YOUR_CHAT_ID, then ack each successful send. Parse JSON with Python, not jq." \
+  --message "From /path/to/curvelens-core, operate the WTI deployment. Read AGENTS.md and deployments/wti/AGENTS.md. Set CCVM_PRODUCT=wti, then run ccvm/.venv/bin/python agent/event_run.py --event eia. If the result is QUIET, NO_DATA, or ALREADY_HANDLED, finish silently. If FLASH_QUEUED, list pending messages and deliver only EIA_FLASH items verbatim via Telegram to telegram:YOUR_CHAT_ID, then ack each successful send. Parse JSON with Python, not jq." \
   --model "openai/gpt-5.5" \
   --thinking low \
   --timeout-seconds 600 \
@@ -55,7 +55,7 @@ openclaw cron add \
   --cron "35 15 * * 5" \
   --tz "America/New_York" \
   --session isolated \
-  --message "From /path/to/curvelens-core, read AGENTS.md and deployments/wti/AGENTS.md. Set CCVM_PRODUCT=wti and CCVM_DATA_DIR=/absolute/path/to/wti-data, then run ccvm/.venv/bin/python agent/event_run.py --event cot. If the result is QUIET, NO_DATA, or ALREADY_HANDLED, finish silently. If UPDATE_QUEUED, list pending messages and deliver only COT_UPDATE items verbatim via Telegram to telegram:YOUR_CHAT_ID, then ack each successful send. Parse JSON with Python, not jq." \
+  --message "From /path/to/curvelens-core, operate the WTI deployment. Read AGENTS.md and deployments/wti/AGENTS.md. Set CCVM_PRODUCT=wti, then run ccvm/.venv/bin/python agent/event_run.py --event cot. If the result is QUIET, NO_DATA, or ALREADY_HANDLED, finish silently. If UPDATE_QUEUED, list pending messages and deliver only COT_UPDATE items verbatim via Telegram to telegram:YOUR_CHAT_ID, then ack each successful send. Parse JSON with Python, not jq." \
   --model "openai/gpt-5.5" \
   --thinking low \
   --timeout-seconds 600 \

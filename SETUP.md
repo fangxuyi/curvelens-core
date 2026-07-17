@@ -2,23 +2,23 @@
 
 *How to stand up a deployment, and what porting to a new commodity requires.*
 
-One deployment = **one product**. The engine (collectors, normalizers, BAW/RND
-analytics, trigger state machine, scenario engine, reporting, agent layer) is
-product-agnostic; everything product-specific is declared in a **product
-profile** and its companion artifacts. `CCVM_PRODUCT` selects the profile
-(default `wti`).
+One repository supports **many products**. Each running agent selects one of
+them. The engine (collectors, normalizers, BAW/RND analytics, trigger state
+machine, scenario engine, reporting, agent layer) is product-agnostic;
+everything product-specific is declared in a **product profile** and its
+companion artifacts. `CCVM_PRODUCT` selects the profile (default `wti`).
 
 ```
 curvelens-core/
-├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   framework rules + identity
+├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   shared rules + identity
 ├── agent/            run_pipeline.py · notify.py · event_run.py · query.py
-├── deployments/<product>/          runtime runbook, identity, cron template
+├── deployments/<product>/          product runbook + cron template
 ├── knowledge/<pack>/               ← product knowledge pack + MAINTENANCE.md
 └── ccvm/                            the deterministic engine
     ├── scripts/                     5 pipeline stages
     ├── config/markets/<product>.yaml  ← product profile (load-bearing)
     ├── src/ccvm/                    package (reference/product.py = profile loader)
-    └── data/                        runtime state (gitignored)
+    └── data/<product>/              isolated runtime state (gitignored)
 ```
 
 ---
@@ -42,8 +42,15 @@ python3 -m venv ccvm/.venv
 ccvm/.venv/bin/pip install -r ccvm/requirements.txt python-dotenv feedparser httpx
 cp ccvm/.env.example ccvm/.env        # fill in EIA_API_KEY (or your provider's key)
 export CCVM_PRODUCT=wti               # deployment's product; always explicit
-export CCVM_DATA_DIR=/absolute/path/to/wti-data
 ```
+
+That is the only product-specific setup required. Runtime state automatically
+resolves to `ccvm/data/wti/` (or `ccvm/data/gold/`). `CCVM_DATA_DIR` is an
+optional advanced override for migration or external storage.
+
+> Upgrading an older WTI installation whose state is directly under
+> `ccvm/data/`? Temporarily set `CCVM_DATA_DIR="$PWD/ccvm/data"` until that state
+> is moved into `ccvm/data/wti/`. This avoids losing delivery dedup history.
 
 **Smoke test**
 ```bash
@@ -62,8 +69,8 @@ Give it the onboarding instruction in `deployments/README.md`; it must read the
 root framework rules plus exactly one `deployments/<product>/AGENTS.md`.
 Adapt only that deployment's cron template. Production templates ship disabled
 with delivery placeholders; fill destinations at registration time only and
-never commit them. Delivery/dedup state lives below the deployment's isolated
-`$CCVM_DATA_DIR/agent_outbox/`.
+never commit them. Delivery/dedup state lives below the automatically isolated
+`ccvm/data/<product>/agent_outbox/`.
 
 ---
 
@@ -148,10 +155,10 @@ from the profile).
 
 ### 2.5 Deployment runbook — `deployments/<product>/`
 
-Create product-scoped `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `HEARTBEAT.md`, and
-a disabled `cron.example`. The runbook declares exact environment variables,
-bulletin/downloader behavior, supported event mini-runs, QC gates, delivery
-policy, and maturity status. Root identity files remain framework-neutral.
+Create a product-scoped `AGENTS.md` and a disabled `cron.example`. The runbook
+declares exact environment variables, bulletin/downloader behavior, supported
+event mini-runs, QC gates, delivery policy, and maturity status. The root
+identity files are shared; do not duplicate them for each product.
 
 An agent registration must instruct the agent to read root `AGENTS.md` and
 exactly one deployment runbook. Never put product schedules or delivery policy
@@ -175,10 +182,15 @@ back into root instructions.
 
 ## 4. Running two products
 
-Two deployments may share one checkout and venv, but must use separate
-`CCVM_PRODUCT`, `CCVM_DATA_DIR`, OpenClaw agents, and cron sets. No runtime
-state is shared: manifests, market data, reports, monitor state, and outbox all
-resolve below `CCVM_DATA_DIR`. If the variable is omitted, the backward-
-compatible default remains `ccvm/data`. Never point two products at that same
-directory. (Two energy products may each download the same Section-63 bulletin
-PDF into their own data root; harmless.)
+Two deployments share one checkout and venv, but each has its own
+`CCVM_PRODUCT`, OpenClaw agent, cron set, and delivery destination. The
+framework automatically isolates all runtime state:
+
+```text
+CCVM_PRODUCT=wti  -> ccvm/data/wti/
+CCVM_PRODUCT=gold -> ccvm/data/gold/
+```
+
+That includes manifests, market data, reports, monitor state, and outboxes.
+Use `CCVM_DATA_DIR` only when deliberately migrating existing state or storing
+data outside the checkout; never point two products at the same override.

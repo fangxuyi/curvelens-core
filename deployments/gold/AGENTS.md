@@ -19,11 +19,11 @@ Before every runtime command, set and verify:
 
 ```bash
 export CCVM_PRODUCT=gold
-export CCVM_DATA_DIR=/absolute/path/to/gold-data
 ```
 
-Run commands from the repository root. The data directory must be dedicated to
-Gold and must not be the WTI directory or the legacy `ccvm/data` directory.
+Run commands from the repository root. Runtime state automatically resolves to
+`ccvm/data/gold/`; never use the WTI directory. `CCVM_DATA_DIR` is an optional
+advanced override, not part of fresh setup.
 
 ## Product sources
 
@@ -38,13 +38,13 @@ Gold and must not be the WTI directory or the legacy `ccvm/data` directory.
 
 The existing WTI headed downloader is Section-63-specific and must not be used
 for Gold. Until a Section-64-capable downloader is reviewed, a human-approved
-PDF must be saved to `$CCVM_DATA_DIR/cme_bulletin/<date>.pdf` before a validation
+PDF must be saved to `ccvm/data/gold/cme_bulletin/<date>.pdf` before a validation
 run. Never rename an old PDF to impersonate a new date.
 
 ## Validation run
 
 1. Confirm the PDF's internal bulletin date and Section 64 identity.
-2. Save it at `$CCVM_DATA_DIR/cme_bulletin/<date>.pdf`.
+2. Save it at `ccvm/data/gold/cme_bulletin/<date>.pdf`.
 3. Run:
 
    ```bash

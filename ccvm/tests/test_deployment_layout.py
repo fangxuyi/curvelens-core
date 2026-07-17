@@ -20,21 +20,23 @@ def test_root_agent_instructions_are_framework_scoped():
     assert "EIA flash" not in root
 
 
-def test_each_product_has_a_complete_deployment_instruction_set():
+def test_each_product_has_a_minimal_deployment_instruction_set():
     for product in ("wti", "gold"):
         base = ROOT / "deployments" / product
-        for filename in ("AGENTS.md", "IDENTITY.md", "SOUL.md", "HEARTBEAT.md", "cron.example"):
+        for filename in ("AGENTS.md", "cron.example"):
             assert (base / filename).exists(), f"missing deployments/{product}/{filename}"
+        for filename in ("IDENTITY.md", "SOUL.md", "HEARTBEAT.md"):
+            assert not (base / filename).exists(), f"duplicated deployments/{product}/{filename}"
 
 
 def test_wti_runbook_is_explicit_and_product_scoped():
     runbook = _read("deployments/wti/AGENTS.md")
     cron = _read("deployments/wti/cron.example")
     assert "export CCVM_PRODUCT=wti" in runbook
-    assert "export CCVM_DATA_DIR=" in runbook
+    assert "ccvm/data/wti" in runbook
     assert "Section 63 Energy Options" in runbook
     assert "--event eia" in runbook
-    assert "CCVM_PRODUCT=wti" in cron and "CCVM_DATA_DIR=" in cron
+    assert "CCVM_PRODUCT=wti" in cron
     assert cron.count("--disabled") >= 3
 
 
@@ -42,7 +44,7 @@ def test_gold_runbook_is_experimental_and_cannot_schedule_itself():
     runbook = _read("deployments/gold/AGENTS.md")
     cron = _read("deployments/gold/cron.example")
     assert "export CCVM_PRODUCT=gold" in runbook
-    assert "export CCVM_DATA_DIR=" in runbook
+    assert "ccvm/data/gold" in runbook
     assert "Section 64" in runbook
     assert "experimental — validation only" in runbook
     assert "Never run `agent/event_run.py --event eia`" in runbook

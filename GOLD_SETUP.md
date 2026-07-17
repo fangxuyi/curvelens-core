@@ -7,8 +7,8 @@ analytics remain in `ccvm/src/ccvm/`; Gold-specific facts live in four places:
    option mapping, COT code, validation bounds, and capability declarations.
 2. `ccvm/src/ccvm/reference/gold_calendar.py` — exchange expiry rules.
 3. `knowledge/gold/` — reviewed interpretation and event calendar.
-4. A deployment environment — `CCVM_PRODUCT=gold`, its own data directory,
-   outbox, agent, and disabled-until-validated schedules.
+4. A deployment environment — `CCVM_PRODUCT=gold`, its own agent, outbox, and
+   disabled-until-validated schedules.
 
 ## Why one repository
 
@@ -24,14 +24,15 @@ full of `if product == "gold"` branches.
 Run WTI and Gold from the same commit but in separate processes:
 
 ```bash
-CCVM_PRODUCT=wti  CCVM_DATA_DIR=/srv/curvelens/wti  ...
-CCVM_PRODUCT=gold CCVM_DATA_DIR=/srv/curvelens/gold ...
+CCVM_PRODUCT=wti  ... # runtime state -> ccvm/data/wti/
+CCVM_PRODUCT=gold ... # runtime state -> ccvm/data/gold/
 ```
 
 Each deployment must have separate manifests, raw/bronze/silver/gold data,
-reports, monitor state, outbox, Telegram destination, and cron jobs. Code and
-virtual environment may be shared. Never switch `CCVM_PRODUCT` against an
-existing unscoped data directory.
+reports, monitor state, outbox, Telegram destination, and cron jobs. The
+framework isolates the on-disk state automatically; code and the virtual
+environment are shared. `CCVM_DATA_DIR` remains available only as an advanced
+storage override.
 
 ## Gold-specific execution differences
 
@@ -61,6 +62,6 @@ existing unscoped data directory.
 
 This branch is a safe scaffold, not a production enablement. It supplies the
 profile, calendar, knowledge shape, shared serial-month abstraction, and tests.
-It also supplies an experimental deployment identity and validation runbook.
+It also supplies an experimental deployment runbook.
 Live downloader configuration, real-PDF fixtures, feed acceptance, schedules,
 and delivery remain deliberately disabled pending the validation gates above.

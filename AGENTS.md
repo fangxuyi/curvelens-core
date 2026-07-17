@@ -13,23 +13,22 @@ exactly one deployment runbook:
 - `deployments/gold/AGENTS.md`
 
 The deployment runbook is authoritative for product-specific collection,
-schedules, QC, and delivery. If no deployment is named, do not infer WTI from
-the framework's backward-compatible code default; establish the intended
-product before performing runtime operations.
+schedules, QC, and delivery. `CCVM_PRODUCT` selects which runbook applies. If a
+runtime task does not name a product, establish it before proceeding.
 
 ## Runtime isolation
 
-Every runtime command must set both variables explicitly:
+Every runtime command must set the product explicitly:
 
 ```bash
 CCVM_PRODUCT=<product>
-CCVM_DATA_DIR=<absolute product-specific data directory>
 ```
 
-Never point two products at the same data directory. Each product requires its
-own raw/bronze/silver/gold data, manifests, reports, monitor state, outbox,
-delivery destination, agent registration, and cron jobs. Code and virtual
-environment may be shared.
+Runtime state is automatically isolated under `ccvm/data/<product>/`; WTI and
+Gold therefore coexist safely in one clone. `CCVM_DATA_DIR` is an optional
+advanced override for migrations or external storage. Never configure two
+products with the same override. Delivery destinations, agent registrations,
+and cron jobs remain product-specific; code and virtual environment are shared.
 
 ## Framework boundaries
 
@@ -71,6 +70,5 @@ Run the shared suite from `ccvm/`:
 PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
 ```
 
-For a product change, also run a smoke check with explicit `CCVM_PRODUCT` and a
-temporary isolated `CCVM_DATA_DIR`. Do not enable a product deployment until
-its runbook's acceptance gates pass.
+For a product change, also run a smoke check with explicit `CCVM_PRODUCT`. Do
+not enable a product deployment until its runbook's acceptance gates pass.

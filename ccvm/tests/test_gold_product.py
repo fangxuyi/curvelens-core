@@ -72,6 +72,19 @@ def test_runtime_data_dir_override(monkeypatch, tmp_path):
     assert data_dir() == (tmp_path / "gold-data").resolve()
 
 
+def test_runtime_data_dir_defaults_to_product_namespace(monkeypatch):
+    monkeypatch.delenv("CCVM_DATA_DIR", raising=False)
+    monkeypatch.setenv("CCVM_PRODUCT", "gold")
+    assert data_dir().parts[-3:] == ("ccvm", "data", "gold")
+
+
+def test_runtime_data_dir_rejects_unsafe_product(monkeypatch):
+    monkeypatch.delenv("CCVM_DATA_DIR", raising=False)
+    monkeypatch.setenv("CCVM_PRODUCT", "../gold")
+    with pytest.raises(ValueError, match="Invalid CCVM_PRODUCT"):
+        data_dir()
+
+
 def test_gold_knowledge_pack_shape():
     pack = knowledge_path("gold")
     assert load_calendar("gold").get("dated") == []
