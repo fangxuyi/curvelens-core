@@ -8,7 +8,7 @@ Used to compute:
 
 Note:
   Black-76 is kept as a European reference pricer and for comparison.
-  The primary IV/greeks for WTI (LO) American options now use the
+  The primary IV/greeks for American-style product options use the
   Barone-Adesi & Whaley (BAW) model in baw.py.
 
 References:

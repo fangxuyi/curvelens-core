@@ -28,12 +28,15 @@ from typing import Optional
 @dataclass(frozen=True)
 class FundamentalsProvider:
     name: str
+    display_name: str
     collector_cls: type
     bronze: object      # module with parse(raw_path, sha256) -> pa.Table
     silver: object      # module with normalize(bronze, as_of) -> pa.Table
     features: object    # module with compute(silver, as_of) -> pa.Table
     source_id_fragment: str   # manifest source_id substring for entry routing
     cadence_note: str
+    trigger_definitions: tuple[dict, ...] = ()
+    report_section_builder: object = None
 
 
 def _eia_weekly_petroleum() -> FundamentalsProvider:
@@ -43,12 +46,28 @@ def _eia_weekly_petroleum() -> FundamentalsProvider:
     from ..parsers import bronze_eia
     return FundamentalsProvider(
         name="eia_weekly_petroleum",
+        display_name="EIA Weekly Petroleum Fundamentals",
         collector_cls=EIACollector,
         bronze=bronze_eia,
         silver=silver_eia,
         features=eia_features,
         source_id_fragment="eia",
         cadence_note="weekly (Wed 10:30 ET), 1-week lag",
+        trigger_definitions=(
+            {"id": "bull_c_eia_draw", "scenario": "bull", "side": "confirm",
+             "kind": "auto", "description": "EIA crude draw > 3mb (latest week)",
+             "check": "consecutive_eia",
+             "params": {"op": ">", "value": 3000, "count": 1}},
+            {"id": "bull_i_eia_builds", "scenario": "bull", "side": "invalidate",
+             "kind": "auto", "description": "EIA build > 2mb for two consecutive weeks",
+             "check": "consecutive_eia",
+             "params": {"op": "<", "value": -2000, "count": 2}},
+            {"id": "bear_c_eia_build", "scenario": "bear", "side": "confirm",
+             "kind": "auto", "description": "EIA build > 4mb (latest week)",
+             "check": "consecutive_eia",
+             "params": {"op": "<", "value": -4000, "count": 1}},
+        ),
+        report_section_builder=eia_features.report_section,
     )
 
 

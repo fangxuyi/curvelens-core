@@ -31,10 +31,29 @@ _CONFIG_DIR = Path(__file__).resolve().parents[3] / "config" / "markets"
 
 @dataclass(frozen=True)
 class BulletinSpec:
-    product_header_call: str = "LO CALL"
-    product_header_put: str = "LO PUT"
-    strike_scale: float = 100.0
-    underlying_month_offset: int = 1
+    product_header_call: str
+    product_header_put: str
+    url: str
+    strike_scale: float = 1.0
+    underlying_month_offset: int = 0
+
+
+@dataclass(frozen=True)
+class BenchmarkSpec:
+    """Optional front-continuous context benchmark for spread monitoring."""
+
+    name: str
+    ticker: str
+    source_id: str
+    filename_prefix: str
+
+
+@dataclass(frozen=True)
+class NewsSpec:
+    """Product-scoped RSS sources and relevance terms."""
+
+    keywords: tuple[str, ...] = ()
+    sources: tuple[tuple[str, str, str], ...] = ()  # (key, url, display name)
 
 
 @dataclass(frozen=True)
@@ -57,7 +76,22 @@ class Product:
     fundamentals_provider: Optional[str]
     futures_depth: int
     options_expiry_depth: int
-    bulletin: BulletinSpec = field(default_factory=BulletinSpec)
+    fail_strikes_below: int = 2
+    pass_strikes_at: int = 5
+    settlement_min: float = 0.0
+    settlement_max: Optional[float] = None
+    exercise_style: str = "American"
+    settlement_style: str = "Futures"
+    risk_free_rate: float = 0.05
+    bulletin: Optional[BulletinSpec] = None
+    benchmark: Optional[BenchmarkSpec] = None
+    news: NewsSpec = field(default_factory=NewsSpec)
+    trigger_definitions: tuple[dict, ...] = ()
+    caveats: tuple[str, ...] = ()
+    # CFTC Commitments of Traders (B3). Both None → the deployment has no COT
+    # feed and the collector skips (e.g. products CFTC doesn't publish).
+    cot_contract_market_code: Optional[str] = None   # "067651" (WTI), "088691" (gold)
+    cot_contract_label: Optional[str] = None          # "WTI-PHYSICAL NYMEX"
 
     @property
     def calendar(self) -> ModuleType:
@@ -100,7 +134,30 @@ def _load_yaml(key: str) -> dict:
 
 def load_product(key: str) -> Product:
     m = _load_yaml(key)
+    required_profile_fields = (
+        "name", "exchange", "product_code", "currency", "price_unit",
+        "futures_prefix", "month_codes", "calendar_module", "knowledge_pack",
+    )
+    missing_profile = [name for name in required_profile_fields if not m.get(name)]
+    if missing_profile:
+        raise ValueError(f"Product profile {key!r} missing: {missing_profile}")
     b = m.get("bulletin", {}) or {}
+    benchmark = m.get("benchmark", {}) or {}
+    news = m.get("news", {}) or {}
+    options = m.get("options", {}) or {}
+    bulletin = None
+    if b:
+        required = ("product_header_call", "product_header_put", "url")
+        missing = [name for name in required if not b.get(name)]
+        if missing:
+            raise ValueError(f"Product profile {key!r} bulletin missing: {missing}")
+        bulletin = BulletinSpec(
+            product_header_call=b["product_header_call"],
+            product_header_put=b["product_header_put"],
+            url=b["url"],
+            strike_scale=float(b.get("strike_scale", 1)),
+            underlying_month_offset=int(b.get("underlying_month_offset", 0)),
+        )
     return Product(
         key=key,
         name=m.get("name", key.upper()),
@@ -115,17 +172,38 @@ def load_product(key: str) -> Product:
         options_prefix=m.get("options_prefix", ""),
         yfinance_contract_suffix=m.get("yfinance_contract_suffix", ""),
         month_codes=m.get("month_codes", {}),
-        calendar_module=m.get("calendar_module", "ccvm.reference.wti_calendar"),
-        knowledge_pack=m.get("knowledge_pack", key),
+        calendar_module=m["calendar_module"],
+        knowledge_pack=m["knowledge_pack"],
         fundamentals_provider=m.get("fundamentals_provider"),
         futures_depth=int(m.get("futures_depth", 12)),
         options_expiry_depth=int(m.get("options_expiry_depth", 5)),
-        bulletin=BulletinSpec(
-            product_header_call=b.get("product_header_call", "LO CALL"),
-            product_header_put=b.get("product_header_put", "LO PUT"),
-            strike_scale=float(b.get("strike_scale", 100)),
-            underlying_month_offset=int(b.get("underlying_month_offset", 1)),
+        fail_strikes_below=int(m.get("fail_strikes_below", 2)),
+        pass_strikes_at=int(m.get("warn_strikes_below",
+                                  m.get("min_strikes_per_expiry", 5))),
+        settlement_min=float(m.get("settlement_min", 0)),
+        settlement_max=(float(m["settlement_max"])
+                        if m.get("settlement_max") is not None else None),
+        exercise_style=options.get("exercise_style", "American"),
+        settlement_style=options.get("settlement_style", "Futures"),
+        risk_free_rate=float(options.get("risk_free_rate", 0.05)),
+        bulletin=bulletin,
+        benchmark=(BenchmarkSpec(
+            name=benchmark["name"],
+            ticker=benchmark["ticker"],
+            source_id=benchmark.get("source_id", f"yfinance_{key}_benchmark"),
+            filename_prefix=benchmark.get("filename_prefix", f"{key}_benchmark"),
+        ) if benchmark else None),
+        news=NewsSpec(
+            keywords=tuple(str(v).lower() for v in news.get("keywords", [])),
+            sources=tuple(
+                (str(s["key"]), str(s["url"]), str(s.get("name", s["key"])))
+                for s in news.get("sources", [])
+            ),
         ),
+        trigger_definitions=tuple(m.get("triggers", []) or []),
+        caveats=tuple(str(v) for v in m.get("caveats", []) or []),
+        cot_contract_market_code=(m.get("cot", {}) or {}).get("contract_market_code"),
+        cot_contract_label=(m.get("cot", {}) or {}).get("contract_label"),
     )
 
 

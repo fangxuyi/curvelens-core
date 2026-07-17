@@ -1,10 +1,12 @@
-"""Parse raw yfinance_wti_futures JSON into a bronze PyArrow table."""
+"""Parse raw product futures JSON into a bronze PyArrow table."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
 import pyarrow as pa
+
+from ..reference.product import get_product
 
 _SCHEMA = pa.schema([
     pa.field("trade_date", pa.string()),
@@ -31,11 +33,12 @@ def parse(raw_path: Path, sha256: str) -> pa.Table:
     settlements = data.get("settlements", [])
 
     rows: dict[str, list] = {f.name: [] for f in _SCHEMA}
+    product = get_product()
 
     for r in settlements:
         rows["trade_date"].append(str(r.get("trade_date", "")))
-        rows["exchange"].append(str(r.get("exchange", "NYMEX")))
-        rows["product"].append(str(r.get("product", "CL")))
+        rows["exchange"].append(str(r.get("exchange", product.exchange)))
+        rows["product"].append(str(r.get("product", product.product_code)))
         rows["contract_code"].append(str(r.get("contract_code", "")))
         rows["delivery_month"].append(str(r.get("delivery_month", "")))
         v = r.get("settlement")
@@ -44,8 +47,8 @@ def parse(raw_path: Path, sha256: str) -> pa.Table:
         rows["volume"].append(int(vol) if vol is not None else None)
         oi = r.get("open_interest")
         rows["open_interest"].append(int(oi) if oi is not None else None)
-        rows["currency"].append(str(r.get("currency", "USD")))
-        rows["price_unit"].append(str(r.get("price_unit", "USD/BBL")))
+        rows["currency"].append(str(r.get("currency", product.currency)))
+        rows["price_unit"].append(str(r.get("price_unit", product.price_unit)))
         rows["source_id"].append(str(r.get("source_id", "")))
         rows["raw_file_sha256"].append(sha256)
 

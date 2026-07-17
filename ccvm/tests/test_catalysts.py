@@ -100,11 +100,16 @@ def test_event_id_differs_for_different_inputs():
 # ──────────────────────────────────────────────────────────
 
 def test_extract_returns_event_with_mocked_api():
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = _MOCK_API_RESPONSE
-    mock_resp.raise_for_status = MagicMock()
+    mock_result = MagicMock(
+        returncode=0,
+        stdout=_MOCK_API_RESPONSE["content"][0]["text"],
+        stderr="",
+    )
 
-    with patch("httpx.post", return_value=mock_resp):
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/claude"),
+        patch("subprocess.run", return_value=mock_result),
+    ):
         event = extract(
             text="Libya Sharara field shut down by protests.",
             source_url="https://example.com/libya",
@@ -121,13 +126,14 @@ def test_extract_returns_event_with_mocked_api():
 
 
 def test_extract_returns_none_without_api_key():
-    result = extract(
-        text="Some article.",
-        source_url="https://example.com",
-        published_at="2026-06-25",
-        observation_date=AS_OF,
-        api_key="",
-    )
+    with patch("shutil.which", return_value=None):
+        result = extract(
+            text="Some article.",
+            source_url="https://example.com",
+            published_at="2026-06-25",
+            observation_date=AS_OF,
+            api_key="",
+        )
     assert result is None
 
 
@@ -145,11 +151,16 @@ def test_extract_handles_no_catalyst_response():
             })
         }]
     }
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = no_catalyst_resp
-    mock_resp.raise_for_status = MagicMock()
+    mock_result = MagicMock(
+        returncode=0,
+        stdout=no_catalyst_resp["content"][0]["text"],
+        stderr="",
+    )
 
-    with patch("httpx.post", return_value=mock_resp):
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/claude"),
+        patch("subprocess.run", return_value=mock_result),
+    ):
         event = extract("Generic news.", "https://x.com", "2026-06-25", AS_OF, api_key="sk-test")
     assert event is None
 

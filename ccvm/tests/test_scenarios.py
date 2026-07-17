@@ -59,6 +59,10 @@ def _gold_options() -> pa.Table:
             rows["black76_iv"].append(0.30)
             rows["black76_delta"].append(0.5 if cp == "C" else -0.5)
             rows["black76_vega"].append(0.10)
+            rows["baw_iv"].append(0.30)
+            rows["baw_delta"].append(0.5 if cp == "C" else -0.5)
+            rows["baw_vega"].append(0.10)
+            rows["early_exercise_premium"].append(0.0)
             rows["market_delta"].append(0.5)
             rows["atm_iv"].append(0.30)
             rows["iv_25d_call"].append(0.31)
@@ -260,4 +264,4 @@ def test_report_includes_caveats(tmp_path):
     # BAW is the pricing model for American LO options (USO caveat is long gone
     # with the dropped E*TRADE source)
     assert any("baw_iv" in c for c in caveats)
-    assert any("eia_lag" in c for c in caveats)
+    assert any("fundamentals_cadence" in c for c in caveats)

@@ -35,8 +35,9 @@ sys.path.insert(0, str(CCVM_DIR / "src"))
 
 SERIES_METRICS = [
     "front_settle", "curve_slope", "m1_m2_spread", "atm_iv", "rr25", "bf25",
-    "skew_slope", "realized_vol_10d", "vrp_10d", "brent_wti_spread",
+    "skew_slope", "realized_vol_10d", "vrp_10d", "benchmark_spread",
 ]
+SERIES_ALIASES = {"brent_wti_spread": "benchmark_spread"}
 
 _SQL_BLOCKED = re.compile(
     r"\b(insert|update|delete|drop|create|alter|copy|export|attach|install|load|pragma|set)\b",
@@ -64,15 +65,19 @@ def cmd_dates(_args) -> None:
 
 def cmd_series(args) -> None:
     pq = _pq()
-    if args.metric not in SERIES_METRICS:
-        _emit({"error": f"unknown metric {args.metric!r}", "available": SERIES_METRICS})
+    if args.metric not in SERIES_METRICS and args.metric not in SERIES_ALIASES:
+        _emit({"error": f"unknown metric {args.metric!r}",
+               "available": SERIES_METRICS + sorted(SERIES_ALIASES)})
         return
+    metric = SERIES_ALIASES.get(args.metric, args.metric)
     dates = pq.list_dates("gold", "history_context")[-args.days:]
     rows = []
     for dt in dates:
         d = pq.read("gold", "history_context", dt).to_pydict()
-        if args.metric in d:
-            rows.append({"date": dt, "value": d[args.metric][0]})
+        if metric in d:
+            rows.append({"date": dt, "value": d[metric][0]})
+        elif metric == "benchmark_spread" and "brent_wti_spread" in d:
+            rows.append({"date": dt, "value": d["brent_wti_spread"][0]})
     _emit({"metric": args.metric, "rows": rows,
            "source": "gold/history_context", "unit_note": "IV/RR/vol as decimals"})
 

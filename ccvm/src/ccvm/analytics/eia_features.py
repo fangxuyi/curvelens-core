@@ -212,3 +212,30 @@ def _empty(as_of_date: date) -> pa.Table:
                  else [""] for f in _SCHEMA},
         schema=_SCHEMA,
     )
+
+
+def report_section(gold: pa.Table) -> dict:
+    """Provider-owned mapping from gold features to the report payload."""
+    if gold is None or len(gold) == 0:
+        return {"status": "unavailable"}
+    d = gold.to_pydict()
+    return {
+        "status": "available",
+        "eia_period": d["eia_period"][0],
+        "crude_stocks_ex_spr_mbbl": d["crude_stocks_ex_spr"][0],
+        "spr_stocks_mbbl": d.get("spr_stocks", [None])[0],
+        "cushing_stocks_mbbl": d["cushing_stocks"][0],
+        "crude_draw_mbbl": d["crude_draw"][0],
+        "cushing_draw_mbbl": d["cushing_draw"][0],
+        "crude_imports_mbbld": d["crude_imports"][0],
+        "crude_exports_mbbld": d["crude_exports"][0],
+        "net_imports_mbbld": d["net_imports"][0],
+        "refinery_utilization_pct": d["refinery_utilization_pct"][0],
+        "gasoline_stocks_mbbl": d["gasoline_stocks"][0],
+        "distillate_stocks_mbbl": d["distillate_stocks"][0],
+        "gasoline_draw_mbbl": d["gasoline_draw"][0],
+        "distillate_draw_mbbl": d["distillate_draw"][0],
+        "supply_signal": d["supply_signal"][0],
+        "cushing_signal": d["cushing_signal"][0],
+        "scenario_trigger": d["scenario_trigger"][0],
+    }

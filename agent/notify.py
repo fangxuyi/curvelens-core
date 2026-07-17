@@ -35,6 +35,7 @@ from pathlib import Path
 # CurveLens/ccvm/data/.
 REPO_ROOT = Path(__file__).parent.parent
 DATA_DIR = REPO_ROOT / "ccvm" / "data"
+sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
 OUTBOX_DIR = DATA_DIR / "agent_outbox"
 PENDING_PATH = OUTBOX_DIR / "pending.json"
 DELIVERED_PATH = OUTBOX_DIR / "delivered.json"
@@ -73,11 +74,27 @@ def _fmt_signed(v, unit="", scale=1.0, decimals=2):
     return f"{v*scale:+.{decimals}f}{unit}"
 
 
+def _product():
+    from ccvm.reference.product import get_product
+    return get_product()
+
+
+def _price(v) -> str:
+    if v is None:
+        return "n/a"
+    product = _product()
+    symbol = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}.get(product.currency)
+    amount = f"{symbol}{v:.2f}" if symbol else f"{v:.2f} {product.currency}"
+    denominator = (f"/{product.price_unit.split('/', 1)[1].lower()}"
+                   if "/" in product.price_unit else f" {product.price_unit}")
+    return amount + denominator
+
+
 def _daily_brief_text(date_str: str, sections: dict, agreement: dict) -> str:
     mr = sections.get("market_risk", {})
     fut = mr.get("futures", {}) or {}
     opt = mr.get("options", {}) or {}
-    eia = sections.get("eia_fundamentals", {}) or {}
+    fundamentals = sections.get("fundamentals", sections.get("eia_fundamentals", {})) or {}
     cats = sections.get("catalysts", {}) or {}
 
     lines = [f"📈 *CurveLens Daily Brief — {date_str}*", ""]
@@ -88,7 +105,7 @@ def _daily_brief_text(date_str: str, sections: dict, agreement: dict) -> str:
         settle = fut.get("front_settlement")
         ret = fut.get("front_return_1d")
         struct = "contango" if fut.get("contango") else "backwardation"
-        settle_s = f"${settle:.2f}" if settle is not None else "n/a"
+        settle_s = _price(settle)
         lines.append(f"*Front:* {code} {settle_s} ({_fmt_signed(ret, '%', 100)} 1d) — {struct}")
 
     # Options line
@@ -99,14 +116,22 @@ def _daily_brief_text(date_str: str, sections: dict, agreement: dict) -> str:
         lines.append(f"*Vol:* ATM {atm_s} | 25Δ RR {_fmt_signed(rr, '%', 100)}")
 
     # EIA line
-    if eia and eia.get("status") == "available":
-        draw = eia.get("crude_draw_mbbl")
-        # crude_draw > 0 means stocks fell (bullish); display with correct sign
-        draw_s = f"{-draw:+,.0f} MBBL" if draw is not None else "n/a"
-        lines.append(
-            f"*EIA:* crude {draw_s} | supply {eia.get('supply_signal','n/a')} "
-            f"| Cushing {eia.get('cushing_signal','n/a')}"
-        )
+    if fundamentals and fundamentals.get("status") == "available":
+        from ccvm.fundamentals import get_provider
+        provider = get_provider(_product().fundamentals_provider)
+        label = provider.display_name if provider else "Fundamentals"
+        draw = fundamentals.get("crude_draw_mbbl")
+        if draw is not None:  # EIA weekly petroleum provider payload
+            draw_s = f"{-draw:+,.0f} MBBL"
+            lines.append(
+                f"*{label}:* crude {draw_s} | supply "
+                f"{fundamentals.get('supply_signal','n/a')} | Cushing "
+                f"{fundamentals.get('cushing_signal','n/a')}"
+            )
+        else:
+            lines.append(
+                f"*{label}:* signal {fundamentals.get('supply_signal', 'available')}"
+            )
 
     # Agreement
     state = agreement.get("state", "insufficient_data")
@@ -129,13 +154,16 @@ def _priority_alert_text(date_str: str, sections: dict, agreement: dict, eia_sce
     fut = (mr.get("futures", {}) or {})
     code = fut.get("front_contract", "?")
     settle = fut.get("front_settlement")
-    settle_s = f"${settle:.2f}/bbl" if settle is not None else ""
+    settle_s = _price(settle) if settle is not None else ""
 
     reasons = []
     if state in _ALERT_STATES:
         reasons.append(f"futures + options agree ({agreement.get('confidence','')})")
     if eia_scenario in _ALERT_SCENARIOS:
-        reasons.append(f"EIA {eia_scenario}")
+        from ccvm.fundamentals import get_provider
+        provider = get_provider(_product().fundamentals_provider)
+        label = provider.display_name if provider else "Fundamentals"
+        reasons.append(f"{label} {eia_scenario}")
     for ev in (agreement.get("evidence") or [])[:3]:
         reasons.append(ev)
 
@@ -187,7 +215,7 @@ def cmd_prepare(date_str: str) -> None:
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={date_str}" / "agreement.json"
     agreement = json.loads(agr_path.read_text()) if agr_path.exists() else {}
 
-    eia = sections.get("eia_fundamentals", {}) or {}
+    eia = sections.get("fundamentals", sections.get("eia_fundamentals", {})) or {}
     eia_scenario = eia.get("scenario_trigger", "none")
     state = agreement.get("state", "insufficient_data")
     alert_worthy = (state in _ALERT_STATES) or (eia_scenario in _ALERT_SCENARIOS)

@@ -66,8 +66,11 @@ def main() -> None:
 
     # ── Gold EIA features (optional) ──
     gold_eia = None
-    if pq.exists("gold", "eia_features", as_of_str):
-        gold_eia = pq.read("gold", "eia_features", as_of_str)
+    fundamentals_dataset = ("fundamentals_features"
+                            if pq.exists("gold", "fundamentals_features", as_of_str)
+                            else "eia_features")
+    if pq.exists("gold", fundamentals_dataset, as_of_str):
+        gold_eia = pq.read("gold", fundamentals_dataset, as_of_str)
 
     # ── History context (optional) ──
     history_ctx = None

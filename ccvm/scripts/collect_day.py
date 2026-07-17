@@ -36,7 +36,7 @@ from ccvm.fundamentals import get_provider
 from ccvm.reference.product import get_product
 from ccvm.collectors.rss import RSSNewsCollector
 from ccvm.collectors.cftc_cot import CFTCCOTCollector
-from ccvm.collectors.yfinance_brent import YFinanceBrentCollector
+from ccvm.collectors.yfinance_brent import YFinanceBenchmarkCollector
 from ccvm.collectors.yfinance_futures import YFinanceFuturesCollector
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.raw_store import RawStore
@@ -50,7 +50,8 @@ DATA_DIR = PROJECT_ROOT / "data"
 MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
-_SOURCES = ["yfinance_futures", "yfinance_brent", "cftc_cot", "cme_bulletin_pdf", "eia", "rss_news", "csv_futures", "all"]
+_SOURCES = ["yfinance_futures", "yfinance_benchmark", "yfinance_brent", "cftc_cot",
+            "cme_bulletin_pdf", "fundamentals", "eia", "rss_news", "csv_futures", "all"]
 
 
 def main() -> None:
@@ -60,7 +61,8 @@ def main() -> None:
         "--source",
         choices=_SOURCES,
         default="all",
-        help="Which collector(s) to run (default: all = yfinance_futures + cme_bulletin_pdf + eia + rss_news)",
+        help=("Which collector(s) to run (default: all; unsupported optional "
+              "capabilities are skipped from the active product profile)"),
     )
     args = parser.parse_args()
 
@@ -80,11 +82,11 @@ def main() -> None:
         results["yfinance_futures"] = result
         print(f"[yfinance_futures]  {result}")
 
-    if args.source in ("yfinance_brent", "all"):
-        collector = YFinanceBrentCollector(raw_store, manifest_db)
+    if args.source in ("yfinance_benchmark", "yfinance_brent", "all"):
+        collector = YFinanceBenchmarkCollector(raw_store, manifest_db)
         result = collector.collect(as_of)
-        results["yfinance_brent"] = result
-        print(f"[yfinance_brent]    {result}")
+        results["yfinance_benchmark"] = result
+        print(f"[benchmark]          {result}")
 
     if args.source in ("cftc_cot", "all"):
         collector = CFTCCOTCollector(raw_store, manifest_db)
@@ -93,18 +95,21 @@ def main() -> None:
         print(f"[cftc_cot]          {result}")
 
     if args.source in ("cme_bulletin_pdf", "all"):
-        collector = CMEBulletinPDFCollector(DATA_DIR, raw_store, manifest_db)
-        result = collector.collect(as_of)
-        results["cme_bulletin_pdf"] = result
-        print(f"[cme_bulletin_pdf]  {result}")
+        if get_product().bulletin is None:
+            print("[cme_bulletin_pdf]  skipped — product has no bulletin configuration")
+        else:
+            collector = CMEBulletinPDFCollector(DATA_DIR, raw_store, manifest_db)
+            result = collector.collect(as_of)
+            results["cme_bulletin_pdf"] = result
+            print(f"[cme_bulletin_pdf]  {result}")
 
-    if args.source in ("eia", "all"):
+    if args.source in ("fundamentals", "eia", "all"):
         # E4: the fundamentals collector comes from the product profile registry
         provider = get_provider(get_product().fundamentals_provider)
         collector = provider.collector_cls(raw_store, manifest_db) if provider else None
-    if args.source in ("eia", "all") and collector is None:
+    if args.source in ("fundamentals", "eia", "all") and collector is None:
         print("[fundamentals]      skipped — product has no fundamentals_provider")
-    elif args.source in ("eia", "all"):
+    elif args.source in ("fundamentals", "eia", "all"):
         result = collector.collect(as_of)
         results["eia"] = result
         print(f"[eia]               {result}")

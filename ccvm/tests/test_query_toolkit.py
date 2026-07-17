@@ -37,3 +37,4 @@ class TestMetricSurface:
         fields = {f.name for f in _SCHEMA}
         for m in query.SERIES_METRICS:
             assert m in fields, f"{m} not in gold/history_context schema"
+        assert query.SERIES_ALIASES["brent_wti_spread"] == "benchmark_spread"

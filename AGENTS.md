@@ -290,3 +290,7 @@ note in its run summary that an alert was held and why.
   American. Deep-OTM early-exercise premia carry known approximation error and
   are filtered out of the surface metrics.
 - EIA weeklies lag by up to a week; the brief labels the report period.
+
+## Imported Claude Cowork project instructions
+
+framework work

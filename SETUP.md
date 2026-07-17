@@ -12,12 +12,11 @@ profile** and its companion artifacts. `CCVM_PRODUCT` selects the profile
 curvelens-core/
 ├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   agent spec + identity
 ├── agent/            run_pipeline.py · notify.py · event_run.py · query.py
-├── config/
-│   ├── cron.example                 OpenClaw cron templates (ship --disabled)
-│   └── markets/<product>.yaml      ← product profile (load-bearing)
+├── config/cron.example             OpenClaw cron templates (ship --disabled)
 ├── knowledge/<pack>/               ← product knowledge pack + MAINTENANCE.md
 └── ccvm/                            the deterministic engine
     ├── scripts/                     5 pipeline stages
+    ├── config/markets/<product>.yaml  ← product profile (load-bearing)
     ├── src/ccvm/                    package (reference/product.py = profile loader)
     └── data/                        runtime state (gitignored)
 ```
@@ -69,9 +68,10 @@ time only** — never commit one. Delivery/dedup state lives in
 
 ## 2. Porting to a new commodity — the four artifacts
 
-Zero engine changes. A port authors these:
+The shared engine has no WTI market defaults other than selecting the `wti`
+deployment when `CCVM_PRODUCT` is unset. A port authors these:
 
-### 2.1 Product profile — `config/markets/<product>.yaml`
+### 2.1 Product profile — `ccvm/config/markets/<product>.yaml`
 
 Loaded by `ccvm/src/ccvm/reference/product.py` (`get_product()`). Field
 reference (all under the top-level `market:` mapping):
@@ -89,9 +89,15 @@ reference (all under the top-level `market:` mapping):
 | `knowledge_pack` | `wti` | `knowledge/<pack>/` resolution |
 | `fundamentals_provider` | `eia_weekly_petroleum` | fundamentals registry (§2.3); omit for none |
 | `futures_depth`, `options_expiry_depth` | 12, 5 | collection scope |
+| `settlement_min`, `settlement_max` | 1, 500 | product-scale silver validation |
+| `options.risk_free_rate` | 0.05 | BAW/Black-76/RND rate assumption |
 | `bulletin.product_header_call/put` | `LO CALL` / `LO PUT` | PDF section detection |
+| `bulletin.url` | CME Section 63 URL | agent preflight/download instructions |
 | `bulletin.strike_scale` | `100` (cents → $) | strike conversion — **verify per product!** |
 | `bulletin.underlying_month_offset` | `1` (AUG label → Sep contract) | label → underlying mapping |
+| `benchmark` | Brent / `BZ=F` | optional relative-value context; omit for none |
+| `news.keywords`, `news.sources` | energy terms/feeds | product-scoped catalyst collection; omit for none |
+| `cot` | CFTC code/label | optional positioning context; omit for none |
 | `scenario/threshold knobs` | — | not needed: thresholds are price-relative (E2) and shocks σ-based (E3) — they self-calibrate |
 
 ### 2.2 Calendar module — expiry rules with exchange-verified fixtures
@@ -133,9 +139,9 @@ tests):
 - `seasonality.md` — how to read the same print in different months
 - `analogs.md` — dated episodes, mechanism-first
 
-Also: per-product event taxonomy / RSS feeds in `config/` if catalyst
-extraction is wanted (the extractor prompt is already templated from the
-profile).
+Also configure `news` in the product profile and author a product event
+taxonomy if catalyst extraction is wanted (the extractor prompt is templated
+from the profile).
 
 ---
 

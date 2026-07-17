@@ -36,8 +36,9 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # This script lives in CurveLens/agent/; the deterministic pipeline and its
 # data live one level down in CurveLens/ccvm/.
@@ -53,12 +54,6 @@ sys.path.insert(0, str(CCVM_DIR / "src"))
 _ALERT_STATES = {"confirmed_upside_risk", "confirmed_downside_risk"}
 _ALERT_SCENARIOS = {"bull_confirmed", "bear_confirmed"}
 
-CME_BULLETIN_URL = (
-    "https://www.cmegroup.com/daily_bulletin/current/"
-    "Section63_Energy_Options_Products.pdf"
-)
-
-
 def _eprint(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
@@ -70,8 +65,8 @@ def _emit(obj: dict) -> None:
 
 
 def _ny_today() -> date:
-    """Current date in America/New_York (settlement calendar), no tz deps."""
-    return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
+    """Current date in the deployment's operating timezone."""
+    return datetime.now(ZoneInfo("America/New_York")).date()
 
 
 def _run_stage(name: str, argv: list[str], required: bool) -> bool:
@@ -119,15 +114,16 @@ def main() -> None:
     as_of_str = as_of.isoformat()
     _eprint(f"CurveLens pipeline — trade date {as_of_str}")
 
-    # ── Pre-flight: the CME option bulletin PDF must already be on disk. ──
-    # CME is Akamai bot-protected; the agent fetches it, not this script.
+    # ── Pre-flight: bulletin-backed products require the PDF on disk. ──
+    from ccvm.reference.product import get_product
+    product = get_product()
     pdf_path = DATA_DIR / "cme_bulletin" / f"{as_of_str}.pdf"
-    if not pdf_path.exists() and not args.force_pdf:
+    if product.bulletin and not pdf_path.exists() and not args.force_pdf:
         _emit({
             "result": "NEED_CME_PDF",
             "date": as_of_str,
             "pdf_path": str(pdf_path),
-            "url": CME_BULLETIN_URL,
+            "url": product.bulletin.url,
             "detail": ("Download the Section 63 Energy Options bulletin for this "
                        "date and save it to pdf_path, then re-run."),
         })
@@ -177,11 +173,14 @@ def _build_summary(as_of: date, as_of_str: str) -> dict:
     # EIA scenario trigger — prefer the seasonally-adjusted trigger (B4)
     # over the fixed-threshold one; fall back to gold eia_features.
     eia_scenario = "none"
+    fundamentals_dataset = ("fundamentals_features"
+                            if pq.exists("gold", "fundamentals_features", as_of_str)
+                            else "eia_features")
     seas_path = DATA_DIR / "gold" / "eia_seasonal" / f"trade_date={as_of_str}" / "seasonal.json"
     if seas_path.exists():
         eia_scenario = json.loads(seas_path.read_text()).get("trigger", "none") or "none"
-    elif pq.exists("gold", "eia_features", as_of_str):
-        ed = pq.read("gold", "eia_features", as_of_str).to_pydict()
+    if eia_scenario == "none" and pq.exists("gold", fundamentals_dataset, as_of_str):
+        ed = pq.read("gold", fundamentals_dataset, as_of_str).to_pydict()
         eia_scenario = (ed.get("scenario_trigger") or ["none"])[0] or "none"
 
     # Front contract headline
@@ -193,7 +192,9 @@ def _build_summary(as_of: date, as_of_str: str) -> dict:
             settle = fd["settlement"][0]
             ret = (fd.get("return_1d") or [None])[0]
             ret_str = f" ({ret*100:+.2f}% 1d)" if ret is not None else ""
-            headline = f"{code} @ ${settle:.2f}/bbl{ret_str}"
+            from ccvm.reference.product import get_product
+            product = get_product()
+            headline = f"{code} @ {settle:.2f} {product.price_unit}{ret_str}"
 
     alert_worthy = (agreement_state in _ALERT_STATES) or (eia_scenario in _ALERT_SCENARIOS)
 

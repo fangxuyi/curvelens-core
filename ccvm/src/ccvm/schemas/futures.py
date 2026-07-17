@@ -16,8 +16,8 @@ class FuturesSettlement(BaseModel):
     settlement: float
     volume: Optional[int] = None
     open_interest: Optional[int] = None
-    currency: str = "USD"
-    price_unit: str = "USD/BBL"
+    currency: str
+    price_unit: str
     source_id: str
     source_record_id: Optional[str] = None
     retrieved_at: datetime

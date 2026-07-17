@@ -39,8 +39,7 @@ import pyarrow as pa
 
 from .baw import baw_greeks, baw_implied_vol, baw_price
 from .black76 import black76_greeks, black76_price, implied_vol
-
-_RISK_FREE_RATE = 0.05  # 5% — approximate; for USO/CL options, use T-bill rate
+from ..reference.product import get_product
 
 _SCHEMA = pa.schema([
     pa.field("trade_date", pa.string()),
@@ -124,6 +123,7 @@ def compute(
     or the matching underlying contract).
     """
     # Build forward price lookup: underlying_contract → settlement
+    risk_free_rate = get_product().risk_free_rate
     fu_d = silver_futures.to_pydict()
     fu_n = len(fu_d["trade_date"])
     forward_by_contract: dict[str, float] = {}
@@ -189,7 +189,7 @@ def compute(
                 forward=fwd,
                 strike=strike,
                 time_to_expiry=tte,
-                rate=_RISK_FREE_RATE,
+                rate=risk_free_rate,
                 call_put=cp,
             )
             if baw_iv is None or baw_iv <= 0:
@@ -201,16 +201,16 @@ def compute(
                 forward=fwd,
                 strike=strike,
                 time_to_expiry=tte,
-                rate=_RISK_FREE_RATE,
+                rate=risk_free_rate,
                 call_put=cp,
             )
 
-            baw_g = baw_greeks(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
-            b76_g = black76_greeks(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
+            baw_g = baw_greeks(fwd, strike, tte, risk_free_rate, baw_iv, cp)
+            b76_g = black76_greeks(fwd, strike, tte, risk_free_rate, baw_iv, cp)
 
             # Early-exercise premium in price space
-            baw_p  = baw_price(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
-            b76_p  = black76_price(fwd, strike, tte, _RISK_FREE_RATE, baw_iv, cp)
+            baw_p  = baw_price(fwd, strike, tte, risk_free_rate, baw_iv, cp)
+            b76_p  = black76_price(fwd, strike, tte, risk_free_rate, baw_iv, cp)
             eep = baw_p - b76_p
 
             delta_val = abs(baw_g.get("delta", float("nan")))

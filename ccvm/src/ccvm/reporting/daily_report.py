@@ -64,7 +64,7 @@ def generate(
             "eia_seasonal": eia_seasonal or {},
             "rnd": rnd or {},
             "term_structure": _term_structure_section(gold_futures, gold_options),
-            "eia_fundamentals": _eia_section(gold_eia),
+            "fundamentals": _fundamentals_section(gold_eia),
             "catalysts": _catalysts_section(top_catalysts, themes),
             "agreement": agreement,
             "scenarios": scenarios,
@@ -97,7 +97,18 @@ def _product_display() -> str:
         from ..reference.product import get_product
         return get_product().display_name
     except Exception:
-        return "WTI"
+        return "Product"
+
+
+def _product_profile():
+    from ..reference.product import get_product
+    return get_product()
+
+
+def _price_unit_short() -> str:
+    """Human-readable denominator, e.g. USD/BBL -> /bbl."""
+    unit = _product_profile().price_unit
+    return f"/{unit.split('/', 1)[1].lower()}" if "/" in unit else f" {unit}"
 
 
 def _market_risk_section(
@@ -143,30 +154,14 @@ def _market_risk_section(
     return section
 
 
-def _eia_section(gold_eia: Optional[pa.Table]) -> dict:
+def _fundamentals_section(gold_eia: Optional[pa.Table]) -> dict:
     if gold_eia is None or len(gold_eia) == 0:
         return {"status": "unavailable"}
-    d = gold_eia.to_pydict()
-    return {
-        "status": "available",
-        "eia_period": d["eia_period"][0],
-        "crude_stocks_ex_spr_mbbl": d["crude_stocks_ex_spr"][0],
-        "spr_stocks_mbbl": d.get("spr_stocks", [None])[0],
-        "cushing_stocks_mbbl": d["cushing_stocks"][0],
-        "crude_draw_mbbl": d["crude_draw"][0],
-        "cushing_draw_mbbl": d["cushing_draw"][0],
-        "crude_imports_mbbld": d["crude_imports"][0],
-        "crude_exports_mbbld": d["crude_exports"][0],
-        "net_imports_mbbld": d["net_imports"][0],
-        "refinery_utilization_pct": d["refinery_utilization_pct"][0],
-        "gasoline_stocks_mbbl": d["gasoline_stocks"][0],
-        "distillate_stocks_mbbl": d["distillate_stocks"][0],
-        "gasoline_draw_mbbl": d["gasoline_draw"][0],
-        "distillate_draw_mbbl": d["distillate_draw"][0],
-        "supply_signal": d["supply_signal"][0],
-        "cushing_signal": d["cushing_signal"][0],
-        "scenario_trigger": d["scenario_trigger"][0],
-    }
+    from ..fundamentals import get_provider
+    provider = get_provider(_product_profile().fundamentals_provider)
+    if provider is None or provider.report_section_builder is None:
+        return {"status": "available", "data": gold_eia.to_pydict()}
+    return provider.report_section_builder(gold_eia)
 
 
 def _catalysts_section(top_catalysts: list[dict], themes: Optional[list] = None) -> dict:
@@ -253,7 +248,8 @@ def _history_context_section(ctx) -> dict:
         "bf25_pctile", "bf25_z",
         "skew_slope_pctile", "skew_slope_z",
         "realized_vol_10d", "realized_vol_21d", "vrp_10d", "vrp_21d",
-        "brent_front", "brent_wti_spread", "brent_wti_pctile", "brent_wti_z",
+        "benchmark_name", "benchmark_front", "benchmark_spread",
+        "benchmark_spread_pctile", "benchmark_spread_z",
     ]
     out = {k: d[k][0] for k in keys if k in d}
     out["status"] = "available"
@@ -284,12 +280,13 @@ def _caveats(quality_report: dict) -> list[str]:
         "settlement_data_only: prices are EOD settlements, not executable quotes",
         "baw_iv: implied vol uses Barone-Adesi & Whaley (1987) for American option pricing; "
         "Black-76 retained as reference only",
-        "eia_lag: EIA weekly data has a 1-week lag (e.g. Thu report covers prior week)",
-        "expiry_convention_corrected_2026-07-10: LO option expiry now uses the exchange "
-        "rule (futures LTD − 3 business days, holiday-aware) instead of a 3rd-Friday "
-        "approximation; all IV/greeks history was restated (front-expiry TTE shortened "
-        "~4 days → slightly higher IVs than previously reported)",
     ]
+    from ..fundamentals import get_provider
+    product = _product_profile()
+    provider = get_provider(product.fundamentals_provider)
+    if provider:
+        caveats.append(f"fundamentals_cadence: {provider.cadence_note}")
+    caveats.extend(product.caveats)
     # Delta quality check: bulletin-published deltas vs BAW model deltas (A7).
     # An empirical validation of the pricing setup (TTE, model, rate).
     dc = quality_report.get("delta_check")
@@ -346,7 +343,9 @@ def _fmt_pct(v: Optional[float]) -> str:
 def _fmt_usd(v: Optional[float]) -> str:
     if v is None:
         return "N/A"
-    return f"${v:.2f}"
+    currency = _product_profile().currency
+    symbol = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}.get(currency)
+    return f"{symbol}{v:.2f}" if symbol else f"{v:.2f} {currency}"
 
 
 def _render_markdown(report: dict) -> str:
@@ -357,7 +356,8 @@ def _render_markdown(report: dict) -> str:
 
     fut = s["market_risk"].get("futures", {})
     opt = s["market_risk"].get("options", {})
-    eia = s.get("eia_fundamentals", {})
+    fundamentals = s.get("fundamentals", s.get("eia_fundamentals", {}))
+    eia = fundamentals  # WTI provider's standardized report payload
     agr = s["agreement"]
     cats = s["catalysts"]
     scenarios = s["scenarios"]
@@ -419,7 +419,7 @@ def _render_markdown(report: dict) -> str:
         structure = "CONTANGO" if fut.get("contango") else "BACKWARDATION"
         lines += [
             f"**{_product_display()} Futures** (source: `{fut.get('feature_source')}`)",
-            f"- Front contract: **{fut.get('front_contract')}** @ **{_fmt_usd(fut.get('front_settlement'))}/bbl**"
+            f"- Front contract: **{fut.get('front_contract')}** @ **{_fmt_usd(fut.get('front_settlement'))}{_price_unit_short()}**"
             + (f"  ({ret1d_str} 1-day)" if ret1d is not None else ""),
             f"- Days to expiry: **{dte}**" if dte is not None else "",
             f"- Curve structure: **{structure}** (slope: {slope_str}  |  M1-M2 spread: {m1m2_str})",
@@ -469,12 +469,14 @@ def _render_markdown(report: dict) -> str:
                 return f"RV {label}: {rv:.1%}{v}"
             bits = [b for b in (_rv(rv10, vrp10, "10d"), _rv(rv21, vrp21, "21d")) if b]
             lines.append(f"- Realized vs implied: {'  |  '.join(bits)} — positive VRP = IV rich to realized")
-        # Brent–WTI spread (B5): front-continuous Brent vs WTI front settle
-        bw = ctx.get("brent_wti_spread")
-        if bw is not None:
-            bw_pc = ctx.get("brent_wti_pctile")
-            pc_str = f" ({bw_pc:.0f}%ile)" if bw_pc is not None else ""
-            lines.append(f"- Brent–WTI: {bw:+.2f}$/bbl{pc_str} *(front-continuous approx)*")
+        benchmark_spread = ctx.get("benchmark_spread")
+        if benchmark_spread is not None:
+            benchmark_pc = ctx.get("benchmark_spread_pctile")
+            pc_str = f" ({benchmark_pc:.0f}%ile)" if benchmark_pc is not None else ""
+            name = ctx.get("benchmark_name") or "Benchmark"
+            lines.append(
+                f"- {name}–{_product_display()}: {benchmark_spread:+.2f} "
+                f"{_price_unit_short()}{pc_str} *(front-continuous approx)*")
         lines.append("")
 
     # ── Options positioning: open interest (C2) ──
@@ -561,9 +563,20 @@ def _render_markdown(report: dict) -> str:
             lines.append(f"- Futures: {'  |  '.join(spreads)}")
         lines.append("")
 
-    # ── Section 2: EIA Fundamentals ──
-    lines += ["## 2. EIA Weekly Fundamentals", ""]
-    if eia.get("status") == "available":
+    # ── Section 2: product fundamentals ──
+    from ..fundamentals import get_provider
+    provider = get_provider(_product_profile().fundamentals_provider)
+    fundamentals_title = provider.display_name if provider else "Fundamentals"
+    lines += [f"## 2. {fundamentals_title}", ""]
+    if (provider and provider.name != "eia_weekly_petroleum"
+            and fundamentals.get("status") == "available"):
+        payload = fundamentals.get("data", fundamentals)
+        lines.append("*Provider-specific feature payload:*\n")
+        for key, value in payload.items():
+            if key != "status":
+                lines.append(f"- {key}: `{value}`")
+        lines.append("")
+    elif eia.get("status") == "available":
         draw = eia.get("crude_draw_mbbl")
         cush_draw = eia.get("cushing_draw_mbbl")
         util = eia.get("refinery_utilization_pct")
@@ -617,7 +630,7 @@ def _render_markdown(report: dict) -> str:
                 "",
             ]
     else:
-        lines.append("*EIA data not available for this date.*\n")
+        lines.append(f"*{fundamentals_title} data not available for this date.*\n")
 
     # ── Section 3: Catalysts ──
     lines += ["## 3. Upcoming Catalysts", ""]
@@ -668,10 +681,11 @@ def _render_markdown(report: dict) -> str:
         # a placeholder that implied a position nobody holds — show the honest
         # per-contract quantities instead.
         avg_shift = sc.get("avg_curve_shift")
-        avg_str = f"  |  **Avg curve shift:** {avg_shift:+.2f} $/bbl" if avg_shift is not None else ""
+        avg_str = (f"  |  **Avg curve shift:** {avg_shift:+.2f} {_price_unit_short()}"
+                   if avg_shift is not None else "")
         lines += [
             f"### {name}: {desc}",
-            f"- **Front-month impact:** {fi:+.2f} $/bbl{avg_str}",
+            f"- **Front-month impact:** {fi:+.2f} {_price_unit_short()}{avg_str}",
         ]
         shocked = sc.get("shocked_settlements", [])
         if shocked:
@@ -756,7 +770,8 @@ def _render_markdown(report: dict) -> str:
     lines += ["## 8. Next Review", ""]
     scheduled = next_rev.get("scheduled_events") or []
     if scheduled:
-        lines.append("**Scheduled** *(from knowledge/wti/calendar.yaml + contract calendar)*")
+        pack = _product_profile().knowledge_pack
+        lines.append(f"**Scheduled** *(from knowledge/{pack}/calendar.yaml + contract calendar)*")
         for ev in scheduled:
             when = ev.get("date") or "?"
             t = f" {ev['time_et']} ET" if ev.get("time_et") else ""

@@ -83,7 +83,7 @@ _GOOD_FUTURES = [
 def test_silver_futures_schema():
     bronze = _make_futures_bronze(_GOOD_FUTURES)
     silver = silver_futures.normalize(bronze, AS_OF)
-    for field in ("last_trade_date", "cl_option_expiry", "days_to_expiry",
+    for field in ("last_trade_date", "option_expiry", "days_to_expiry",
                   "curve_position", "silver_status", "silver_note"):
         assert field in silver.schema.names
 
@@ -96,7 +96,7 @@ def test_silver_futures_calendar_enrichment():
     # (verified vs ICE WTI American options: Aug 2026 → 2026-07-16)
     idx = d["contract_code"].index("CLQ26")
     assert d["last_trade_date"][idx] == "2026-07-21"
-    assert d["cl_option_expiry"][idx] == "2026-07-16"
+    assert d["option_expiry"][idx] == "2026-07-16"
 
 
 def test_silver_futures_curve_position():

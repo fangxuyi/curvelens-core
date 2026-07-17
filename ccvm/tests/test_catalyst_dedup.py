@@ -81,7 +81,8 @@ class TestEventShocks:
         assert len(shocks) == 1
         s = shocks[0]
         assert s.name == "event_bull"
-        assert s.curve_shift_usd == 6.0            # high magnitude
+        assert s.curve_shift_usd == 0.0            # resolved against front price later
+        assert s.shift_fraction == 0.08             # high magnitude
         assert s.curve_tilt == -0.25               # prompt horizon
         assert "Hormuz" in s.description
 
@@ -94,4 +95,4 @@ class TestEventShocks:
                                direction="bearish_demand", etype="macro")],
                           date(2026, 7, 9))
         shocks = event_shocks_from_catalysts(evs)
-        assert len(shocks) == 1 and shocks[0].curve_shift_usd == -6.0
+        assert len(shocks) == 1 and shocks[0].shift_fraction == -0.08

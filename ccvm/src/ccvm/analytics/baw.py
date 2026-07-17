@@ -3,13 +3,13 @@ Barone-Adesi & Whaley (1987) quadratic approximation for American futures option
 
 Specialized to b = 0 (cost-of-carry = 0 for options on futures).
 
-WTI (LO) options on NYMEX CL futures are American-style. Black-76 understates
+Many exchange-traded commodity options are American-style. Black-76 understates
 their value because it ignores early-exercise optionality:
   - Puts: early exercise is optimal when deeply ITM (receive K now > wait)
   - Calls: can also be optimal for deep ITM calls when r > 0 (interest on K
     exceeds remaining time value)
 
-For near-ATM strikes and typical WTI vols (20-40%, T < 6mo), the early-exercise
+For near-ATM strikes and typical commodity vols, the early-exercise
 premium is <1 vol point. It is material for deep ITM options.
 
 References:

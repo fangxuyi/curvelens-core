@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+from ..reference.product import get_product
 from ..storage.manifest_db import ManifestDB
 from ..storage.raw_store import RawStore
 from .base import CollectionItem, RawPayload
@@ -14,9 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class CSVFuturesCollector:
-    """Tier-0 bootstrap collector: reads WTI futures CSVs from a local fixtures directory."""
-
-    source_id = "csv_wti_futures_bootstrap"
+    """Tier-0 bootstrap collector for product-named local fixture CSVs."""
 
     def __init__(
         self,
@@ -27,10 +26,12 @@ class CSVFuturesCollector:
         self.fixtures_dir = Path(fixtures_dir)
         self.raw_store = raw_store
         self.manifest_db = manifest_db
+        self.product = get_product()
+        self.source_id = f"csv_{self.product.key}_futures_bootstrap"
 
     def discover(self, as_of_date: date) -> list[CollectionItem]:
         date_str = as_of_date.strftime("%Y%m%d")
-        pattern = f"wti_futures_{date_str}.csv"
+        pattern = f"{self.product.key}_futures_{date_str}.csv"
         paths = sorted(self.fixtures_dir.glob(pattern))
         return [
             CollectionItem(

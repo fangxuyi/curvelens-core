@@ -1,5 +1,5 @@
 """
-Open-interest analytics from LO option settlements (C2).
+Open-interest analytics from product option settlements (C2).
 
 Per-strike OI and volume arrive free in the CME bulletin and were previously
 collected and used nowhere. This module reads silver options and computes,

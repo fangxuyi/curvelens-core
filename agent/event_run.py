@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """Event-calendar runs (D1) — same-day mini-runs, no bulletin needed.
 
-Two modes, scheduled from knowledge/wti/calendar.yaml (see config/cron.example):
+Two deployment-specific modes, scheduled from the active knowledge-pack
+calendar (see config/cron.example):
 
   --event eia   Wed ~10:35 ET, right after the EIA release. Collects the fresh
                 EIA data, computes the seasonal surprise, and queues an
@@ -21,8 +22,9 @@ import argparse
 import json
 import subprocess
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CCVM_DIR = REPO_ROOT / "ccvm"
@@ -40,7 +42,7 @@ def _emit(obj: dict) -> None:
 
 
 def _ny_today() -> date:
-    return (datetime.now(timezone.utc) - timedelta(hours=5)).date()
+    return datetime.now(ZoneInfo("America/New_York")).date()
 
 
 def _collect(source: str, as_of: str) -> bool:

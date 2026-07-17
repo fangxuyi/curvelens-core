@@ -30,7 +30,7 @@ def _silver_futures_table(n=5, all_pass=True):
         rows["currency"].append("USD")
         rows["price_unit"].append("USD/BBL")
         rows["last_trade_date"].append("2026-07-21")
-        rows["cl_option_expiry"].append("2026-07-13")
+        rows["option_expiry"].append("2026-07-13")
         rows["days_to_expiry"].append(27 - i * 30)
         rows["curve_position"].append(i + 1)
         rows["source_id"].append("yfinance_wti_futures")
