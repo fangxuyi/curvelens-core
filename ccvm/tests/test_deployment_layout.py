@@ -54,3 +54,10 @@ def test_gold_runbook_is_experimental_and_cannot_schedule_itself():
 
 def test_legacy_root_cron_template_is_removed():
     assert not (ROOT / "config" / "cron.example").exists()
+
+
+def test_gold_has_one_operational_document():
+    assert not (ROOT / "GOLD_SETUP.md").exists()
+    runbook = _read("deployments/gold/AGENTS.md")
+    assert "not a fork" in runbook
+    assert "ccvm/config/markets/gold.yaml" in runbook

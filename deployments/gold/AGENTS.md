@@ -13,6 +13,13 @@ Weekly options (`OG1`–`OG5`), intraday data, EIA petroleum events, and live
 delivery are outside the initial scope. Do not enable cron or Telegram until a
 human approves the live-data acceptance results.
 
+Gold remains an implementation of the shared framework, not a fork. Product
+facts belong in `ccvm/config/markets/gold.yaml`, expiry rules in
+`ccvm/src/ccvm/reference/gold_calendar.py`, interpretation in `knowledge/gold/`,
+and operating policy in this runbook. Requirements that generalize beyond Gold
+belong in shared framework interfaces with regression coverage for WTI; avoid
+product-name conditionals in shared code.
+
 ## Deployment environment
 
 Before every runtime command, set and verify:
