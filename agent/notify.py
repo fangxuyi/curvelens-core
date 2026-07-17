@@ -31,8 +31,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# This script lives in CurveLens/agent/; the pipeline's data lives in
-# CurveLens/ccvm/data/.
+# This script lives in CurveLens/agent/; runtime data resolves from
+# CCVM_DATA_DIR (legacy default: CurveLens/ccvm/data/).
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
 from ccvm.runtime import data_dir

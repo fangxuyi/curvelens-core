@@ -2,7 +2,7 @@
 """Event-calendar runs (D1) — same-day mini-runs, no bulletin needed.
 
 Two deployment-specific modes, scheduled from the active knowledge-pack
-calendar (see config/cron.example):
+calendar (see the selected `deployments/<product>/` runbook):
 
   --event eia   Wed ~10:35 ET, right after the EIA release. Collects the fresh
                 EIA data, computes the seasonal surprise, and queues an

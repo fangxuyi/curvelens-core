@@ -3,11 +3,11 @@
 
 Runs the full 5-stage pipeline for one trade date and prints a single line of
 JSON to stdout describing the outcome. Designed to be invoked as one tool call
-by the standalone CurveLens agent (see AGENTS.md Runtime Model), rather than
+by the selected product deployment agent (see `deployments/<product>/AGENTS.md`), rather than
 having the agent orchestrate five separate scripts from a prompt.
 
 Stages (each an isolated subprocess of the current interpreter):
-    1. collect_day.py       raw ingest (yfinance futures, CME PDF, EIA, RSS)
+    1. collect_day.py       raw ingest (futures, CME PDF, optional fundamentals, RSS)
     2. normalize_day.py     raw → bronze → silver + quality report
     3. compute_features.py  silver → gold (curve, BAW vol surface, agreement)
     4. extract_catalysts.py RSS articles → ranked catalyst events (needs claude CLI)

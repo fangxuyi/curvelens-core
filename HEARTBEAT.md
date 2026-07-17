@@ -1,5 +1,4 @@
-# HEARTBEAT.md
+# HEARTBEAT.md — CurveLens Core
 
-# CurveLens runs from an explicit weekday cron job (see config/cron.example),
-# not from heartbeat. Keep heartbeat quiet — take no ambient action unless the
-# user later asks for it.
+The framework root performs no ambient product operations. Product deployments
+run only from their explicit schedules and deployment runbooks.

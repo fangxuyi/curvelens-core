@@ -10,9 +10,9 @@ profile** and its companion artifacts. `CCVM_PRODUCT` selects the profile
 
 ```
 curvelens-core/
-├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   agent spec + identity
+├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   framework rules + identity
 ├── agent/            run_pipeline.py · notify.py · event_run.py · query.py
-├── config/cron.example             OpenClaw cron templates (ship --disabled)
+├── deployments/<product>/          runtime runbook, identity, cron template
 ├── knowledge/<pack>/               ← product knowledge pack + MAINTENANCE.md
 └── ccvm/                            the deterministic engine
     ├── scripts/                     5 pipeline stages
@@ -41,7 +41,8 @@ git clone https://github.com/fangxuyi/curvelens-core.git && cd curvelens-core
 python3 -m venv ccvm/.venv
 ccvm/.venv/bin/pip install -r ccvm/requirements.txt python-dotenv feedparser httpx
 cp ccvm/.env.example ccvm/.env        # fill in EIA_API_KEY (or your provider's key)
-export CCVM_PRODUCT=wti               # deployment's product (default wti)
+export CCVM_PRODUCT=wti               # deployment's product; always explicit
+export CCVM_DATA_DIR=/absolute/path/to/wti-data
 ```
 
 **Smoke test**
@@ -56,17 +57,17 @@ ccvm/.venv/bin/python agent/run_pipeline.py --date YYYY-MM-DD
 # → NEED_CME_PDF (fetch the bulletin)  |  OK (brief written)  |  ERROR <stage>
 ```
 
-**Agent + schedules**: register the OpenClaw agent with this repo as its
-working directory, then adapt `config/cron.example` — daily T+1 settlement run
-(half-hourly retry window + `notify.py --is-new` freshness gate), plus the
-event-calendar runs (EIA flash, COT update). Templates ship `--disabled` with a
-`telegram:YOUR_CHAT_ID` placeholder: fill the real chat id **at registration
-time only** — never commit one. Delivery/dedup state lives in
-`ccvm/data/agent_outbox/` (gitignored).
+**Agent + schedules**: register a separate OpenClaw agent for each product.
+Give it the onboarding instruction in `deployments/README.md`; it must read the
+root framework rules plus exactly one `deployments/<product>/AGENTS.md`.
+Adapt only that deployment's cron template. Production templates ship disabled
+with delivery placeholders; fill destinations at registration time only and
+never commit them. Delivery/dedup state lives below the deployment's isolated
+`$CCVM_DATA_DIR/agent_outbox/`.
 
 ---
 
-## 2. Porting to a new commodity — the four artifacts
+## 2. Porting to a new commodity — the five artifacts
 
 The shared engine has no WTI market defaults other than selecting the `wti`
 deployment when `CCVM_PRODUCT` is unset. A port authors these:
@@ -144,6 +145,17 @@ tests):
 Also configure `news` in the product profile and author a product event
 taxonomy if catalyst extraction is wanted (the extractor prompt is templated
 from the profile).
+
+### 2.5 Deployment runbook — `deployments/<product>/`
+
+Create product-scoped `AGENTS.md`, `IDENTITY.md`, `SOUL.md`, `HEARTBEAT.md`, and
+a disabled `cron.example`. The runbook declares exact environment variables,
+bulletin/downloader behavior, supported event mini-runs, QC gates, delivery
+policy, and maturity status. Root identity files remain framework-neutral.
+
+An agent registration must instruct the agent to read root `AGENTS.md` and
+exactly one deployment runbook. Never put product schedules or delivery policy
+back into root instructions.
 
 ---
 

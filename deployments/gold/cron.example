@@ -1,0 +1,12 @@
+# CurveLens Gold cron template — intentionally non-executable.
+#
+# Gold is experimental. Do not register or enable schedules from this file.
+# Before production, replace this placeholder with a reviewed Section-64
+# downloader flow and commands that explicitly set:
+#
+#   CCVM_PRODUCT=gold
+#   CCVM_DATA_DIR=/absolute/path/to/gold-data
+#
+# The future schedule must read AGENTS.md plus deployments/gold/AGENTS.md,
+# preserve notify freshness/dedup/ack behavior, use a Gold-only delivery
+# destination, omit EIA petroleum jobs, and ship disabled for explicit approval.

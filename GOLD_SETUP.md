@@ -53,11 +53,14 @@ existing unscoped data directory.
 3. Pin official option expiration-calendar dates, including holiday cases.
 4. Run at least several consecutive settlement days and inspect surface mass,
    model-vs-bulletin delta error, units, and young-history labels.
-5. Create a Gold-specific agent/runbook and only then enable cron or Telegram.
+5. Review `deployments/gold/AGENTS.md`, add a Section-64-capable downloader,
+   and approve delivery QC before replacing the intentionally non-executable
+   cron placeholder or enabling Telegram.
 
 ## Current scope
 
 This branch is a safe scaffold, not a production enablement. It supplies the
 profile, calendar, knowledge shape, shared serial-month abstraction, and tests.
+It also supplies an experimental deployment identity and validation runbook.
 Live downloader configuration, real-PDF fixtures, feed acceptance, schedules,
 and delivery remain deliberately disabled pending the validation gates above.
