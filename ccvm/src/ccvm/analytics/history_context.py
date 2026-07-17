@@ -63,11 +63,12 @@ _SCHEMA = pa.schema([
     pa.field("realized_vol_21d", pa.float64()),
     pa.field("vrp_10d", pa.float64()),   # atm_iv − realized_vol_10d
     pa.field("vrp_21d", pa.float64()),   # atm_iv − realized_vol_21d
-    # Brent–WTI context (B5) — Brent front-continuous close − WTI front settle
-    pa.field("brent_front", pa.float64()),
-    pa.field("brent_wti_spread", pa.float64()),
-    pa.field("brent_wti_pctile", pa.float64()),
-    pa.field("brent_wti_z", pa.float64()),
+    # Optional profile-configured benchmark minus product front settlement.
+    pa.field("benchmark_name", pa.string()),
+    pa.field("benchmark_front", pa.float64()),
+    pa.field("benchmark_spread", pa.float64()),
+    pa.field("benchmark_spread_pctile", pa.float64()),
+    pa.field("benchmark_spread_z", pa.float64()),
     pa.field("source_id", pa.string()),
 ])
 
@@ -217,21 +218,23 @@ def compute(pq_store, as_of_str: str, max_lookback: int = 252) -> Optional[pa.Ta
     row["vrp_10d"] = (atm_today - rv10) if atm_today is not None and rv10 is not None else None
     row["vrp_21d"] = (atm_today - rv21) if atm_today is not None and rv21 is not None else None
 
-    # Brent–WTI spread context (B5): Brent front-continuous close − WTI front
-    # settle, per shared date; percentile/z over the trailing spread series.
+    # Optional benchmark spread context, selected by the product profile.
     from datetime import date as _date
-    from ..collectors.yfinance_brent import load_brent_closes
-    brent = load_brent_closes(pq_store.base_path, _date.fromisoformat(as_of_str))
+    from ..collectors.yfinance_brent import load_benchmark_closes
+    from ..reference.product import get_product
+    benchmark = load_benchmark_closes(pq_store.base_path, _date.fromisoformat(as_of_str))
     spread_series = {
-        dt: brent[dt] - w
-        for dt, w in series["front_settle"].items() if dt in brent
+        dt: benchmark[dt] - product_price
+        for dt, product_price in series["front_settle"].items() if dt in benchmark
     }
-    row["brent_front"] = brent.get(as_of_str)
+    spec = get_product().benchmark
+    row["benchmark_name"] = spec.name if spec else None
+    row["benchmark_front"] = benchmark.get(as_of_str)
     today_spread = spread_series.get(as_of_str)
-    row["brent_wti_spread"] = today_spread
+    row["benchmark_spread"] = today_spread
     vals = list(spread_series.values())
-    row["brent_wti_pctile"] = percentile_of(vals, today_spread) if today_spread is not None else None
-    row["brent_wti_z"] = zscore_of(vals, today_spread) if today_spread is not None else None
+    row["benchmark_spread_pctile"] = percentile_of(vals, today_spread) if today_spread is not None else None
+    row["benchmark_spread_z"] = zscore_of(vals, today_spread) if today_spread is not None else None
 
     # 30-calendar-day settle band
     from datetime import date, timedelta

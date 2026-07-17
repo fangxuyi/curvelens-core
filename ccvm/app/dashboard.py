@@ -36,9 +36,15 @@ REPORTS_DIR = DATA_DIR / "reports"
 from ccvm.storage.parquet_store import ParquetStore
 from ccvm.agents.catalyst_store import CatalystStore
 from ccvm.analytics.baw import critical_boundary as _baw_critical_boundary
+from ccvm.reference.product import get_product
+from ccvm.fundamentals import get_provider
 
 pq        = ParquetStore(DATA_DIR)
 cat_store = CatalystStore(DATA_DIR)
+PRODUCT   = get_product()
+FUNDAMENTALS_PROVIDER = get_provider(PRODUCT.fundamentals_provider)
+FUNDAMENTALS_NAME = (FUNDAMENTALS_PROVIDER.display_name
+                     if FUNDAMENTALS_PROVIDER else "Fundamentals")
 
 C = {
     "bg":       "#0b0b0d",
@@ -178,10 +184,10 @@ st.markdown(
     f'<div style="width:1px;height:1.1rem;background:{C["border"]}"></div>'
     f'<span style="font-family:JetBrains Mono,monospace;font-size:0.6rem;color:{C["muted"]};'
     f'letter-spacing:0.16em;text-transform:uppercase;line-height:1.6">'
-    f'WTI Futures &amp; Options Analytics</span>'
+    f'{PRODUCT.display_name} Futures &amp; Options Analytics</span>'
     f'<span style="margin-left:auto;font-family:JetBrains Mono,monospace;font-size:0.58rem;'
     f'color:{C["muted"]};letter-spacing:0.14em;text-transform:uppercase">'
-    f'WTI CRUDE OIL · SETTLEMENT DATA ONLY</span></div>',
+    f'{PRODUCT.name.upper()} · SETTLEMENT DATA ONLY</span></div>',
     unsafe_allow_html=True,
 )
 
@@ -292,12 +298,12 @@ with tab_curve:
                 line=dict(color=C["amber"], width=2),
                 marker=dict(color=C["amber_hi"], size=5),
                 fill="tozeroy", fillcolor="rgba(196,150,42,0.05)",
-                hovertemplate="<b>%{x}</b><br>$%{y:.2f}/bbl<extra></extra>",
+                hovertemplate=f"<b>%{{x}}</b><br>%{{y:.2f}} {PRODUCT.price_unit}<extra></extra>",
             ))
             fig.update_layout(**_plot_layout(
-                title=dict(text=f"WTI Futures Curve — {selected_date}",
+                title=dict(text=f"{PRODUCT.display_name} Futures Curve — {selected_date}",
                            font=dict(family="Syne", size=13, color=C["text"]), x=0),
-                yaxis_title="USD/bbl", height=290, showlegend=False,
+                yaxis_title=PRODUCT.price_unit, height=290, showlegend=False,
             ))
             st.plotly_chart(fig, use_container_width=True)
         elif d["contract_code"]:
@@ -329,9 +335,11 @@ with tab_vol:
 
         note = od.get("price_note", [""])[0] or ""
         if "CME" in note or "cme" in note.lower():
-            st.success("Data source: CME daily bulletin — LO futures options settlements")
+            st.success(
+                f"Data source: CME daily bulletin — {PRODUCT.options_prefix} "
+                "futures options settlements")
         elif "USO" in note or "etrade" in note.lower():
-            st.warning("Data source: USO equity options (WTI proxy) — not CME LO futures options")
+            st.warning("Data source is a proxy rather than the configured futures options product")
         elif note:
             st.caption(f"Data source: {note}")
 
@@ -474,10 +482,17 @@ with tab_vol:
 # FUNDAMENTALS — iframe hero + native metrics + plotly
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_eia:
-    if not pq.exists("gold", "eia_features", selected_date):
-        st.info("No EIA features for this date.")
+    petroleum_dashboard = (FUNDAMENTALS_PROVIDER is not None and
+                           FUNDAMENTALS_PROVIDER.name == "eia_weekly_petroleum")
+    fundamentals_dataset = (("fundamentals_features"
+                             if pq.exists("gold", "fundamentals_features", selected_date)
+                             else "eia_features") if petroleum_dashboard else None)
+    if fundamentals_dataset is None:
+        st.info(f"No dashboard renderer is registered for {FUNDAMENTALS_NAME}.")
+    elif not pq.exists("gold", fundamentals_dataset, selected_date):
+        st.info(f"No {FUNDAMENTALS_NAME} features for this date.")
     else:
-        gold_eia = pq.read("gold", "eia_features", selected_date)
+        gold_eia = pq.read("gold", fundamentals_dataset, selected_date)
         ed = gold_eia.to_pydict()
 
         def _gv(k):
@@ -615,7 +630,7 @@ with tab_agree:
             ci1.metric("Curve Slope",       f"USD {slope:+.3f}/mo" if slope is not None else "—")
             ci2.metric("ATM IV",            f"{atm_iv*100:.1f}%" if atm_iv else "—")
             ci3.metric("25Δ Risk Reversal", f"{rr*100:+.2f}%"    if rr is not None else "—")
-            ci4.metric("EIA Signal",        (eia_s or "—").upper())
+            ci4.metric("Fundamentals Signal", (eia_s or "—").upper())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -698,7 +713,7 @@ with tab_qual:
         for col, key, label in [
             (col1, "futures",      "FUTURES"),
             (col2, "options",      "OPTIONS"),
-            (col3, "fundamentals", "EIA FUNDAMENTALS"),
+            (col3, "fundamentals", FUNDAMENTALS_NAME.upper()),
         ]:
             q  = quality.get(key, {})
             qs = q.get("status", "N/A")

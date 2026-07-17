@@ -103,15 +103,19 @@ def classify(
             iv_moved = True
             evidence.append(f"ATM IV moved {iv_change_pct:+.1%} vs prior day")
 
-    # ── EIA supply signal ──
+    # ── Optional fundamentals supply signal ──
+    from ..fundamentals import get_provider
+    from ..reference.product import get_product
+    provider = get_provider(get_product().fundamentals_provider)
+    fundamentals_label = provider.display_name if provider else "Fundamentals"
     if eia_supply_signal == "draw":
-        evidence.append(f"EIA: crude stock draw (supply tightening)")
+        evidence.append(f"{fundamentals_label}: supply tightening")
         if eia_scenario_trigger == "bull_confirmed":
-            evidence.append("EIA draw exceeds bull scenario threshold (>3M bbl)")
+            evidence.append(f"{fundamentals_label}: bull scenario confirmed")
     elif eia_supply_signal == "build":
-        evidence.append(f"EIA: crude stock build (supply loosening)")
+        evidence.append(f"{fundamentals_label}: supply loosening")
         if eia_scenario_trigger in ("bear_watch", "bear_confirmed"):
-            evidence.append(f"EIA build triggers {eia_scenario_trigger}")
+            evidence.append(f"{fundamentals_label}: {eia_scenario_trigger}")
 
     # ── Classify ──
     futures_moved = abs(front_back_slope) > 0.05 or (prior_slope is not None and abs(front_back_slope - prior_slope) > 0.05)
@@ -129,13 +133,13 @@ def classify(
         state = "confirmed_upside_risk"
         confidence = "high" if eia_supply_signal == "draw" else "high"
         if eia_supply_signal == "draw":
-            evidence.append("all three signals aligned: futures backwardation + call skew + EIA draw")
+            evidence.append("all three signals aligned: futures + options + fundamentals")
 
     elif futures_signal == options_signal == "downside":
         state = "confirmed_downside_risk"
         confidence = "high"
         if eia_supply_signal == "build":
-            evidence.append("all three signals aligned: futures contango + put skew + EIA build")
+            evidence.append("all three signals aligned: futures + options + fundamentals")
 
     elif futures_signal == "upside" and options_signal == "downside":
         state = "cross_market_disagreement"

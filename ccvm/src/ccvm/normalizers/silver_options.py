@@ -1,5 +1,5 @@
 """
-Bronze → Silver normalization for WTI LO (CME daily bulletin) options settlements.
+Bronze → Silver normalization for product option settlements.
 
 Silver layer:
   - Validates strike > 0 and settlement >= 0
@@ -14,8 +14,7 @@ from datetime import date
 
 import pyarrow as pa
 
-MIN_STRIKES_WARN = 2
-MIN_STRIKES_PASS = 5
+from ..reference.product import get_product
 
 _SILVER_SCHEMA = pa.schema([
     pa.field("trade_date", pa.string()),
@@ -49,6 +48,7 @@ _SILVER_SCHEMA = pa.schema([
 def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
     d = bronze.to_pydict()
     n = len(d["trade_date"])
+    product = get_product()
 
     # Pre-compute per-expiry strike counts for coverage check
     strike_sets: dict[tuple, set] = defaultdict(set)
@@ -88,10 +88,10 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
             # Coverage warning
             key = (exp_str, d["underlying_contract"][i], cp)
             n_strikes = len(strike_sets[key])
-            if n_strikes < MIN_STRIKES_WARN:
+            if n_strikes < product.fail_strikes_below:
                 status = "FAIL"
                 note = f"critically_sparse:{n_strikes}_strikes"
-            elif n_strikes < MIN_STRIKES_PASS:
+            elif n_strikes < product.pass_strikes_at:
                 status = "WARN"
                 note = f"sparse_strikes:{n_strikes}"
 

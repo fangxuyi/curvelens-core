@@ -1,8 +1,10 @@
 """
 CFTC Commitments of Traders collector (B3).
 
-Disaggregated Futures-and-Options Combined report for NYMEX WTI
-(contract market code 067651) via the CFTC Socrata API — no key required.
+Disaggregated Futures-and-Options Combined report via the CFTC Socrata API
+(no key required). Which contract is pulled is declared in the product profile
+(`cot.contract_market_code`), not coded — WTI = 067651, gold = 088691. A profile
+with no `cot` block has no positioning feed and the collector skips.
 
 Each run fetches the trailing 3 years of weekly reports (~156 rows) and
 stores them as one raw JSON file; sha-dedup makes unchanged re-runs free.
@@ -23,13 +25,13 @@ from typing import Optional
 
 import httpx
 
+from ..reference.product import get_product
 from ..storage.manifest_db import ManifestDB
 from ..storage.raw_store import RawStore
 
 logger = logging.getLogger(__name__)
 
 _DATASET = "kh3c-gbw2"   # Disaggregated Futures-and-Options Combined
-_WTI_CODE = "067651"     # WTI-PHYSICAL, NYMEX
 _FIELDS = ",".join([
     "report_date_as_yyyy_mm_dd",
     "m_money_positions_long_all",
@@ -41,20 +43,31 @@ _FIELDS = ",".join([
 _BACKFILL_YEARS = 3
 
 
-class CFTCCOTCollector:
-    """Weekly COT positioning for NYMEX WTI via the Socrata open-data API."""
+def _cot_source_id() -> str:
+    """Per-product COT source id, e.g. cftc_cot_wti / cftc_cot_gc.
 
-    source_id = "cftc_cot_wti"
+    Deployment-scoped (CCVM_PRODUCT), so raw paths never collide across products
+    and WTI's existing `cftc_cot_wti` layout is preserved unchanged.
+    """
+    return f"cftc_cot_{get_product().key}"
+
+
+class CFTCCOTCollector:
+    """Weekly COT positioning via the Socrata open-data API; contract from profile."""
 
     def __init__(self, raw_store: RawStore, manifest_db: ManifestDB) -> None:
         self.raw_store = raw_store
         self.manifest_db = manifest_db
+        self.source_id = _cot_source_id()
 
     def fetch(self, as_of_date: date) -> list[dict]:
+        code = get_product().cot_contract_market_code
+        if not code:
+            return []
         since = (as_of_date - timedelta(days=365 * _BACKFILL_YEARS)).isoformat()
         url = f"https://publicreporting.cftc.gov/resource/{_DATASET}.json"
         params = {
-            "cftc_contract_market_code": _WTI_CODE,
+            "cftc_contract_market_code": code,
             "$select": _FIELDS,
             "$where": f"report_date_as_yyyy_mm_dd >= '{since}'",
             "$order": "report_date_as_yyyy_mm_dd ASC",
@@ -100,7 +113,9 @@ class CFTCCOTCollector:
             return {"run_id": run_id, "status": "warning", "success": 0,
                     "warning": 1, "failure": 0, "skipped": 0}
 
-        content = json.dumps({"contract": "WTI-PHYSICAL NYMEX (067651)",
+        product = get_product()
+        label = product.cot_contract_label or product.name
+        content = json.dumps({"contract": f"{label} ({product.cot_contract_market_code})",
                               "rows": rows}, indent=2).encode()
         sha256 = hashlib.sha256(content).hexdigest()
         if self.manifest_db.sha256_exists(sha256):
@@ -108,7 +123,7 @@ class CFTCCOTCollector:
             return {"run_id": run_id, "status": "success", "success": 0,
                     "warning": 0, "failure": 0, "skipped": 1}
 
-        filename = f"cftc_cot_wti_{as_of_date.strftime('%Y%m%d')}.json"
+        filename = f"{self.source_id}_{as_of_date.strftime('%Y%m%d')}.json"
         raw_path, sha_written, byte_size = self.raw_store.persist(
             content=content, source_id=self.source_id, filename=filename,
             trade_date=as_of_str,
@@ -138,14 +153,15 @@ class CFTCCOTCollector:
 
 def find_raw_cot(data_dir: Path, as_of_date: date) -> Optional[Path]:
     """Latest raw COT JSON dated ≤ as_of (searches newest first)."""
-    base = data_dir / "raw" / "cftc_cot_wti"
+    sid = _cot_source_id()
+    base = data_dir / "raw" / sid
     if not base.exists():
         return None
-    target = f"cftc_cot_wti_{as_of_date.strftime('%Y%m%d')}.json"
+    target = f"{sid}_{as_of_date.strftime('%Y%m%d')}.json"
     candidates = []
     for child in sorted(base.iterdir(), reverse=True):
         if child.is_dir():
-            for f in child.glob("cftc_cot_wti_*.json"):
+            for f in child.glob(f"{sid}_*.json"):
                 if f.name <= target:
                     candidates.append((f.name, f))
     return max(candidates)[1] if candidates else None

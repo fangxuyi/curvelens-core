@@ -1,5 +1,5 @@
 """
-RSS news collector for WTI crude oil / energy market articles.
+Product-profile-driven RSS news collector.
 
 Fetches articles from curated free RSS feeds, filters by recency and
 energy-relevance, and stores as a JSON array in the raw layer for
@@ -20,6 +20,7 @@ from typing import Optional
 import feedparser
 import httpx
 
+from ..reference.product import get_product
 from ..storage.manifest_db import ManifestDB
 from ..storage.raw_store import RawStore
 
@@ -30,45 +31,6 @@ _LOOKBACK_DAYS = 7
 
 _USER_AGENT = "CurveLensBot/1.0 (https://github.com/fangxuyi/curveLens)"
 
-# Energy/commodity keywords — any match in title+summary qualifies the article
-_ENERGY_KEYWORDS = frozenset([
-    "crude", "oil", "wti", "opec", "petroleum", "barrel", "brent",
-    "refinery", "refining", "gasoline", "cushing", "lng",
-    "west texas", "energy", "pipeline", "tanker", "spr", "iea",
-    "production cut", "demand", "supply", "stockpile", "inventory",
-    "nymex", "commodity", "saudi", "russia",
-])
-
-# Curated free RSS feeds relevant to WTI / energy markets
-RSS_SOURCES = [
-    {
-        "key": "eia_today_in_energy",
-        "url": "https://www.eia.gov/rss/todayinenergy.xml",
-        "name": "EIA Today in Energy",
-    },
-    {
-        "key": "oilprice_com",
-        "url": "https://oilprice.com/rss/main",
-        "name": "OilPrice.com",
-    },
-    {
-        "key": "cnbc_energy",
-        "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
-        "name": "CNBC Energy",
-    },
-    {
-        "key": "rigzone",
-        "url": "https://www.rigzone.com/news/rss/rigzone_latest.aspx",
-        "name": "Rigzone",
-    },
-    {
-        "key": "offshore_technology",
-        "url": "https://www.offshore-technology.com/feed/",
-        "name": "Offshore Technology",
-    },
-]
-
-
 class RSSNewsCollector:
     """Fetches energy news from free RSS feeds for a given trade date.
 
@@ -76,11 +38,16 @@ class RSSNewsCollector:
     Follows the same collect() return-dict contract as other CurveLens collectors.
     """
 
-    source_id = "rss_news"
-
     def __init__(self, raw_store: RawStore, manifest_db: ManifestDB) -> None:
         self.raw_store = raw_store
         self.manifest_db = manifest_db
+        product = get_product()
+        self.source_id = f"rss_news_{product.key}"
+        self.keywords = frozenset(product.news.keywords)
+        self.sources = [
+            {"key": key, "url": url, "name": name}
+            for key, url, name in product.news.sources
+        ]
 
     def collect(self, as_of_date: date) -> dict:
         run_id = str(uuid.uuid4())
@@ -92,9 +59,18 @@ class RSSNewsCollector:
         seen_urls: set[str] = set()
         source_results: dict[str, str] = {}
 
-        for source in RSS_SOURCES:
+        if not self.sources or not self.keywords:
+            self.manifest_db.complete_run(
+                run_id, "success", 0, 0, 0, 1,
+                notes="product has no RSS sources or relevance keywords",
+            )
+            return {"run_id": run_id, "status": "skipped", "success": 0,
+                    "warning": 0, "failure": 0, "skipped": 1,
+                    "articles": 0, "sources": {}}
+
+        for source in self.sources:
             try:
-                fetched = _fetch_source(source, cutoff, seen_urls)
+                fetched = _fetch_source(source, cutoff, seen_urls, self.keywords)
                 articles.extend(fetched)
                 source_results[source["key"]] = f"ok ({len(fetched)})"
                 logger.info("RSS %s: %d articles", source["key"], len(fetched))
@@ -112,7 +88,7 @@ class RSSNewsCollector:
             }
 
         content = json.dumps(articles, indent=2, ensure_ascii=False).encode("utf-8")
-        filename = f"rss_news_{as_of_date.strftime('%Y%m%d')}.json"
+        filename = f"{self.source_id}_{as_of_date.strftime('%Y%m%d')}.json"
         sha256 = hashlib.sha256(content).hexdigest()
 
         if self.manifest_db.sha256_exists_for_date(sha256, as_of_str):
@@ -163,19 +139,23 @@ def find_raw_articles(data_dir: Path, as_of_date: date) -> Optional[Path]:
     Returns the path if found, None otherwise. Searches all retrieval-date
     subdirectories under data/raw/rss_news/ (most recent first).
     """
-    filename = f"rss_news_{as_of_date.strftime('%Y%m%d')}.json"
-    rss_dir = data_dir / "raw" / "rss_news"
-    if not rss_dir.exists():
-        return None
-    for child in sorted(rss_dir.iterdir(), reverse=True):
-        if child.is_dir():
-            candidate = child / filename
-            if candidate.exists():
-                return candidate
+    product = get_product()
+    source_ids = [f"rss_news_{product.key}", "rss_news"]
+    for source_id in source_ids:
+        filename = f"{source_id}_{as_of_date.strftime('%Y%m%d')}.json"
+        rss_dir = data_dir / "raw" / source_id
+        if not rss_dir.exists():
+            continue
+        for child in sorted(rss_dir.iterdir(), reverse=True):
+            if child.is_dir():
+                candidate = child / filename
+                if candidate.exists():
+                    return candidate
     return None
 
 
-def _fetch_source(source: dict, cutoff: date, seen_urls: set) -> list[dict]:
+def _fetch_source(source: dict, cutoff: date, seen_urls: set,
+                  keywords: frozenset[str]) -> list[dict]:
     """Fetch one RSS feed; return filtered, deduplicated article dicts."""
     with httpx.Client(
         timeout=20.0,
@@ -204,7 +184,7 @@ def _fetch_source(source: dict, cutoff: date, seen_urls: set) -> list[dict]:
         if not text:
             continue
 
-        if not any(kw in text.lower() for kw in _ENERGY_KEYWORDS):
+        if not any(kw in text.lower() for kw in keywords):
             continue
 
         published_at = _parse_entry_date(entry) or date.today()

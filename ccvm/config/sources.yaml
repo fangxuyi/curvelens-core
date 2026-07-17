@@ -1,43 +1,40 @@
 sources:
-  csv_wti_futures_bootstrap:
+  csv_futures_bootstrap:
     tier: manual_sample
     cadence: manual
     format: csv
     license_note: "Tier 0 fixture data for schema development and testing; never mixed with production records"
 
-  cme_wti_futures_settlement:
+  cme_futures_settlement_example:
     tier: public_bootstrap
     cadence: daily
     expected_after: "18:00 America/Chicago"
     format: json
-    endpoint: "https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{YYYYMMDD}/productCode/CL/code/fut/pageSize/50/isProtected"
-    product_code: CL
-    collector_class: "ccvm.collectors.cme_futures.CMEFuturesCollector"
+    endpoint_template: "https://www.cmegroup.com/CmeWS/mvc/Settlements/futures/tradeDate/{YYYYMMDD}/productCode/{PRODUCT_CODE}/code/fut/pageSize/50/isProtected"
+    status: not_implemented
+    note: "Product code and endpoint belong in config/markets/<product>.yaml"
     license_note: "prototype/manual verification; review CME terms before automated production use"
 
-  cme_bulletin_lo_option:
+  cme_bulletin_option:
     tier: official_settlement
     cadence: daily
     expected_after: "18:00 America/Chicago"
     format: pdf_parsed_json
-    source_id: cme_bulletin_lo_option
     pdf_path_template: "data/cme_bulletin/{YYYY-MM-DD}.pdf"
-    pdf_url: "https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf"
-    product_code: LO
+    note: "URL, product headers, strike scale, and month offset come from the product profile"
     collector_class: "ccvm.collectors.cme_bulletin_pdf.CMEBulletinPDFCollector"
     parser: "ccvm.parsers.bronze_options"
     normalizer: "ccvm.normalizers.silver_options"
     license_note: "CME Daily Bulletin — public settlement data; PDF must be saved manually before collect_day runs"
 
-  cme_wti_option_settlement:
+  cme_option_settlement_api_example:
     tier: public_bootstrap
     cadence: daily
     expected_after: "18:00 America/Chicago"
     format: json
-    endpoint: "https://www.cmegroup.com/CmeWS/mvc/Settlements/options/tradeDate/{YYYYMMDD}/productCode/LO/code/OOF/pageSize/500/isProtected"
-    product_code: LO
-    collector_class: "ccvm.collectors.cme_options.CMEOptionsCollector"
+    endpoint_template: "https://www.cmegroup.com/CmeWS/mvc/Settlements/options/tradeDate/{YYYYMMDD}/productCode/{OPTIONS_CODE}/code/OOF/pageSize/500/isProtected"
     status: not_implemented
+    note: "Product code and endpoint belong in config/markets/<product>.yaml"
     license_note: "prototype/manual verification; review CME terms before automated production use"
 
   eia_api_v2:

@@ -16,7 +16,7 @@ promised — "interpret the surface as market-implied expectations":
 Construction notes:
 - The call curve is built OTM-only: real call settles for K ≥ F, and
   put-call parity C(K) = P(K) + df·(F−K) for K < F — sidestepping CME's
-  ITM-settlement inconsistency (see knowledge/wti/conventions.md).
+  ITM-settlement inconsistency (see the active product's conventions.md).
 - Second derivative via central differences on the (uneven) strike grid;
   negative densities are clipped and the mass renormalized. `raw_mass`
   (pre-normalization integral) is a published diagnostic — far from 1.0
@@ -160,9 +160,12 @@ def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Opt
     }
 
 
-def compute(gold_options: pa.Table, as_of_str: str, rate: float = 0.05,
+def compute(gold_options: pa.Table, as_of_str: str, rate: float | None = None,
             n_expiries: int = 2) -> dict:
     """RND summaries for the front n expiries from a gold option_features table."""
+    if rate is None:
+        from ..reference.product import get_product
+        rate = get_product().risk_free_rate
     d = gold_options.to_pydict()
     by_expiry: dict[str, dict] = {}
     for i in range(len(d["option_expiry"])):

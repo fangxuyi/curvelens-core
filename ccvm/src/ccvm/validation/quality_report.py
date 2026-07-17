@@ -154,7 +154,8 @@ def options_section(silver_options: Optional[pa.Table]) -> dict:
 
 def fundamentals_section(silver_eia: Optional[pa.Table]) -> dict:
     if silver_eia is None or len(silver_eia) == 0:
-        return {"status": "INSUFFICIENT_DATA", "record_count": 0, "notes": ["no EIA data"]}
+        return {"status": "INSUFFICIENT_DATA", "record_count": 0,
+                "notes": ["no fundamentals data"]}
 
     n = len(silver_eia)
     periods = sorted(set(_col_values(silver_eia, "period")))
@@ -267,7 +268,7 @@ def generate(
         "futures": fut,
         "options": opt,
         "fundamentals": fund,
-        # Note: the report-level caveats (settlement-only, BAW model, EIA lag)
+        # Note: report-level settlement/model/provider caveats
         # live in reporting/daily_report._caveats — don't duplicate them here.
         "caveats": caveats or [],
     }
@@ -300,7 +301,10 @@ def _render_markdown(report: dict) -> str:
     ]
     if fut.get("settlement_range"):
         lo, hi = fut["settlement_range"]
-        lines.append(f"- Settlement range: ${lo:.2f} – ${hi:.2f}/bbl")
+        from ..reference.product import get_product
+        product = get_product()
+        lines.append(
+            f"- Settlement range: {lo:.2f} – {hi:.2f} {product.price_unit}")
     for note in fut.get("notes", []):
         lines.append(f"- ⚠ {note}")
 
@@ -317,7 +321,7 @@ def _render_markdown(report: dict) -> str:
         lines.append(f"- ⚠ {note}")
 
     lines += [
-        "\n## EIA Fundamentals",
+        "\n## Fundamentals",
         f"- Status: **{fund['status']}**",
         f"- Latest period: {fund.get('latest_period', 'N/A')}",
         f"- Series: {fund.get('series', [])}",

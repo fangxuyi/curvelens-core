@@ -216,8 +216,11 @@ def main() -> None:
     # ── EIA supply signal (optional) ──
     eia_supply_signal = None
     eia_scenario_trigger = None
-    if pq.exists("gold", "eia_features", as_of_str):
-        gold_eia = pq.read("gold", "eia_features", as_of_str)
+    fundamentals_dataset = ("fundamentals_features"
+                            if pq.exists("gold", "fundamentals_features", as_of_str)
+                            else "eia_features")
+    if pq.exists("gold", fundamentals_dataset, as_of_str):
+        gold_eia = pq.read("gold", fundamentals_dataset, as_of_str)
         ed = gold_eia.to_pydict()
         eia_supply_signal = ed["supply_signal"][0] if ed["supply_signal"] else None
         eia_scenario_trigger = ed["scenario_trigger"][0] if ed["scenario_trigger"] else None

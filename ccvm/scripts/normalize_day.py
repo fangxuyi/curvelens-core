@@ -146,7 +146,7 @@ def main() -> None:
         logger.info("Silver EIA: %d rows, %d PASS", len(silver_eia_table), pass_n)
 
         gold_eia_table = provider.features.compute(silver_eia_table, as_of)
-        pq_store.write("gold", "eia_features", as_of_str, gold_eia_table)
+        pq_store.write("gold", "fundamentals_features", as_of_str, gold_eia_table)
         gd = gold_eia_table.to_pydict()
         logger.info(
             "Gold EIA: period=%s  crude_draw=%.0f MBBL  supply_signal=%s  scenario_trigger=%s",

@@ -14,6 +14,8 @@ class TestWTIProfile:
         assert p.bulletin.strike_scale == 100
         assert p.bulletin.underlying_month_offset == 1
         assert p.fundamentals_provider == "eia_weekly_petroleum"
+        assert p.cot_contract_market_code == "067651"
+        assert p.cot_contract_label == "WTI-PHYSICAL NYMEX"
         assert get_product("wti") is p  # lru cached
 
     def test_calendar_module_resolves(self):
@@ -50,3 +52,49 @@ class TestFundamentalsRegistry:
         from ccvm.fundamentals import get_provider
         with pytest.raises(KeyError):
             get_provider("astrology")
+
+
+class TestNonWTIProfile:
+    def test_optional_capabilities_do_not_default_to_wti(self, monkeypatch):
+        import ccvm.reference.product as product_module
+
+        profile = {
+            "name": "Example Metal",
+            "display_name": "Metal",
+            "exchange": "COMEX",
+            "product_code": "GC",
+            "currency": "USD",
+            "price_unit": "USD/OZT",
+            "contract_multiplier": 100,
+            "tick_size": 0.1,
+            "futures_prefix": "GC",
+            "options_prefix": "OG",
+            "yfinance_contract_suffix": ".CMX",
+            "month_codes": {"G": 2, "J": 4, "M": 6, "Q": 8, "V": 10, "Z": 12},
+            "calendar_module": "ccvm.reference.wti_calendar",
+            "knowledge_pack": "example_metal",
+            "futures_depth": 6,
+            "options_expiry_depth": 3,
+            "settlement_min": 100,
+            "settlement_max": 10000,
+        }
+        monkeypatch.setattr(product_module, "_load_yaml", lambda _key: profile)
+        p = load_product("metal")
+
+        assert p.futures_prefix == "GC"
+        assert p.price_unit == "USD/OZT"
+        assert p.bulletin is None
+        assert p.benchmark is None
+        assert p.fundamentals_provider is None
+        assert p.news.sources == ()
+
+    def test_yfinance_contracts_use_profile_depth_and_month_codes(self, monkeypatch):
+        from datetime import date
+        import ccvm.collectors.yfinance_futures as collector_module
+        import ccvm.reference.product as product_module
+
+        p = get_product("wti")
+        monkeypatch.setattr(collector_module, "get_product", lambda: p)
+        contracts = collector_module._active_contracts(date(2026, 7, 16))
+        assert len(contracts) == p.futures_depth
+        assert contracts[0] == ("CLQ26.NYM", "CLQ26", "2026-08")

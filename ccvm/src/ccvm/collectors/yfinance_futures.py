@@ -1,5 +1,5 @@
 """
-WTI futures curve collector via yfinance.
+Product-profile-driven futures curve collector via yfinance.
 
 Downloads individual contract tickers (e.g. CLQ26.NYM) for the next N months.
 Settlement price = daily Close. Open interest is not available via yfinance.
@@ -22,13 +22,7 @@ from ..storage.raw_store import RawStore
 
 logger = logging.getLogger(__name__)
 
-MONTH_LETTERS = {
-    1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
-    7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z",
-}
-
-
-def _active_cl_contracts(as_of_date: date, num_months: int = 12) -> list[tuple[str, str, str]]:
+def _active_contracts(as_of_date: date, num_months: int | None = None) -> list[tuple[str, str, str]]:
     """
     Return list of (yf_ticker, contract_code, delivery_month) for the next N calendar months.
     The front month rolls before the 20th of the prior month, so start 2 months out
@@ -36,14 +30,15 @@ def _active_cl_contracts(as_of_date: date, num_months: int = 12) -> list[tuple[s
     product profile (E1): WTI → CLQ26.NYM, NG → NGQ26.NYM, ...
     """
     p = get_product()
+    depth = num_months if num_months is not None else p.futures_depth
     contracts = []
     # Start offset: skip current month (likely expired) and next (may be about to expire)
     offset = 1
-    for i in range(num_months):
+    for i in range(depth):
         total = as_of_date.month + offset + i - 1
         month = total % 12 + 1
         year = as_of_date.year + total // 12
-        letter = MONTH_LETTERS[month]
+        letter = p.month_letters[month]
         year_2d = str(year)[2:]
         code = f"{p.futures_prefix}{letter}{year_2d}"
         contracts.append((
@@ -60,22 +55,25 @@ class YFinanceFuturesCollector:
     Replaces direct CME HTTP scraping (which requires licensed access).
     """
 
-    source_id = "yfinance_wti_futures"
-
-    def __init__(self, raw_store: RawStore, manifest_db: ManifestDB, num_months: int = 84) -> None:
+    def __init__(self, raw_store: RawStore, manifest_db: ManifestDB,
+                 num_months: int | None = None) -> None:
         self.raw_store = raw_store
         self.manifest_db = manifest_db
-        self.num_months = num_months
+        product = get_product()
+        self.num_months = num_months if num_months is not None else product.futures_depth
+        self.source_id = f"yfinance_{product.key}_futures"
 
     def fetch_and_parse(self, as_of_date: date) -> list[dict]:
-        contracts = _active_cl_contracts(as_of_date, self.num_months)
+        contracts = _active_contracts(as_of_date, self.num_months)
         tickers = [c[0] for c in contracts]
 
         # Download window: a few extra days to handle weekends/holidays
         start = as_of_date - timedelta(days=5)
         end = as_of_date + timedelta(days=2)
 
-        logger.info("Downloading %d WTI contract tickers from yfinance...", len(tickers))
+        p = get_product()
+        logger.info("Downloading %d %s contract tickers from yfinance...",
+                    len(tickers), p.display_name)
         raw = yf.download(tickers, start=start, end=end, auto_adjust=True,
                           progress=False, group_by="ticker")
 
@@ -126,15 +124,15 @@ class YFinanceFuturesCollector:
 
                 records.append({
                     "trade_date": as_of_date.isoformat(),
-                    "exchange": "NYMEX",
-                    "product": "CL",
+                    "exchange": p.exchange,
+                    "product": p.product_code,
                     "contract_code": contract_code,
                     "delivery_month": delivery_month,
                     "settlement": round(float(close), 4),
                     "volume": vol_int,
                     "open_interest": None,
-                    "currency": "USD",
-                    "price_unit": "USD/BBL",
+                    "currency": p.currency,
+                    "price_unit": p.price_unit,
                     "source_id": self.source_id,
                 })
                 logger.info("  %s  delivery=%s  settle=%.2f  vol=%s",
@@ -200,7 +198,8 @@ class YFinanceFuturesCollector:
             "source_url": "yfinance",
             "collection_run_id": run_id,
         })
-        logger.info("Stored %d WTI contracts for %s -> %s", len(records), as_of_date, raw_path)
+        logger.info("Stored %d %s contracts for %s -> %s",
+                    len(records), get_product().display_name, as_of_date, raw_path)
         self.manifest_db.complete_run(run_id, "success", 1, 0, 0, 0)
         return {"run_id": run_id, "status": "success", "success": 1,
                 "warning": 0, "failure": 0, "skipped": 0,

@@ -26,6 +26,7 @@ market:
   options:
     exercise_style: American
     settlement_style: Futures
+    risk_free_rate: 0.05  # deployment assumption; update as rate policy evolves
     # LO option expiry = CL futures LTD − 3 business days (holiday-aware).
     # Futures LTD = 3 business days before the (adjusted) 25th of the month
     # prior to delivery. Source of truth: src/ccvm/reference/wti_calendar.py
@@ -38,10 +39,12 @@ market:
   options_expiry_depth: 5
   min_strikes_per_expiry: 5
   warn_strikes_below: 5
-  fail_strikes_below: 3
+  fail_strikes_below: 2
 
   # Quality thresholds
   max_daily_move_pct: 15.0  # warn if settlement moves more than this %
+  settlement_min: 1.0
+  settlement_max: 500.0
 
   # ── Product profile (E1): everything the code previously hardcoded ──
   display_name: "WTI"                    # used in report/dashboard copy
@@ -56,5 +59,75 @@ market:
     # CME daily bulletin parsing (Section 63 = Energy Options)
     product_header_call: "LO CALL"
     product_header_put: "LO PUT"
+    url: "https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf"
     strike_scale: 100                    # strikes printed in cents: 6850 = $68.50
     underlying_month_offset: 1           # AUG26 label → CLU26 (next month) underlying
+
+  benchmark:
+    name: "Brent"
+    ticker: "BZ=F"
+    source_id: "yfinance_brent_front"
+    filename_prefix: "brent_front"
+
+  news:
+    keywords:
+      - crude
+      - oil
+      - wti
+      - opec
+      - petroleum
+      - barrel
+      - brent
+      - refinery
+      - refining
+      - gasoline
+      - cushing
+      - lng
+      - west texas
+      - energy
+      - pipeline
+      - tanker
+      - spr
+      - iea
+      - production cut
+      - demand
+      - supply
+      - stockpile
+      - inventory
+      - nymex
+      - commodity
+      - saudi
+      - russia
+    sources:
+      - key: eia_today_in_energy
+        url: "https://www.eia.gov/rss/todayinenergy.xml"
+        name: "EIA Today in Energy"
+      - key: oilprice_com
+        url: "https://oilprice.com/rss/main"
+        name: "OilPrice.com"
+      - key: cnbc_energy
+        url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
+        name: "CNBC Energy"
+      - key: rigzone
+        url: "https://www.rigzone.com/news/rss/rigzone_latest.aspx"
+        name: "Rigzone"
+      - key: offshore_technology
+        url: "https://www.offshore-technology.com/feed/"
+        name: "Offshore Technology"
+
+  cot:
+    # CFTC Commitments of Traders, Disaggregated Fut+Opt Combined (kh3c-gbw2).
+    contract_market_code: "067651"       # WTI-PHYSICAL, NYMEX
+    contract_label: "WTI-PHYSICAL NYMEX"
+
+  triggers:
+    - id: bear_i_opec_cut
+      scenario: bear
+      side: invalidate
+      kind: manual
+      description: "OPEC+ announces emergency cut (agent judgment)"
+      check: null
+      params: {}
+
+  caveats:
+    - "expiry_convention_corrected_2026-07-10: LO option expiry now uses the exchange rule (futures LTD − 3 business days, holiday-aware) instead of a 3rd-Friday approximation; all IV/greeks history was restated"

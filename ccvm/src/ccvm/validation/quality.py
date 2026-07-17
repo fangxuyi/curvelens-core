@@ -5,24 +5,9 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Literal
 
-# CME futures month letter → calendar month number
-MONTH_LETTERS: dict[str, int] = {
-    "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
-    "N": 7, "Q": 8, "U": 9, "V": 10, "X": 11, "Z": 12,
-}
-
-# Known correct option-expiry → underlying future mapping for early 2024:
-# Jan-2024 options (expiry ~2024-01-16) → CLG24 (Feb delivery)
-# Feb-2024 options (expiry ~2024-02-14) → CLH24 (Mar delivery)
-# Mar-2024 options (expiry ~2024-03-13) → CLJ24 (Apr delivery)
-# The rule: options expiring in month M typically reference the M+1 future.
-# Underlying code letter month must equal expiry.month + 1 (with year wrap).
+from ..reference.product import get_product
 
 QualityStatus = Literal["PASS", "WARN", "FAIL", "QUARANTINE"]
-
-MIN_STRIKES_PASS = 5   # PASS if >= 5 distinct strikes per (expiry, side)
-MIN_STRIKES_WARN = 2   # WARN if >= 2 but < 5; FAIL if < 2
-
 
 @dataclass
 class QualityResult:
@@ -44,16 +29,8 @@ class QualityResult:
 
 
 def _parse_contract_delivery(contract_code: str) -> tuple[int, int] | None:
-    """Parse 'CLG24' → (2024, 2). Returns None if unparseable."""
-    m = re.match(r"^[A-Z]+([A-Z])(\d{2})$", contract_code)
-    if not m:
-        return None
-    letter, year_str = m.group(1), m.group(2)
-    month = MONTH_LETTERS.get(letter)
-    if month is None:
-        return None
-    year = 2000 + int(year_str)
-    return year, month
+    """Parse a contract code using the active product profile."""
+    return get_product().parse_contract_code(contract_code)
 
 
 def check_futures_settlements(records: list[dict], source_id: str) -> QualityResult:
@@ -142,21 +119,22 @@ def _infer_correct_underlying(option_expiry_str: str) -> tuple[str, str] | None:
     """
     Given option_expiry date string (YYYY-MM-DD), infer the expected
     underlying futures delivery month.
-    Rule: options expiring in month M → underlying delivery month M+1.
+    The delivery offset and month-code mapping come from the product profile.
     Returns (expected_delivery_month_str, expected_contract_letter).
     """
     m = re.match(r"^(\d{4})-(\d{2})-\d{2}$", option_expiry_str)
     if not m:
         return None
     year, month = int(m.group(1)), int(m.group(2))
-    # Next month
-    if month == 12:
-        dm_year, dm_month = year + 1, 1
-    else:
-        dm_year, dm_month = year, month + 1
+    bulletin = get_product().bulletin
+    if bulletin is None:
+        return None
+    total = month + bulletin.underlying_month_offset - 1
+    dm_month = total % 12 + 1
+    dm_year = year + total // 12
     dm_str = f"{dm_year:04d}-{dm_month:02d}"
     # Find contract letter for dm_month
-    letter = next((l for l, num in MONTH_LETTERS.items() if num == dm_month), None)
+    letter = get_product().month_letters.get(dm_month)
     return dm_str, letter
 
 
@@ -229,7 +207,7 @@ def check_option_settlements(
         parsed = _parse_contract_delivery(actual_underlying)
         if parsed:
             _, actual_month = parsed
-            if actual_month != MONTH_LETTERS.get(expected_letter, -1):
+            if actual_month != get_product().month_codes.get(expected_letter, -1):
                 wrong_underlying.append(
                     f"{actual_underlying} (expiry={expiry_str}, expected_letter={expected_letter})"
                 )
@@ -258,17 +236,19 @@ def check_option_settlements(
 
     sparse_expiries = []
     fail_sparse = []
+    product = get_product()
     for key, strikes in strikes_per_expiry.items():
         n = len(strikes)
-        if n < MIN_STRIKES_WARN:
+        if n < product.fail_strikes_below:
             fail_sparse.append(f"{key}: {n} strikes")
-        elif n < MIN_STRIKES_PASS:
+        elif n < product.pass_strikes_at:
             sparse_expiries.append(f"{key}: {n} strikes")
 
     if fail_sparse:
         result.checks_failed.append(f"critically_sparse_strikes: {fail_sparse}")
     elif sparse_expiries:
-        result.checks_warned.append(f"sparse_strikes_below_{MIN_STRIKES_PASS}: {sparse_expiries}")
+        result.checks_warned.append(
+            f"sparse_strikes_below_{product.pass_strikes_at}: {sparse_expiries}")
     else:
         result.checks_passed.append("sufficient_strikes_per_expiry")
 

@@ -1,11 +1,11 @@
 """
-Scenario engine for WTI curve and volatility shocks.
+Scenario engine for product curve and volatility shocks.
 
 Generates three standard scenarios (bull / base / bear) plus an optional
 event scenario. Each scenario produces:
   - A shocked futures curve (settlement per contract)
   - Implied vol shifts per expiry
-  - Estimated P&L impact on a $1/bbl position across the curve
+  - Per-price-unit impact across the curve
   - Confirmation and invalidation triggers
 
 Scenarios are stored as JSON alongside the daily report.
@@ -24,9 +24,10 @@ import pyarrow as pa
 class ScenarioShock:
     name: str                        # "bull" | "base" | "bear" | "event"
     description: str
-    curve_shift_usd: float           # parallel shift $/bbl (+ = up)
-    curve_tilt: float                # $/month × position in curve (steepens/flattens)
+    curve_shift_usd: float           # parallel shift in product price units (+ = up)
+    curve_tilt: float                # price units/month × curve position
     vol_shift_pct: float             # absolute shift in IV (+ = up)
+    shift_fraction: Optional[float] = None  # optional fraction of front price
     confirmation_triggers: list[str] = field(default_factory=list)
     invalidation_triggers: list[str] = field(default_factory=list)
 
@@ -37,8 +38,8 @@ class ScenarioResult:
     description: str
     shocked_settlements: list[dict]  # {contract_code, delivery_month, base, shocked, diff}
     vol_shifts: list[dict]           # {option_expiry, base_atm_iv, shocked_iv}
-    front_month_impact: float        # $/bbl change at front month
-    avg_curve_shift: float           # mean shocked−base across contracts ($/bbl, per contract)
+    front_month_impact: float        # product price-unit change at front month
+    avg_curve_shift: float           # mean shocked−base across contracts
     confirmation_triggers: list[str]
     invalidation_triggers: list[str]
     as_of_date: str
@@ -47,51 +48,47 @@ class ScenarioResult:
 _STANDARD_SHOCKS = [
     ScenarioShock(
         name="bull",
-        description="Supply disruption or OPEC cut drives prompt rally",
+        description="Bullish repricing drives a prompt rally",
         curve_shift_usd=+5.0,
         curve_tilt=-0.20,  # backwardation steepens: near > far
         vol_shift_pct=+0.05,
         confirmation_triggers=[
             "front-month settles above prior 30-day high",
             "25-delta call IV rises ≥ 3pp vs put IV",
-            "EIA crude draw > 3mb",
         ],
         invalidation_triggers=[
             "front-month settles below prior week close",
-            "curve shifts to contango > $1/month",
-            "EIA build > 2mb for two consecutive weeks",
+            "curve shifts materially into contango",
         ],
     ),
     ScenarioShock(
         name="base",
-        description="Gradual supply rebalance, range-bound prices",
+        description="Range-bound prices and stable volatility",
         curve_shift_usd=0.0,
         curve_tilt=0.0,
         vol_shift_pct=0.0,
         confirmation_triggers=[
-            "front-month stays within ±$3 of current settle for 5 sessions",
+            "front-month remains within its recent relative range for 5 sessions",
             "ATM IV unchanged ±2pp",
         ],
         invalidation_triggers=[
-            "front-month moves > $5 in either direction",
+            "front-month moves more than 7% in either direction",
             "ATM IV moves > 5pp in either direction",
         ],
     ),
     ScenarioShock(
         name="bear",
-        description="Demand weakness or supply glut drives sell-off",
+        description="Bearish repricing drives a prompt sell-off",
         curve_shift_usd=-5.0,
         curve_tilt=+0.15,  # contango steepens: far > near
         vol_shift_pct=+0.08,
         confirmation_triggers=[
             "front-month settles below prior 30-day low",
             "25-delta put IV rises ≥ 5pp vs call IV (put skew)",
-            "EIA build > 4mb",
         ],
         invalidation_triggers=[
-            "front-month rallies > $4 from current settle",
+            "front-month rallies more than 5.5% from current settle",
             "curve moves into backwardation",
-            "OPEC+ announces emergency cut",
         ],
     ),
 ]
@@ -136,15 +133,23 @@ def apply_vol_shock(
 
 
 _SIGMA_WEEKLY = {"bull": +2.0, "base": 0.0, "bear": -2.0}  # k × σ-implied weekly move
+_FALLBACK_FRACTION = {"bull": +0.07, "base": 0.0, "bear": -0.07}
 _WEEK_FRAC = (5.0 / 252.0) ** 0.5
 
 
 def _resolve_sigma_shock(shock: "ScenarioShock", front_settle, front_iv) -> "ScenarioShock":
     """Resolve a standard shock to σ-based dollars when the surface allows (E3)."""
     k = _SIGMA_WEEKLY.get(shock.name)
-    if k is None or not front_settle or not front_iv:
-        return shock  # event shocks and missing-surface days keep their sizing
-    shift = round(k * front_settle * front_iv * _WEEK_FRAC, 2)
+    if not front_settle:
+        return shock
+    if shock.shift_fraction is not None:
+        shift = round(shock.shift_fraction * front_settle, 2)
+    elif k is not None and front_iv:
+        shift = round(k * front_settle * front_iv * _WEEK_FRAC, 2)
+    elif k is not None:
+        shift = round(_FALLBACK_FRACTION[shock.name] * front_settle, 2)
+    else:
+        return shock
     # tilt scales with the shift so curve shape stays proportional
     scale = abs(shift) / abs(shock.curve_shift_usd) if shock.curve_shift_usd else 0.0
     from dataclasses import replace
@@ -152,7 +157,9 @@ def _resolve_sigma_shock(shock: "ScenarioShock", front_settle, front_iv) -> "Sce
         shock,
         curve_shift_usd=shift,
         curve_tilt=round(shock.curve_tilt * scale, 4) if scale else shock.curve_tilt,
-        description=f"{shock.description} [{k:+.0f}σ weekly ≈ {shift:+.2f}$]",
+        description=(f"{shock.description} [{k:+.0f}σ weekly ≈ {shift:+.2f}]"
+                     if k is not None and front_iv else
+                     f"{shock.description} [relative shock ≈ {shift:+.2f}]"),
     )
 
 
@@ -192,14 +199,16 @@ def generate(
                       for k, v in sorted(seen.items())]
 
     # E3: σ-based sizing — resolve the standard bull/bear shifts from the
-    # front ATM-IV-implied weekly move instead of a fixed ±$5/bbl (which is a
-    # WTI-scale number). shift = k × F × σ_ATM × √(5/252); k = ±2 (a 2-sigma
+    # front ATM-IV-implied weekly move instead of a fixed absolute move.
+    # shift = k × F × σ_ATM × √(5/252); k = ±2 (a 2-sigma
     # week). Self-calibrates across products AND vol regimes; falls back to
     # the legacy dollar shifts when the surface is missing.
     front_settle = contracts[0]["settlement"] if contracts else None
     front_iv = expiry_ivs[0]["atm_iv"] if expiry_ivs else None
-    shocks = [_resolve_sigma_shock(s, front_settle, front_iv) for s in _STANDARD_SHOCKS]
-    shocks += (extra_shocks or [])
+    shocks = [
+        _resolve_sigma_shock(s, front_settle, front_iv)
+        for s in [*_STANDARD_SHOCKS, *(extra_shocks or [])]
+    ]
     results: list[ScenarioResult] = []
 
     for shock in shocks:
@@ -230,7 +239,8 @@ def to_dict(result: ScenarioResult) -> dict:
 
 # ── Event scenarios from catalysts (C6) ─────────────────────────────────────
 
-_MAGNITUDE_SHOCK_USD = {"high": 6.0, "medium": 4.0, "low": 2.0, "unknown": 2.0}
+_MAGNITUDE_SHOCK_FRACTION = {"high": 0.08, "medium": 0.05,
+                             "low": 0.025, "unknown": 0.025}
 _EVENT_MIN_SCORE = 70
 
 
@@ -257,15 +267,16 @@ def event_shocks_from_catalysts(events: list[dict]) -> list[ScenarioShock]:
         score = ev.get("decayed_score", ev.get("relevance_score", 0))
         if score < _EVENT_MIN_SCORE:
             continue
-        mag = _MAGNITUDE_SHOCK_USD.get(ev.get("magnitude", "unknown"), 2.0)
+        mag = _MAGNITUDE_SHOCK_FRACTION.get(ev.get("magnitude", "unknown"), 0.025)
         prompt_horizon = ev.get("affected_horizon") in ("prompt_1m", "prompt_3m")
         title = (ev.get("title") or "")[:70]
         shocks.append(ScenarioShock(
             name=name,
             description=f"Event: {title}",
-            curve_shift_usd=sign * mag,
+            curve_shift_usd=0.0,
             curve_tilt=(-0.25 if prompt_horizon else -0.10) * sign,
             vol_shift_pct=+0.04,
+            shift_fraction=sign * mag,
             confirmation_triggers=[
                 f"event develops as reported (score {score}, {ev.get('magnitude')} magnitude)",
                 "front-month follows through in the event direction",

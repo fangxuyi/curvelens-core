@@ -32,6 +32,8 @@ def make_futures(**kwargs) -> dict:
         settlement=72.70,
         volume=285000,
         open_interest=443521,
+        currency="USD",
+        price_unit="USD/BBL",
         source_id="test",
         retrieved_at=NOW,
         raw_file_sha256=SHA,

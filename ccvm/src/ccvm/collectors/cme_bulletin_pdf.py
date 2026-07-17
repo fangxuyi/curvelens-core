@@ -1,13 +1,13 @@
 """
-CME Daily Bulletin PDF parser for LO (WTI crude oil) option settlements.
+CME Daily Bulletin PDF parser for profile-configured option settlements.
 
 Reads Section 63 Energy Options PDFs saved at data/cme_bulletin/<date>.pdf.
-Parses LO CALL and LO PUT sections and outputs records in the same bronze
+Parses the configured CALL and PUT sections and outputs records in the bronze
 format {"settlements": [...]} so that normalize_day.py picks them up unchanged.
 
 PDF format (pdftotext -layout output):
-  - "LO CALL  NYMEX CRUDE OIL OPTIONS (PHY)" marks the call section
-  - "LO PUT   NYMEX CRUDE OIL OPTIONS (PHY)" marks the put section
+  - product_header_call marks the call section
+  - product_header_put marks the put section
   - Expiry headers: "AUG26", "SEP26" etc. (one per line)
   - Data rows: strike (cents) + 13 additional columns, right-parseable
 
@@ -43,11 +43,6 @@ _MONTH_NAME_TO_NUM = {
     "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
     "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
 }
-_MONTH_NUM_TO_LETTER = {
-    1: "F", 2: "G", 3: "H", 4: "J", 5: "K", 6: "M",
-    7: "N", 8: "Q", 9: "U", 10: "V", 11: "X", 12: "Z",
-}
-
 _EXPIRY_RE = re.compile(r'^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}$', re.IGNORECASE)
 _PRODUCT_HEADER_RE = re.compile(r'^[A-Z]{2,5}\s+(CALL|PUT)\s+\S', re.IGNORECASE)
 _DECIMAL_RE = re.compile(r'^\d*\.\d+$')
@@ -65,13 +60,15 @@ def _expiry_code_to_option_info(code: str) -> tuple[date, str, str]:
     holiday-aware, verified vs the ICE schedule).
     """
     p = get_product()
+    if p.bulletin is None:
+        raise ValueError(f"Product {p.key!r} has no bulletin configuration")
     month_num = _MONTH_NAME_TO_NUM[code[:3].upper()]
     year = 2000 + int(code[3:])
     total = month_num + p.bulletin.underlying_month_offset - 1
     und_month = total % 12 + 1
     und_year = year + total // 12
     option_expiry = p.calendar.option_expiry_date(und_year, und_month)
-    underlying_contract = f"{p.futures_prefix}{_MONTH_NUM_TO_LETTER[und_month]}{str(und_year)[2:]}"
+    underlying_contract = p.contract_code(und_year, und_month)
     underlying_delivery_month = f"{und_year:04d}-{und_month:02d}"
     return option_expiry, underlying_contract, underlying_delivery_month
 
@@ -198,11 +195,14 @@ def _parse_data_row(tokens: list[str]) -> Optional[dict]:
 
 def parse(pdf_path: Path, trade_date: date) -> list[dict]:
     """
-    Parse LO CALL and LO PUT option settlements from a CME daily bulletin PDF.
+    Parse configured option settlements from a CME daily bulletin PDF.
     Returns a list of bronze-layer record dicts.
     """
     text = _pdftotext(pdf_path)
     records: list[dict] = []
+    product = get_product()
+    if product.bulletin is None:
+        raise ValueError(f"Product {product.key!r} has no bulletin configuration")
 
     in_lo_call = False
     in_lo_put = False
@@ -217,7 +217,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
         if _PRODUCT_HEADER_RE.match(stripped):
             # Section headers from the product profile (E1): e.g. "LO CALL" /
             # "LO PUT" for WTI, "LN CALL"/"LN PUT" for Henry Hub.
-            p = get_product()
+            p = product
             hdr_call = re.escape(p.bulletin.product_header_call).replace(r"\ ", r"\s+")
             hdr_put = re.escape(p.bulletin.product_header_put).replace(r"\ ", r"\s+")
             lo_call = bool(re.match(rf"^{hdr_call}\s+\S", stripped, re.IGNORECASE))
@@ -268,7 +268,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             continue
 
         call_put = "C" if in_lo_call else "P"
-        strike = row["strike_cents"] / get_product().bulletin.strike_scale
+        strike = row["strike_cents"] / product.bulletin.strike_scale
 
         # Negate put delta (bulletin shows absolute value; convention is negative)
         raw_delta = row['delta']
@@ -281,7 +281,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
         records.append({
             "trade_date": trade_date.isoformat(),
             "option_expiry": option_expiry.isoformat(),
-            "option_symbol": f"{get_product().options_prefix}{current_expiry_code}{call_put}{row['strike_cents']:05d}",
+            "option_symbol": f"{product.options_prefix}{current_expiry_code}{call_put}{row['strike_cents']:05d}",
             "underlying_contract": underlying_contract,
             "underlying_delivery_month": underlying_delivery_month,
             "strike": strike,
@@ -296,10 +296,10 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             "gamma": None,
             "theta": None,
             "vega": None,
-            "exercise_style": "American",
-            "settlement_style": "Futures",
-            "contract_multiplier": 1000,
-            "source_id": "cme_bulletin_lo_option",
+            "exercise_style": product.exercise_style,
+            "settlement_style": product.settlement_style,
+            "contract_multiplier": int(product.contract_multiplier),
+            "source_id": f"cme_bulletin_{product.options_prefix.lower()}_option",
             "price_note": "CME_daily_bulletin_settlement",
         })
 
@@ -308,7 +308,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
 
 class CMEBulletinPDFCollector:
     """
-    Collects WTI LO option settlements from a manually-downloaded CME daily
+    Collects profile-configured option settlements from a downloaded CME daily
     bulletin PDF.  The PDF must be saved at data/cme_bulletin/<YYYY-MM-DD>.pdf
     before running collect().
 
@@ -316,12 +316,12 @@ class CMEBulletinPDFCollector:
     picks it up automatically).
     """
 
-    source_id = "cme_bulletin_lo_option"
-
     def __init__(self, data_dir: Path, raw_store: RawStore, manifest_db: ManifestDB) -> None:
         self.bulletin_dir = data_dir / "cme_bulletin"
         self.raw_store = raw_store
         self.manifest_db = manifest_db
+        product = get_product()
+        self.source_id = f"cme_bulletin_{product.options_prefix.lower()}_option"
 
     def pdf_path(self, trade_date: date) -> Path:
         return self.bulletin_dir / f"{trade_date.isoformat()}.pdf"
@@ -355,8 +355,9 @@ class CMEBulletinPDFCollector:
                     "warning": 0, "failure": 1, "skipped": 0}
 
         if not records:
-            msg = "No LO option records found in PDF"
-            logger.warning("%s — check that %s is a CME Section 63 Energy Options bulletin", msg, pdf.name)
+            product = get_product()
+            msg = f"No {product.options_prefix} option records found in PDF"
+            logger.warning("%s — check the configured bulletin source for %s", msg, pdf.name)
             self.manifest_db.complete_run(run_id, "warning", 0, 1, 0, 0, notes=msg)
             return {"run_id": run_id, "status": "warning", "success": 0,
                     "warning": 1, "failure": 0, "skipped": 0}
@@ -370,7 +371,8 @@ class CMEBulletinPDFCollector:
             return {"run_id": run_id, "status": "success", "success": 0,
                     "warning": 0, "failure": 0, "skipped": 1}
 
-        filename = f"cme_lo_options_{trade_date.strftime('%Y%m%d')}.json"
+        prefix = get_product().options_prefix.lower()
+        filename = f"cme_{prefix}_options_{trade_date.strftime('%Y%m%d')}.json"
         raw_path, sha256_written, byte_size = self.raw_store.persist(
             content=content,
             source_id=self.source_id,

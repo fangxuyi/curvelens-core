@@ -43,13 +43,16 @@ def build_series(pq_store, as_of_str: str, max_lookback: int = 60) -> dict:
     dates = [d for d in pq_store.list_dates("gold", "futures_features") if d <= as_of_str]
     dates = dates[-max_lookback:]
 
-    series: dict = {"front_settle": {}, "curve_slope": {}, "atm_iv": {}, "rr25": {}}
+    series: dict = {"front_settle": {}, "curve_slope": {}, "curve_slope_pct": {},
+                    "atm_iv": {}, "rr25": {}}
     for dt in dates:
         fm = _futures_metrics(pq_store.read("gold", "futures_features", dt))
         if fm.get("front_settle") is not None:
             series["front_settle"][dt] = fm["front_settle"]
         if fm.get("curve_slope") is not None:
             series["curve_slope"][dt] = fm["curve_slope"]
+            if fm.get("front_settle"):
+                series["curve_slope_pct"][dt] = fm["curve_slope"] / fm["front_settle"]
         if pq_store.exists("gold", "option_features", dt):
             om = _options_metrics(pq_store.read("gold", "option_features", dt))
             if om.get("atm_iv") is not None:
@@ -57,12 +60,19 @@ def build_series(pq_store, as_of_str: str, max_lookback: int = 60) -> dict:
             if om.get("rr25") is not None:
                 series["rr25"][dt] = om["rr25"]
 
-    # Distinct EIA periods (period → crude_draw), ascending
+    # Provider-specific fundamentals history. The current EIA petroleum
+    # provider exposes distinct report periods and crude draws.
     periods: dict[str, float] = {}
-    for dt in dates:
-        if not pq_store.exists("gold", "eia_features", dt):
+    from ..fundamentals import get_provider
+    from ..reference.product import get_product
+    provider = get_provider(get_product().fundamentals_provider)
+    for dt in (dates if provider and provider.name == "eia_weekly_petroleum" else []):
+        dataset = ("fundamentals_features"
+                   if pq_store.exists("gold", "fundamentals_features", dt)
+                   else "eia_features")
+        if not pq_store.exists("gold", dataset, dt):
             continue
-        ed = pq_store.read("gold", "eia_features", dt).to_pydict()
+        ed = pq_store.read("gold", dataset, dt).to_pydict()
         p = (ed.get("eia_period") or [None])[0]
         draw = (ed.get("crude_draw") or [None])[0]
         if p:

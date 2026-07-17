@@ -1,8 +1,8 @@
 """
-Bronze → Silver normalization for WTI futures settlements.
+Bronze → Silver normalization for product futures settlements.
 
 Silver layer adds:
-  - last_trade_date         from WTI calendar
+  - last_trade_date         from the product calendar
   - option_expiry_date      from the product profile calendar module (E1)
   - days_to_expiry          integer days from trade_date to last_trade_date
   - curve_position          1-indexed position in the active curve (1=front)
@@ -11,7 +11,7 @@ Silver layer adds:
 
 Rows are excluded (silver_status=FAIL) if:
   - settlement <= 0
-  - settlement > 500 (implausible WTI price)
+  - settlement outside product-profile bounds
   - delivery_month cannot be parsed
 
 Rows are warned (silver_status=WARN) if:
@@ -27,9 +27,6 @@ import pyarrow.compute as pc
 
 from ..reference.product import get_product
 
-_MAX_SETTLEMENT = 500.0
-_MIN_SETTLEMENT = 1.0
-
 _SILVER_SCHEMA = pa.schema([
     pa.field("trade_date", pa.string()),
     pa.field("exchange", pa.string()),
@@ -42,7 +39,7 @@ _SILVER_SCHEMA = pa.schema([
     pa.field("currency", pa.string()),
     pa.field("price_unit", pa.string()),
     pa.field("last_trade_date", pa.string()),
-    pa.field("cl_option_expiry", pa.string()),
+    pa.field("option_expiry", pa.string()),
     pa.field("days_to_expiry", pa.int32()),
     pa.field("curve_position", pa.int32()),
     pa.field("source_id", pa.string()),
@@ -94,11 +91,12 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
             opt_exp_str = opt_exp.isoformat()
             days_to_exp = (ltd - as_of_date).days
 
-        # Validate settlement
-        if settlement is None or settlement <= 0 or settlement < _MIN_SETTLEMENT:
+        # Validate settlement using product-scale bounds.
+        product = get_product()
+        if settlement is None or settlement <= 0 or settlement < product.settlement_min:
             status = "FAIL"
             note = note or f"invalid_settlement:{settlement}"
-        elif settlement > _MAX_SETTLEMENT:
+        elif product.settlement_max is not None and settlement > product.settlement_max:
             status = "FAIL"
             note = note or f"settlement_exceeds_max:{settlement}"
 
@@ -120,7 +118,7 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
         rows["currency"].append(bronze_dicts["currency"][i])
         rows["price_unit"].append(bronze_dicts["price_unit"][i])
         rows["last_trade_date"].append(ltd_str)
-        rows["cl_option_expiry"].append(opt_exp_str)
+        rows["option_expiry"].append(opt_exp_str)
         rows["days_to_expiry"].append(days_to_exp)
         rows["curve_position"].append(pos)
         rows["source_id"].append(bronze_dicts["source_id"][i])

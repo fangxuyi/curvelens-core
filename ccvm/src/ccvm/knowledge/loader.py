@@ -3,15 +3,15 @@ Knowledge-pack loader.
 
 Reads knowledge/<product>/calendar.yaml (repo root) and merges the scheduled
 release calendar with contract events (front option expiry / futures LTD)
-computed from the WTI calendar module. Drives the daily brief's "Next Review"
+computed from the active product calendar module. Drives the daily brief's "Next Review"
 section; later (D1) the same file schedules event-calendar runs.
 
 The knowledge pack lives at the repo root — agent-consultable, versioned,
 product-scoped:
 
     CurveLens/
-      knowledge/wti/calendar.yaml   ← parsed here
-      knowledge/wti/*.md            ← prose files for the agent (not parsed)
+      knowledge/<pack>/calendar.yaml   ← parsed here
+      knowledge/<pack>/*.md            ← prose files for the agent (not parsed)
       ccvm/src/ccvm/knowledge/loader.py   ← this module
 """
 from __future__ import annotations
@@ -22,8 +22,6 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-
-from ..reference.wti_calendar import active_contracts
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +90,7 @@ def upcoming_events(
       - weekly recurring events from calendar.yaml
       - dated one-offs from calendar.yaml
       - contract events (front option expiry, front futures LTD) computed
-        from the WTI calendar module
+        from the active product calendar module
     Each event: {"date", "name", "time_et", "kind"}.
     """
     horizon = as_of + timedelta(days=horizon_days)
@@ -103,7 +101,7 @@ def upcoming_events(
     if stale:
         logger.warning(
             "knowledge/%s/calendar.yaml has %d stale dated event(s) — remove them: %s",
-            product, len(stale), [e.get("name") for e in stale],
+            product or _default_pack(), len(stale), [e.get("name") for e in stale],
         )
 
     for ev in cal.get("recurring") or []:
@@ -132,13 +130,15 @@ def upcoming_events(
                 "kind": ev.get("kind", "dated"),
             })
 
-    # Contract events for the front contract (expiry math from wti_calendar —
-    # the single source of truth; see knowledge/wti/conventions.md)
-    for info in active_contracts(as_of, num_months=2):
+    # Contract events use the calendar selected by the active product profile.
+    from ..reference.product import get_product
+    active_product = get_product(product) if product else get_product()
+    for info in active_product.calendar.active_contracts(as_of, num_months=2):
         if as_of < info.option_expiry <= horizon:
             events.append({
                 "date": info.option_expiry.isoformat(),
-                "name": f"LO option expiry ({info.contract_code} underlying)",
+                "name": (f"{active_product.options_prefix} option expiry "
+                         f"({info.contract_code} underlying)"),
                 "time_et": None,
                 "kind": "contract",
             })

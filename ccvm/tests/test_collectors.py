@@ -90,11 +90,12 @@ def test_eia_collector_skips_without_api_key(
     assert manifest_db.get_manifest_entry_count() == 0
 
 
-def test_eia_collector_discover_returns_one_item(
+def test_eia_collector_discover_returns_series_set(
     raw_store: RawStore,
     manifest_db: ManifestDB,
 ):
     collector = EIACollector(raw_store, manifest_db, api_key="")
     items = collector.discover(date(2024, 1, 5))
-    assert len(items) == 1
-    assert "eia_crude_stocks_weekly_20240105" in items[0].identifier
+    # EIA weekly petroleum discover fans out to the full series set.
+    assert len(items) == 7
+    assert any("eia_us_crude_stocks_20240105" in it.identifier for it in items)
