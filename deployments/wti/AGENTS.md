@@ -24,7 +24,7 @@ Before any runtime command, set and verify:
 export CCVM_PRODUCT=wti
 ```
 
-Runtime state automatically resolves to `ccvm/data/wti/`. Run commands from the
+Runtime state automatically resolves to `ccvm/data/products/wti/`. Run commands from the
 repository root. Never rely on the default product during an agent or scheduled
 run. `CCVM_DATA_DIR` is needed only when deliberately migrating legacy state or
 using external storage.
@@ -68,7 +68,7 @@ already handled. Gate on that before running the pipeline.
 
 1. Download the CME Section 63 Energy Options bulletin with the existing headed
    Playwright downloader:
-   `CME_BULLETIN_RUN_PIPELINE=0 CME_BULLETIN_DIR=ccvm/data/wti/cme_bulletin /Users/openclawyi/.openclaw/workspace/skills/cme-bulletin-downloader/scripts/download_cme_bulletin_pdf.js`.
+   `CME_BULLETIN_RUN_PIPELINE=0 CME_BULLETIN_DIR=ccvm/data/products/wti/cme_bulletin /Users/openclawyi/.openclaw/workspace/skills/cme-bulletin-downloader/scripts/download_cme_bulletin_pdf.js`.
    The downloader handles CME's browser requirement, extracts the bulletin's
    internal PDF date, saves the PDF under the configured `CME_BULLETIN_DIR`,
    and prints JSON containing `date` and `path`. If the download itself fails
@@ -90,7 +90,7 @@ approves a futures-only run.
 
 **Pass 2 — run the pipeline to completion.**
 
-4. After the PDF has been saved to `ccvm/data/wti/cme_bulletin/<date>.pdf`, run
+4. After the PDF has been saved to `ccvm/data/products/wti/cme_bulletin/<date>.pdf`, run
    `ccvm/.venv/bin/python agent/run_pipeline.py --date <date>`.
 5. On `{"result": "OK", ...}`, the daily brief has been written to `report_md`
    / `report_json`. Note `agreement_state`, `eia_scenario`, and `alert_worthy`.
@@ -103,7 +103,7 @@ approves a futures-only run.
 7. Run `ccvm/.venv/bin/python agent/notify.py --prepare --date <date>`, where
    `<date>` is the PDF date. This
    formats a `DAILY_BRIEF` (always) and, when the day is alert-worthy, a
-   `PRIORITY_ALERT`, queueing them in `ccvm/data/wti/agent_outbox/pending.json`. It skips
+   `PRIORITY_ALERT`, queueing them in `ccvm/data/products/wti/agent_outbox/pending.json`. It skips
    any message already queued or already delivered — re-running is safe.
 8. Run `ccvm/.venv/bin/python agent/notify.py --list-pending` and read the
    `items` array. Each item has `id`, `type`, and `text`.
@@ -154,18 +154,18 @@ Pipeline package (`ccvm/`):
 - `ccvm/scripts/normalize_day.py` — raw → bronze → silver + quality report
 - `ccvm/scripts/compute_features.py` — silver → gold (curve, BAW vol surface, agreement)
 - `ccvm/scripts/extract_catalysts.py` — RSS → ranked catalyst events (needs `claude` CLI)
-- `ccvm/scripts/generate_report.py` — gold → `ccvm/data/wti/reports/<date>.md` + `.json`
+- `ccvm/scripts/generate_report.py` — gold → `ccvm/data/products/wti/reports/<date>.md` + `.json`
 - `ccvm/src/ccvm/` — the analytics package (collectors, normalizers, analytics, reporting)
 - `ccvm/config/sources.yaml` — configured RSS/EIA sources
 - `ccvm/config/markets/wti.yaml` — WTI contract/market config
 - `ccvm/.env` — `EIA_API_KEY` (gitignored; see `ccvm/.env.example`)
 - `ccvm/app/dashboard.py` — Streamlit terminal (separate, not part of the cron run)
 
-Runtime state (under `ccvm/data/wti/`, gitignored):
-- `ccvm/data/wti/cme_bulletin/<date>.pdf` — the agent-downloaded CME bulletin
-- `ccvm/data/wti/reports/<date>.{md,json}` — the daily brief
-- `ccvm/data/wti/agent_outbox/pending.json` — messages awaiting Telegram delivery + ack
-- `ccvm/data/wti/agent_outbox/delivered.json` — delivery log (dedupe guarantee)
+Runtime state (under `ccvm/data/products/wti/`, gitignored):
+- `ccvm/data/products/wti/cme_bulletin/<date>.pdf` — the agent-downloaded CME bulletin
+- `ccvm/data/products/wti/reports/<date>.{md,json}` — the daily brief
+- `ccvm/data/products/wti/agent_outbox/pending.json` — messages awaiting Telegram delivery + ack
+- `ccvm/data/products/wti/agent_outbox/delivered.json` — delivery log (dedupe guarantee)
 
 ## Knowledge
 
@@ -284,7 +284,7 @@ note in its run summary that an alert was held and why.
   API or hold a bot token / chat ID. All delivery goes through the agent's own
   Telegram integration.
 - The agent must not send Telegram messages except for pending `DAILY_BRIEF` /
-  `PRIORITY_ALERT` items in `ccvm/data/wti/agent_outbox/pending.json`, or an explicit
+  `PRIORITY_ALERT` items in `ccvm/data/products/wti/agent_outbox/pending.json`, or an explicit
   approved test.
 - Never fabricate market data. If the CME bulletin cannot be fetched, report the
   failure — do not invent settlements or run `--force-pdf` without human

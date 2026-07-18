@@ -33,7 +33,7 @@ def test_wti_runbook_is_explicit_and_product_scoped():
     runbook = _read("deployments/wti/AGENTS.md")
     cron = _read("deployments/wti/cron.example")
     assert "export CCVM_PRODUCT=wti" in runbook
-    assert "ccvm/data/wti" in runbook
+    assert "ccvm/data/products/wti" in runbook
     assert "Section 63 Energy Options" in runbook
     assert "--event eia" in runbook
     assert "CCVM_PRODUCT=wti" in cron
@@ -44,7 +44,7 @@ def test_gold_runbook_is_experimental_and_cannot_schedule_itself():
     runbook = _read("deployments/gold/AGENTS.md")
     cron = _read("deployments/gold/cron.example")
     assert "export CCVM_PRODUCT=gold" in runbook
-    assert "ccvm/data/gold" in runbook
+    assert "ccvm/data/products/gold" in runbook
     assert "Section 64" in runbook
     assert "experimental — validation only" in runbook
     assert "Never run `agent/event_run.py --event eia`" in runbook

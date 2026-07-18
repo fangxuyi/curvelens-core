@@ -18,7 +18,7 @@ curvelens-core/
     ├── scripts/                     5 pipeline stages
     ├── config/markets/<product>.yaml  ← product profile (load-bearing)
     ├── src/ccvm/                    package (reference/product.py = profile loader)
-    └── data/<product>/              isolated runtime state (gitignored)
+    └── data/products/<product>/     isolated runtime state (gitignored)
 ```
 
 ---
@@ -45,12 +45,14 @@ export CCVM_PRODUCT=wti               # deployment's product; always explicit
 ```
 
 That is the only product-specific setup required. Runtime state automatically
-resolves to `ccvm/data/wti/` (or `ccvm/data/gold/`). `CCVM_DATA_DIR` is an
-optional advanced override for migration or external storage.
+resolves to `ccvm/data/products/wti/` (or `ccvm/data/products/gold/`).
+`CCVM_DATA_DIR` is an optional advanced override for migration or external
+storage.
 
 > Upgrading an older WTI installation whose state is directly under
 > `ccvm/data/`? Temporarily set `CCVM_DATA_DIR="$PWD/ccvm/data"` until that state
-> is moved into `ccvm/data/wti/`. This avoids losing delivery dedup history.
+> is moved into `ccvm/data/products/wti/`. This avoids losing delivery dedup
+> history.
 
 **Smoke test**
 ```bash
@@ -70,7 +72,7 @@ root framework rules plus exactly one `deployments/<product>/AGENTS.md`.
 Adapt only that deployment's cron template. Production templates ship disabled
 with delivery placeholders; fill destinations at registration time only and
 never commit them. Delivery/dedup state lives below the automatically isolated
-`ccvm/data/<product>/agent_outbox/`.
+`ccvm/data/products/<product>/agent_outbox/`.
 
 ---
 
@@ -187,8 +189,8 @@ Two deployments share one checkout and venv, but each has its own
 framework automatically isolates all runtime state:
 
 ```text
-CCVM_PRODUCT=wti  -> ccvm/data/wti/
-CCVM_PRODUCT=gold -> ccvm/data/gold/
+CCVM_PRODUCT=wti  -> ccvm/data/products/wti/
+CCVM_PRODUCT=gold -> ccvm/data/products/gold/
 ```
 
 That includes manifests, market data, reports, monitor state, and outboxes.

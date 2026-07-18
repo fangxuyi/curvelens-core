@@ -32,7 +32,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # This script lives in CurveLens/agent/; runtime data defaults to the selected
-# product namespace (ccvm/data/<product>) and may be overridden by CCVM_DATA_DIR.
+# product namespace (ccvm/data/products/<product>) and may be overridden by
+# CCVM_DATA_DIR.
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
 from ccvm.runtime import data_dir
