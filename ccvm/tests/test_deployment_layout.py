@@ -20,6 +20,17 @@ def test_root_agent_instructions_are_framework_scoped():
     assert "EIA flash" not in root
 
 
+def test_readme_exposes_one_sentence_product_deployment():
+    readme = _read("README.md")
+    deployments = _read("deployments/README.md")
+    for sentence in (
+        "Operate the CurveLens WTI deployment.",
+        "Operate the CurveLens Gold deployment.",
+    ):
+        assert sentence in readme
+        assert sentence in deployments
+
+
 def test_each_product_has_a_minimal_deployment_instruction_set():
     for product in ("wti", "gold"):
         base = ROOT / "deployments" / product
