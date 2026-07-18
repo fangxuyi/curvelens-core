@@ -24,11 +24,12 @@ Every runtime command must set the product explicitly:
 CCVM_PRODUCT=<product>
 ```
 
-Runtime state is automatically isolated under `ccvm/data/<product>/`; WTI and
-Gold therefore coexist safely in one clone. `CCVM_DATA_DIR` is an optional
-advanced override for migrations or external storage. Never configure two
-products with the same override. Delivery destinations, agent registrations,
-and cron jobs remain product-specific; code and virtual environment are shared.
+Runtime state is automatically isolated under `ccvm/data/products/<product>/`;
+WTI and Gold therefore coexist safely in one clone. `CCVM_DATA_DIR` is an
+optional advanced override for migrations or external storage. Never configure
+two products with the same override. Delivery destinations, agent
+registrations, and cron jobs remain product-specific; code and virtual
+environment are shared.
 
 ## Framework boundaries
 

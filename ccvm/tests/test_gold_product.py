@@ -75,7 +75,8 @@ def test_runtime_data_dir_override(monkeypatch, tmp_path):
 def test_runtime_data_dir_defaults_to_product_namespace(monkeypatch):
     monkeypatch.delenv("CCVM_DATA_DIR", raising=False)
     monkeypatch.setenv("CCVM_PRODUCT", "gold")
-    assert data_dir().parts[-3:] == ("ccvm", "data", "gold")
+    assert data_dir().parts[-4:] == ("ccvm", "data", "products", "gold")
+    assert data_dir() != Path(__file__).resolve().parents[1] / "data" / "gold"
 
 
 def test_runtime_data_dir_rejects_unsafe_product(monkeypatch):

@@ -11,9 +11,9 @@ explicit approval.
 ```
 
 That is the entire registration instruction. Data automatically goes to
-`ccvm/data/<product>/`, so no data path needs to be chosen on a fresh install.
-WTI and Gold share the checkout, environment, and tests. Their state, outboxes,
-Telegram destinations, and schedules remain separate.
+`ccvm/data/products/<product>/`, so no data path needs to be chosen on a fresh
+install. WTI and Gold share the checkout, environment, and tests. Their state,
+outboxes, Telegram destinations, and schedules remain separate.
 
 | Product | Agent instruction | Status |
 |---|---|---|

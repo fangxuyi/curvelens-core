@@ -5,7 +5,7 @@
 # downloader flow and commands that explicitly set:
 #
 #   CCVM_PRODUCT=gold
-#   # data defaults automatically to ccvm/data/gold
+#   # data defaults automatically to ccvm/data/products/gold
 #
 # The future schedule must read AGENTS.md plus deployments/gold/AGENTS.md,
 # preserve notify freshness/dedup/ack behavior, use a Gold-only delivery
