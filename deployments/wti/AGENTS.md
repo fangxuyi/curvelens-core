@@ -29,6 +29,11 @@ repository root. Never rely on the default product during an agent or scheduled
 run. `CCVM_DATA_DIR` is needed only when deliberately migrating legacy state or
 using external storage.
 
+For a one-time migration from a deployed single-product CurveLens checkout,
+follow `deployments/wti/MIGRATION.md`. The migration must preserve manifest
+lineage and delivery deduplication history; a plain directory copy is not a
+complete cutover.
+
 ## Runtime Model
 
 Use cron to trigger the `curvelens` agent on a T+1 retry window after CME

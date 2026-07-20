@@ -30,5 +30,5 @@ enabled.
 - [Install and extend the framework](SETUP.md)
 - [Product deployment status](deployments/README.md)
 - [WTI operating runbook](deployments/wti/AGENTS.md)
+- [Migrate an existing WTI deployment](deployments/wti/MIGRATION.md)
 - [Gold operating runbook](deployments/gold/AGENTS.md)
-
