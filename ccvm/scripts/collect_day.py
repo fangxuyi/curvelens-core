@@ -12,8 +12,8 @@ Option data (cme_bulletin_pdf):
     Requires data/cme_bulletin/<YYYY-MM-DD>.pdf downloaded from the URL in the
     active product profile.
 
-After running with --source all, extract catalyst events with:
-    python scripts/extract_catalysts.py --date 2026-06-24
+Agent-framework analysis consumes the stored articles from its evidence packets;
+this collector makes no model calls.
 """
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
 _SOURCES = ["yfinance_futures", "yfinance_benchmark", "yfinance_brent", "cftc_cot",
             "cme_bulletin_pdf", "fundamentals", "eia", "macro", "fred_macro",
-            "rss_news", "csv_futures", "all"]
+            "rss_news", "news", "market", "csv_futures", "all"]
 
 
 def main() -> None:
@@ -79,25 +79,25 @@ def main() -> None:
     manifest_db = ManifestDB(MANIFEST_DB_PATH)
     results = {}
 
-    if args.source in ("yfinance_futures", "all"):
+    if args.source in ("yfinance_futures", "market", "all"):
         collector = YFinanceFuturesCollector(raw_store, manifest_db)
         result = collector.collect(as_of)
         results["yfinance_futures"] = result
         print(f"[yfinance_futures]  {result}")
 
-    if args.source in ("yfinance_benchmark", "yfinance_brent", "all"):
+    if args.source in ("yfinance_benchmark", "yfinance_brent", "market", "all"):
         collector = YFinanceBenchmarkCollector(raw_store, manifest_db)
         result = collector.collect(as_of)
         results["yfinance_benchmark"] = result
         print(f"[benchmark]          {result}")
 
-    if args.source in ("cftc_cot", "all"):
+    if args.source in ("cftc_cot", "market", "all"):
         collector = CFTCCOTCollector(raw_store, manifest_db)
         result = collector.collect(as_of)
         results["cftc_cot"] = result
         print(f"[cftc_cot]          {result}")
 
-    if args.source in ("cme_bulletin_pdf", "all"):
+    if args.source in ("cme_bulletin_pdf", "market", "all"):
         if get_product().bulletin is None:
             print("[cme_bulletin_pdf]  skipped — product has no bulletin configuration")
         else:
@@ -106,18 +106,18 @@ def main() -> None:
             results["cme_bulletin_pdf"] = result
             print(f"[cme_bulletin_pdf]  {result}")
 
-    if args.source in ("fundamentals", "eia", "all"):
+    if args.source in ("fundamentals", "eia", "market", "all"):
         # E4: the fundamentals collector comes from the product profile registry
         provider = get_provider(get_product().fundamentals_provider)
         collector = provider.collector_cls(raw_store, manifest_db) if provider else None
-    if args.source in ("fundamentals", "eia", "all") and collector is None:
+    if args.source in ("fundamentals", "eia", "market", "all") and collector is None:
         print("[fundamentals]      skipped — product has no fundamentals_provider")
-    elif args.source in ("fundamentals", "eia", "all"):
+    elif args.source in ("fundamentals", "eia", "market", "all"):
         result = collector.collect(as_of)
         results["eia"] = result
         print(f"[eia]               {result}")
 
-    if args.source in ("macro", "fred_macro", "all"):
+    if args.source in ("macro", "fred_macro", "market", "all"):
         macro = get_product().macro
         if macro is None:
             print("[macro]             skipped — product has no macro capability")
@@ -128,7 +128,7 @@ def main() -> None:
             results["macro"] = result
             print(f"[macro]             {result}")
 
-    if args.source in ("rss_news", "all"):
+    if args.source in ("rss_news", "news", "all"):
         collector = RSSNewsCollector(raw_store, manifest_db)
         result = collector.collect(as_of)
         results["rss_news"] = result

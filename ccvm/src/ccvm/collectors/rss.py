@@ -2,8 +2,8 @@
 Product-profile-driven RSS news collector.
 
 Fetches articles from curated free RSS feeds, filters by recency and
-energy-relevance, and stores as a JSON array in the raw layer for
-downstream LLM catalyst extraction via extract_catalysts.py.
+product relevance, and stores them as a JSON array in the raw layer for
+downstream agent-framework evidence packets.
 
 Raw storage path: data/raw/rss_news/{retrieval_date}/rss_news_{YYYYMMDD}.json
 """

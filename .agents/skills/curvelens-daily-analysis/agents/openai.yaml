@@ -1,0 +1,4 @@
+interface:
+  display_name: "CurveLens Daily Analysis"
+  short_description: "Run the multi-specialist market workflow"
+  default_prompt: "Use $curvelens-daily-analysis to run today’s configured CurveLens product analysis."

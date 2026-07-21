@@ -115,6 +115,36 @@ market:
         url: "https://www.offshore-technology.com/feed/"
         name: "Offshore Technology"
 
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options]
+    max_quality_attempts: 2
+    roles:
+      - key: futures_curve
+        display_name: Futures Curve Analyst
+        mandate: Explain flat price, curve shape, carry, positioning, and the forward implications.
+        section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
+        news_keywords: [crude, oil, wti, brent, opec, tanker, pipeline, sanctions]
+        required_checks:
+          - Distinguish settled-market evidence from executable prices.
+          - Check whether flat-price and curve signals agree or diverge.
+      - key: vol_surface
+        display_name: Volatility Surface Analyst
+        mandate: Explain implied volatility, skew, term structure, and risk-neutral-density diagnostics.
+        section_keys: [market_risk, rnd, term_structure]
+        news_keywords: [crude, oil, volatility, options, opec, geopolitical, hurricane]
+        required_checks:
+          - Treat failed RND diagnostics as a limitation, never as probabilities.
+          - Compare the surface move with realized price and event risk.
+      - key: fundamentals
+        display_name: Physical Fundamentals Analyst
+        mandate: Explain inventories, balances, refining, supply, demand, and physical-market risks.
+        section_keys: [fundamentals, eia_seasonal, agreement, scenarios]
+        news_keywords: [inventory, stockpile, cushing, refinery, gasoline, production, demand, supply, opec, spr]
+        required_checks:
+          - Compare reported balances with the futures curve and price response.
+          - Identify stale or missing releases before drawing a conclusion.
+
   cot:
     # CFTC Commitments of Traders, Disaggregated Fut+Opt Combined (kh3c-gbw2).
     contract_market_code: "067651"       # WTI-PHYSICAL, NYMEX

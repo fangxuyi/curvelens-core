@@ -11,11 +11,13 @@ companion artifacts. `CCVM_PRODUCT` selects the profile (default `wti`).
 ```
 curvelens-core/
 ├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   shared rules + identity
-├── agent/            run_pipeline.py · notify.py · event_run.py · query.py
+├── .agents/skills/curvelens-daily-analysis/           native-agent workflow
+├── .codex/agents/                                    generic specialist types
+├── agent/            pipeline · analysis controller · notify · query
 ├── deployments/<product>/          product runbook + cron template
 ├── knowledge/<pack>/               ← product knowledge pack + MAINTENANCE.md
 └── ccvm/                            the deterministic engine
-    ├── scripts/                     5 pipeline stages
+    ├── scripts/                     deterministic collection/analytics stages
     ├── config/markets/<product>.yaml  ← product profile (load-bearing)
     ├── src/ccvm/                    package (reference/product.py = profile loader)
     └── data/products/<product>/     isolated runtime state (gitignored)
@@ -28,10 +30,10 @@ curvelens-core/
 **Prerequisites**
 - Python ≥ 3.12
 - `poppler` (`brew install poppler`) — the bulletin parser shells out to `pdftotext`
-- `claude` CLI on PATH (Claude Code, OAuth session) — catalyst extraction; the
-  pipeline treats this stage as optional and degrades without it
-- An OpenClaw install with a Telegram channel — delivery is the **agent's**
-  integration; the pipeline never holds a bot token (see AGENTS.md Safety Rules)
+- A Codex/OpenClaw agent environment — native subagents run QC, specialist
+  analysis, and synthesis without a repository model client or model API key
+- For live delivery only, a configured agent delivery integration; the
+  pipeline never holds a bot token (see AGENTS.md Safety Rules)
 - The headed-Playwright CME downloader skill (for bulletin products) — CME is
   Akamai-protected; a plain HTTP client cannot fetch the bulletin
 
@@ -39,7 +41,7 @@ curvelens-core/
 ```bash
 git clone https://github.com/fangxuyi/curvelens-core.git && cd curvelens-core
 python3 -m venv ccvm/.venv
-ccvm/.venv/bin/pip install -r ccvm/requirements.txt python-dotenv feedparser httpx
+ccvm/.venv/bin/pip install -r ccvm/requirements.txt
 cp ccvm/.env.example ccvm/.env        # fill in EIA_API_KEY (or your provider's key)
 export CCVM_PRODUCT=wti               # deployment's product; always explicit
 ```
@@ -151,9 +153,9 @@ tests):
 - `seasonality.md` — how to read the same print in different months
 - `analogs.md` — dated episodes, mechanism-first
 
-Also configure `news` in the product profile and author a product event
-taxonomy if catalyst extraction is wanted (the extractor prompt is templated
-from the profile).
+Also configure `news` and `analysis.roles` in the product profile. The native
+agent workflow routes evidence to those roles and instantiates the same generic
+specialist agent once per configured desk.
 
 ### 2.5 Deployment runbook — `deployments/<product>/`
 

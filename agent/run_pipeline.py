@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """CurveLens end-to-end daily pipeline — single entry point for the monitor agent.
 
-Runs the full 5-stage pipeline for one trade date and prints a single line of
+Runs the deterministic 4-stage pipeline for one trade date and prints a single line of
 JSON to stdout describing the outcome. Designed to be invoked as one tool call
 by the selected product deployment agent (see `deployments/<product>/AGENTS.md`), rather than
 having the agent orchestrate five separate scripts from a prompt.
@@ -10,13 +10,11 @@ Stages (each an isolated subprocess of the current interpreter):
     1. collect_day.py       raw ingest (futures, CME PDF, optional fundamentals, RSS)
     2. normalize_day.py     raw → bronze → silver + quality report
     3. compute_features.py  silver → gold (curve, BAW vol surface, agreement)
-    4. extract_catalysts.py RSS articles → ranked catalyst events (needs claude CLI)
-    5. generate_report.py   gold → data/reports/<date>.md + .json
+    4. generate_report.py   gold → data/reports/<date>.md + .json
 
 Usage:
     python agent/run_pipeline.py                 # today (America/New_York)
     python agent/run_pipeline.py --date 2026-07-02
-    python agent/run_pipeline.py --date 2026-07-02 --skip-catalysts
 
 stdout is exactly one JSON object. Human-readable progress goes to stderr.
 
@@ -104,8 +102,6 @@ def _run_stage(name: str, argv: list[str], required: bool) -> bool:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the full CurveLens daily pipeline")
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today, America/New_York)")
-    parser.add_argument("--skip-catalysts", action="store_true",
-                        help="Skip the claude-CLI catalyst extraction stage")
     parser.add_argument("--force-pdf", action="store_true",
                         help="Proceed even if the CME option bulletin PDF is missing")
     args = parser.parse_args()
@@ -144,14 +140,7 @@ def main() -> None:
     # ── Stage 3: compute features ──
     _run_stage("compute", ["compute_features.py", "--date", as_of_str], required=True)
 
-    # ── Stage 4: catalyst extraction (optional; needs claude CLI + RSS) ──
-    if not args.skip_catalysts:
-        _run_stage("extract_catalysts", ["extract_catalysts.py", "--date", as_of_str],
-                   required=False)
-    else:
-        _eprint("\n── stage: extract_catalysts (skipped) ──")
-
-    # ── Stage 5: generate report ──
+    # ── Stage 4: generate deterministic report ──
     _run_stage("report", ["generate_report.py", "--date", as_of_str], required=True)
 
     # ── Summarize outcome from the gold layer ──

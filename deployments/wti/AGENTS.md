@@ -58,6 +58,21 @@ The agent's own job is narrow but load-bearing in three places the pipeline
    worth interrupting someone, and may hold a borderline alert (the daily brief
    still goes out).
 
+### Multi-agent analysis shadow run
+
+The existing deterministic production brief and delivery sequence below remain
+authoritative. To evaluate the analyst-style workflow without disrupting it:
+
+Invoke `$curvelens-daily-analysis` and ask it to run WTI for `<date>`. The skill
+uses `agent/analysis_orchestrator.py` and native Codex delegation to review QC,
+fan out every role configured in `wti.yaml`, wait for validated results, and
+then synthesize. It resumes persisted state after interruption and bounds QC
+and response corrections. Repository code must not call an LLM SDK, model HTTP
+API, `codex exec`, `claude`, or another vendor-model CLI.
+
+This writes shadow artifacts only. Do not queue or deliver them; continue to use
+the production sequence below until the shadow workflow is approved.
+
 A recurring run is three passes, back-to-back. The cron job fires every 30
 minutes across the early-morning retry window regardless of state; the freshness
 gate in Pass 1 is what keeps a firing cheap — once that day's bulletin has been
@@ -100,8 +115,8 @@ approves a futures-only run.
 5. On `{"result": "OK", ...}`, the daily brief has been written to `report_md`
    / `report_json`. Note `agreement_state`, `eia_scenario`, and `alert_worthy`.
 6. On `{"result": "ERROR", "step": ..., "detail": ...}`, stop and report which
-   stage failed. A failed optional stage (catalyst extraction) does not
-   error the run; only required stages do.
+   deterministic stage failed. News interpretation belongs to the native-agent
+   shadow workflow; the production pipeline makes no model calls.
 
 **Pass 3 — prepare and deliver.**
 
@@ -158,7 +173,7 @@ Pipeline package (`ccvm/`):
 - `ccvm/scripts/collect_day.py` — raw ingest (futures / CME PDF / EIA / RSS)
 - `ccvm/scripts/normalize_day.py` — raw → bronze → silver + quality report
 - `ccvm/scripts/compute_features.py` — silver → gold (curve, BAW vol surface, agreement)
-- `ccvm/scripts/extract_catalysts.py` — RSS → ranked catalyst events (needs `claude` CLI)
+- `agent/analysis_orchestrator.py` — durable native-Codex QC, specialist, and synthesis controller
 - `ccvm/scripts/generate_report.py` — gold → `ccvm/data/products/wti/reports/<date>.md` + `.json`
 - `ccvm/src/ccvm/` — the analytics package (collectors, normalizers, analytics, reporting)
 - `ccvm/config/sources.yaml` — configured RSS/EIA sources

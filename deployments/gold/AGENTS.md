@@ -90,6 +90,20 @@ An `OK` pipeline exit proves orchestration completed; it does not by itself
 pass these gates. Production status requires clean diagnostics over consecutive
 settlement days and explicit approval of scheduling and delivery.
 
+## Multi-agent analysis shadow run
+
+This workflow supplements the validation run; it does not change Gold's
+experimental status or authorize delivery.
+
+Invoke `$curvelens-daily-analysis` and ask it to run Gold for `<date>`. The skill
+uses `agent/analysis_orchestrator.py` and native Codex delegation to review QC,
+fan out every role configured in `gold.yaml`, wait for validated results, and
+then synthesize. It resumes persisted state after interruption and bounds QC
+and response corrections. Do not make direct SDK, HTTP model API, `codex exec`,
+`claude`, or other vendor-model CLI calls.
+
+The result is shadow-only. Do not invoke `notify.py` or send it.
+
 ## Gold-specific conventions
 
 - GC represents 100 troy ounces and is quoted in USD per troy ounce.
