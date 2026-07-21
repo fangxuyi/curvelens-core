@@ -31,6 +31,10 @@ class TestGoldProfile:
         assert product.futures_prefix == "GC"
         assert product.options_prefix == "OG"
         assert product.fundamentals_provider is None
+        assert product.macro.provider == "fred"
+        assert {s.series_id for s in product.macro.series} == {
+            "DFII10", "DTWEXBGS", "T10YIE", "DGS3MO", "DGS10",
+        }
         assert product.benchmark is None
         assert product.cot_contract_market_code == "088691"
         assert product.bulletin.strike_scale == 1
@@ -89,6 +93,7 @@ def test_runtime_data_dir_rejects_unsafe_product(monkeypatch):
 def test_gold_knowledge_pack_shape():
     pack = knowledge_path("gold")
     assert load_calendar("gold").get("dated") == []
-    for filename in ("conventions.md", "regimes.md", "seasonality.md", "analogs.md"):
+    for filename in ("conventions.md", "regimes.md", "seasonality.md", "analogs.md",
+                     "macro.md"):
         text = (pack / filename).read_text()
-        assert "*Last reviewed: 2026-07-16" in text[:240]
+        assert "*Last reviewed: 2026-07-" in text[:260]

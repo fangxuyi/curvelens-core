@@ -105,6 +105,10 @@ def main() -> None:
     seas_path = DATA_DIR / "gold" / "eia_seasonal" / f"trade_date={as_of_str}" / "seasonal.json"
     eia_seasonal_ctx = json.loads(seas_path.read_text()) if seas_path.exists() else None
 
+    # ── Profile-driven macro context (optional) ──
+    macro_path = DATA_DIR / "gold" / "macro" / f"trade_date={as_of_str}" / "macro.json"
+    macro = json.loads(macro_path.read_text()) if macro_path.exists() else None
+
     # ── Agreement ──
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     if agr_path.exists():
@@ -158,6 +162,7 @@ def main() -> None:
         rnd=rnd_ctx,
         themes=themes,
         scorecard=scorecard,
+        macro=macro,
     )
 
     md_path = output_dir / f"{as_of_str}.md"

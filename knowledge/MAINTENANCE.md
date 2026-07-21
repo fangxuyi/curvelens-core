@@ -37,6 +37,7 @@ knowledge comes from, who may change it, and how staleness is caught.*
 | `regimes.md` | slow drift | recalibrate from measured data (§4); note calibration date |
 | `seasonality.md` | stable | annual glance; update the "Status note" when pipeline features (e.g. B4 seasonal triggers) supersede manual guidance |
 | `conventions.md` | near-static | changes only on exchange rule changes; corrections carry a dated **History note** (see the expiry-restatement note as the template) |
+| `macro.md` (when present) | mixed | official series definitions are near-static; interpretation priors are recalibrated from product history and new sources require provenance/licensing review |
 
 Every file carries a `*Last reviewed: YYYY-MM-DD*` header — bump it on review
 **even when nothing changed**, so staleness is visible at a glance.
@@ -77,5 +78,6 @@ their own PR with a dated History note in the affected file.
 
 New products get `knowledge/<product>/` with the same five-file shape
 (conventions, calendar.yaml, regimes, seasonality, analogs) and the same
-tiers. Authoring the pack is most of the porting work for a knowledgeable
+tiers. Products may add capability-specific files such as `macro.md`; these
+remain governed by the same provenance and review rules. Authoring the pack is most of the porting work for a knowledgeable
 agent — this process file is product-agnostic and applies unchanged.

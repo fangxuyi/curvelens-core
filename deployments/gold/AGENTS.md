@@ -40,7 +40,10 @@ advanced override, not part of fresh setup.
   `ccvm/config/markets/gold.yaml`.
 - Positioning: CFTC Gold code `088691`.
 - News: sources and keywords in the Gold product profile.
-- Fundamentals: none initially. Never run `agent/event_run.py --event eia`.
+- Physical fundamentals: none. Never run `agent/event_run.py --event eia`.
+- Macro: profile-configured FRED series (real yields, broad USD, breakevens,
+  and Treasury rates). Set `FRED_API_KEY` to collect them; see
+  `knowledge/gold/macro.md`. Macro context does not replace live-data acceptance.
 - Interpretation: `knowledge/gold/`.
 
 The existing WTI headed downloader is Section-63-specific and must not be used
@@ -80,6 +83,10 @@ All gates must pass before proposing production status:
    and young-history labels across several consecutive days.
 6. Review a Gold-specific downloader, delivery QC, Telegram destination, and
    disabled cron template; enable them only with explicit approval.
+
+An `OK` pipeline exit proves orchestration completed; it does not by itself
+pass these gates. Production status requires clean diagnostics over consecutive
+settlement days and explicit approval of scheduling and delivery.
 
 ## Gold-specific conventions
 

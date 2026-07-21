@@ -46,6 +46,7 @@ def generate(
     rnd: Optional[dict] = None,
     themes: Optional[list] = None,
     scorecard: Optional[dict] = None,
+    macro: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -65,6 +66,7 @@ def generate(
             "rnd": rnd or {},
             "term_structure": _term_structure_section(gold_futures, gold_options),
             "fundamentals": _fundamentals_section(gold_eia),
+            "macro": macro or {"status": "unavailable"},
             "catalysts": _catalysts_section(top_catalysts, themes),
             "agreement": agreement,
             "scenarios": scenarios,
@@ -357,6 +359,7 @@ def _render_markdown(report: dict) -> str:
     fut = s["market_risk"].get("futures", {})
     opt = s["market_risk"].get("options", {})
     fundamentals = s.get("fundamentals", s.get("eia_fundamentals", {}))
+    macro = s.get("macro") or {}
     eia = fundamentals  # WTI provider's standardized report payload
     agr = s["agreement"]
     cats = s["catalysts"]
@@ -631,6 +634,38 @@ def _render_markdown(report: dict) -> str:
             ]
     else:
         lines.append(f"*{fundamentals_title} data not available for this date.*\n")
+
+    # Macro is distinct from physical product fundamentals. Products opt in
+    # through their profile; the report does not branch on product name.
+    if macro.get("status") == "available":
+        flat = macro.get("flat_price", {})
+        curve = macro.get("curve", {})
+        vol = macro.get("vol_surface", {})
+        lines += ["### Macro context", "",
+                  f"**Flat-price prior:** `{flat.get('directional_prior')}` "
+                  f"(score {flat.get('score'):+d} from {flat.get('signals_scored')} signals)", ""]
+        for key, item in macro.get("series", {}).items():
+            change = item.get("change")
+            if change is None:
+                change_text = "change n/a"
+            elif item.get("change_display_unit") == "bp":
+                change_text = f"{change * 100:+.1f} bp"
+            else:
+                change_text = f"{(item.get('change_pct') or 0) * 100:+.2f}%"
+            lines.append(
+                f"- {item.get('label')}: **{item.get('value')}** ({change_text}; "
+                f"observation {item.get('observation_date')}; [FRED]({item.get('source_url')}))")
+        gap = curve.get("carry_gap")
+        gap_text = f"{gap:+.1%}" if gap is not None else "n/a"
+        lines += ["", f"**Curve/carry:** implied carry minus 3m Treasury = **{gap_text}**. "
+                  f"{curve.get('interpretation')}"]
+        if vol.get("status") == "available":
+            lines.append(
+                f"**Vol surface:** ATM {_fmt_pct(vol.get('atm_iv'))}, "
+                f"25Δ RR {_fmt_pct(vol.get('risk_reversal_25d'))}, "
+                f"25Δ BF {_fmt_pct(vol.get('butterfly_25d'))} "
+                f"(`{vol.get('interpretation')}`).")
+        lines += [f"*{macro.get('caveat')}*", ""]
 
     # ── Section 3: Catalysts ──
     lines += ["## 3. Upcoming Catalysts", ""]

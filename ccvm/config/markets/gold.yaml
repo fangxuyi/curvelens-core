@@ -67,6 +67,44 @@ market:
     contract_market_code: "088691"
     contract_label: "GOLD COMEX"
 
+  # Optional public macro capability. Collection uses the official FRED API
+  # and skips cleanly when FRED_API_KEY is absent.
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 400
+    series:
+      real_yield_10y:
+        series_id: DFII10
+        label: U.S. 10Y TIPS real yield
+        units: percent
+        role: opportunity_cost
+        flat_price_sign: -1
+      broad_usd:
+        series_id: DTWEXBGS
+        label: Nominal broad U.S. dollar index
+        units: index
+        role: currency
+        flat_price_sign: -1
+      breakeven_10y:
+        series_id: T10YIE
+        label: U.S. 10Y breakeven inflation
+        units: percent
+        role: inflation_compensation
+        flat_price_sign: 1
+      treasury_3m:
+        series_id: DGS3MO
+        label: U.S. 3-month Treasury yield
+        units: percent
+        role: financing_carry
+        flat_price_sign: 0
+      nominal_yield_10y:
+        series_id: DGS10
+        label: U.S. 10Y nominal Treasury yield
+        units: percent
+        role: rate_decomposition
+        flat_price_sign: 0
+
   news:
     keywords:
       - gold
@@ -89,5 +127,5 @@ market:
         name: Federal Reserve Press Releases
 
   caveats:
-    - "Gold has no product-specific fundamentals provider in the initial deployment; agreement uses futures, options, positioning, and catalysts only"
+    - "Gold has no physical-fundamentals provider; its optional macro context is reported separately and does not enter the agreement classifier"
     - "The Yahoo individual-contract suffix .CMX is a bootstrap-feed assumption and must be verified during the first live collection day"

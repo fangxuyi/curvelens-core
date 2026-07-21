@@ -28,6 +28,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 from ccvm.parsers import bronze_futures, bronze_options
 from ccvm.normalizers import silver_futures, silver_options
 from ccvm.fundamentals import get_provider
+from ccvm.analytics.macro_context import normalize_fred
 from ccvm.reference.product import get_product
 from ccvm.storage.manifest_db import ManifestDB
 from ccvm.storage.parquet_store import ParquetStore
@@ -156,6 +157,35 @@ def main() -> None:
             gd["supply_signal"][0],
             gd["scenario_trigger"][0],
         )
+
+    # --- Silver: optional profile-driven FRED macro history ---
+    product = get_product()
+    macro_tables = []
+    if product.macro and product.macro.provider == "fred":
+        by_key = {s.key: s for s in product.macro.series}
+        prefix = f"fred_{product.key}_macro_"
+        for entry in date_entries:
+            source_id = entry.get("source_id", "")
+            if not source_id.startswith(prefix):
+                continue
+            key = source_id.removeprefix(prefix)
+            spec = by_key.get(key)
+            raw_path = Path(entry["raw_path"])
+            if spec is None or not raw_path.exists():
+                logger.warning("Unknown or missing macro raw entry: %s", source_id)
+                continue
+            try:
+                table = normalize_fred(raw_path, entry["sha256"], spec, as_of)
+                if len(table):
+                    macro_tables.append(table)
+            except Exception as exc:
+                logger.error("Failed to normalize macro %s: %s", source_id, exc)
+        if macro_tables:
+            import pyarrow as pa
+            silver_macro = pa.concat_tables(macro_tables)
+            pq_store.write("silver", "macro", as_of_str, silver_macro)
+            logger.info("Silver macro: %d observations across %d series",
+                        len(silver_macro), len(macro_tables))
 
     # --- Quality report ---
     report = quality_report.generate(
