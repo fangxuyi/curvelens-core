@@ -76,6 +76,35 @@ def test_packets_are_role_scoped_and_news_is_deduplicated(tmp_path):
     assert macro["relevant_news"][0]["article_id"].startswith("news:")
 
 
+def test_wti_packets_use_the_same_workflow_with_fundamentals_desk(tmp_path):
+    product = load_product("wti")
+    section_keys = {
+        key for role in product.analysis_roles for key in role.section_keys
+    }
+    report = {"sections": {key: {"status": "available"} for key in section_keys}}
+    manifest = build_analysis_packets(
+        product=product,
+        trade_date="2026-07-20",
+        report=report,
+        quality=_quality(),
+        articles=[{
+            "title": "WTI inventories and refinery demand",
+            "text": "Cushing stockpiles and refinery runs changed.",
+            "url": "https://example.test/wti",
+            "published_at": "2026-07-20",
+            "source_name": "Test",
+        }],
+        output_dir=tmp_path,
+    )
+
+    assert manifest["roles"] == ["futures_curve", "vol_surface", "fundamentals"]
+    fundamentals = json.loads(Path(manifest["role_packets"]["fundamentals"]).read_text())
+    assert set(fundamentals["computed_sections"]) == {
+        "fundamentals", "eia_seasonal", "agreement", "scenarios",
+    }
+    assert fundamentals["relevant_news"][0]["article_id"].startswith("news:")
+
+
 def test_packet_id_is_stable(tmp_path):
     first = _packets(tmp_path / "a")["packet_id"]
     second = _packets(tmp_path / "b")["packet_id"]

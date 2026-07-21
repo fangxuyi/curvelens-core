@@ -115,8 +115,8 @@ approves a futures-only run.
 5. On `{"result": "OK", ...}`, the daily brief has been written to `report_md`
    / `report_json`. Note `agreement_state`, `eia_scenario`, and `alert_worthy`.
 6. On `{"result": "ERROR", "step": ..., "detail": ...}`, stop and report which
-   stage failed. A failed optional stage (catalyst extraction) does not
-   error the run; only required stages do.
+   deterministic stage failed. News interpretation belongs to the native-agent
+   shadow workflow; the production pipeline makes no model calls.
 
 **Pass 3 — prepare and deliver.**
 

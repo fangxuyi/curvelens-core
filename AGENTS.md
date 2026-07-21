@@ -16,6 +16,26 @@ The deployment runbook is authoritative for product-specific collection,
 schedules, QC, and delivery. `CCVM_PRODUCT` selects which runbook applies. If a
 runtime task does not name a product, establish it before proceeding.
 
+## Agent onboarding
+
+On first activation in a fresh clone:
+
+1. Establish exactly one product from the user's instruction; do not operate a
+   runtime task with the implicit default.
+2. Read this file and exactly one matching `deployments/<product>/AGENTS.md`.
+3. Verify Python 3.12+, `ccvm/.venv`, installed requirements, `pdftotext`, and
+   the product's required data-provider keys without printing secrets.
+4. Run the shared tests before proposing operational use. Perform only the
+   validation or analysis the user requested; never infer approval for a cron,
+   live delivery, destination, or production-status change.
+5. Use `$curvelens-daily-analysis` for native multi-specialist analysis. The
+   checked-in skill and product profile define the roles; do not reconstruct or
+   hardcode Gold/WTI prompts from memory.
+
+The supported registration sentences remain “Operate the CurveLens WTI
+deployment.” and “Operate the CurveLens Gold deployment.” A single runtime
+agent operates one product; separate product agents may share the checkout.
+
 ## Runtime isolation
 
 Every runtime command must set the product explicitly:
