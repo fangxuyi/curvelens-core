@@ -76,14 +76,13 @@ not enable a product deployment until its runbook's acceptance gates pass.
 
 ## Agent-framework analysis workflow
 
-The analyst-style shadow workflow is prepared by
-`agent/run_analysis_workflow.py`. Deterministic code collects and validates
-market data, computes features, then collects and routes news. It makes no LLM
-calls. The deployment coordinator must use the host agent framework's native
-sub-agent delegation for every role listed in the emitted manifest; do not call
-model SDKs, HTTP APIs, or vendor CLIs from repository code.
+Use the repository skill `$curvelens-daily-analysis` for the analyst-style
+shadow workflow. `agent/analysis_orchestrator.py` persists and enforces the
+product-neutral phase graph; deterministic code prepares evidence and validates
+outputs, while the host Codex framework natively delegates QC, every
+profile-configured specialist role, and synthesis. Do not call model SDKs, HTTP
+model APIs, `codex exec`, or vendor model CLIs from repository code.
 
-Each specialist completes only its own response template. The coordinator waits
-for every configured role, writes the synthesis template, and runs
-`agent/finalize_analysis.py`. Until a deployment runbook explicitly promotes
-this path, outputs are shadow artifacts only: do not queue or deliver them.
+The controller must emit a synthesis action only after every configured role
+validates. Until a deployment runbook explicitly promotes this path, outputs
+are shadow artifacts only: do not queue or deliver them.

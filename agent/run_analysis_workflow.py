@@ -42,7 +42,7 @@ def _run(script: str, *args: str) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
-    parser.add_argument("--max-quality-attempts", type=int, default=2)
+    parser.add_argument("--max-quality-attempts", type=int)
     parser.add_argument("--force-pdf", action="store_true")
     args = parser.parse_args()
     try:
@@ -53,6 +53,7 @@ def main() -> None:
         _emit({"result": "ERROR", "step": "args", "detail": "invalid date"}, False)
     as_of_str = as_of.isoformat()
     product = get_product()
+    max_attempts = max(1, args.max_quality_attempts or product.analysis_max_quality_attempts)
     root = data_dir()
     pdf_path = root / "cme_bulletin" / f"{as_of_str}.pdf"
     if product.bulletin and not pdf_path.exists() and not args.force_pdf:
@@ -63,15 +64,22 @@ def main() -> None:
 
     history = []
     quality_path = root / "quality_reports" / f"{as_of_str}.json"
-    for attempt in range(1, max(1, args.max_quality_attempts) + 1):
-        if _run("collect_day.py", "--date", as_of_str, "--source", "market") != 0:
-            history.append({"attempt": attempt, "stage": "collect_market", "status": "failed"})
+    for attempt in range(1, max_attempts + 1):
+        collect_rc = _run("collect_day.py", "--date", as_of_str, "--source", "market")
+        # Never accept a quality file left by a prior invocation when this
+        # normalization attempt fails before producing a new report.
+        quality_path.unlink(missing_ok=True)
         normalize_rc = _run("normalize_day.py", "--date", as_of_str, "--force")
         if not quality_path.exists():
             _emit({"result": "DATA_REVIEW_REQUIRED", "date": as_of_str,
                    "step": "normalize", "detail": "quality report was not produced"}, False)
         quality = json.loads(quality_path.read_text())
-        decision = assess_quality(quality, attempt, max(1, args.max_quality_attempts))
+        decision = assess_quality(
+            quality, attempt, max_attempts,
+            blocking_sections=product.analysis_blocking_sections,
+            retryable_empty_sections=product.analysis_retryable_empty_sections,
+        )
+        decision["collect_exit_code"] = collect_rc
         decision["normalize_exit_code"] = normalize_rc
         history.append(decision)
         if not decision["should_retry"]:
@@ -86,7 +94,11 @@ def main() -> None:
                "step": "compute", "attempts": history}, False)
     # Compute may add model diagnostics (for example RND) to the report.
     quality = json.loads(quality_path.read_text())
-    final_quality = assess_quality(quality, len(history), len(history))
+    final_quality = assess_quality(
+        quality, decision["attempt"], decision["attempt"],
+        blocking_sections=product.analysis_blocking_sections,
+        retryable_empty_sections=product.analysis_retryable_empty_sections,
+    )
 
     # News is deliberately collected only after market evidence is usable.
     news_rc = _run("collect_day.py", "--date", as_of_str, "--source", "news")
@@ -104,12 +116,20 @@ def main() -> None:
         report=json.loads(report_path.read_text()), quality=quality,
         articles=load_articles(article_path), output_dir=packet_dir,
     )
-    limited = final_quality["disposition"] != "READY" or news_rc != 0
+    stage_failures = [
+        {"attempt": item.get("attempt"), "collect_exit_code": item.get("collect_exit_code"),
+         "normalize_exit_code": item.get("normalize_exit_code")}
+        for item in history
+        if item.get("collect_exit_code") != 0 or item.get("normalize_exit_code") != 0
+    ]
+    limited = final_quality["disposition"] != "READY" or news_rc != 0 or bool(stage_failures)
     _emit({
         "result": "ANALYSIS_PACKETS_READY_WITH_LIMITATIONS" if limited else "ANALYSIS_PACKETS_READY",
         "date": as_of_str, "manifest": str(packet_dir / "manifest.json"),
         "roles": manifest["roles"], "quality": final_quality,
+        "quality_report": quality,
         "quality_attempts": history, "news_status": "ok" if news_rc == 0 else "failed",
+        "preparation_warnings": stage_failures,
         "next_step": "Delegate each role packet through the agent framework, then synthesize and run finalize_analysis.py.",
         "shadow_mode": True, "delivery_queued": False,
     })

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from functools import lru_cache
@@ -135,6 +136,9 @@ class Product:
     macro: Optional[MacroSpec] = None
     news: NewsSpec = field(default_factory=NewsSpec)
     analysis_roles: tuple[AnalysisRoleSpec, ...] = ()
+    analysis_blocking_sections: tuple[str, ...] = ("futures",)
+    analysis_retryable_empty_sections: tuple[str, ...] = ("futures", "options")
+    analysis_max_quality_attempts: int = 2
     trigger_definitions: tuple[dict, ...] = ()
     caveats: tuple[str, ...] = ()
     # CFTC Commitments of Traders (B3). Both None → the deployment has no COT
@@ -236,6 +240,10 @@ def load_product(key: str) -> Product:
     if len(role_keys) != len(set(role_keys)):
         raise ValueError(f"Product profile {key!r} has duplicate analysis role keys")
     for role in analysis_roles:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", role.key):
+            raise ValueError(
+                f"Product profile {key!r} has unsafe analysis role key {role.key!r}"
+            )
         if not role.mandate or not role.section_keys or not role.required_checks:
             raise ValueError(
                 f"Product profile {key!r} analysis role {role.key!r} requires "
@@ -328,6 +336,17 @@ def load_product(key: str) -> Product:
             ),
         ),
         analysis_roles=analysis_roles,
+        analysis_blocking_sections=tuple(
+            str(v) for v in analysis.get("blocking_sections", ["futures"])
+        ),
+        analysis_retryable_empty_sections=tuple(
+            str(v) for v in analysis.get(
+                "retryable_empty_sections", ["futures", "options"]
+            )
+        ),
+        analysis_max_quality_attempts=max(
+            1, int(analysis.get("max_quality_attempts", 2))
+        ),
         trigger_definitions=tuple(m.get("triggers", []) or []),
         caveats=tuple(str(v) for v in m.get("caveats", []) or []),
         cot_contract_market_code=(m.get("cot", {}) or {}).get("contract_market_code"),

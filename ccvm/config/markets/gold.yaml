@@ -128,6 +128,9 @@ market:
         name: Federal Reserve Press Releases
 
   analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options]
+    max_quality_attempts: 2
     roles:
       - key: futures_curve
         display_name: Futures Curve Analyst

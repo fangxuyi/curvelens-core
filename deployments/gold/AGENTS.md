@@ -95,21 +95,14 @@ settlement days and explicit approval of scheduling and delivery.
 This workflow supplements the validation run; it does not change Gold's
 experimental status or authorize delivery.
 
-1. Run `ccvm/.venv/bin/python agent/run_analysis_workflow.py --date <date>`.
-2. Read the returned manifest. Use the host OpenClaw/OpenAI agent framework's
-   native sub-agent delegation to run one independent specialist for every
-   listed role (Gold currently has futures curve, volatility surface, and
-   macro). Give each specialist only its packet, its response-template path,
-   and the active Gold knowledge pack. Do not make direct SDK, HTTP model API,
-   `claude`, or other vendor-CLI calls.
-3. Each specialist must assess data quality, data findings, relevant news,
-   data/news agreement, and a cited forward view, then overwrite only its own
-   response template. A limited or blocked section must say why.
-4. Wait for all specialists. The coordinator reads their completed responses,
-   reconciles agreements and tensions, and fills `synthesis.response.json`.
-5. Run `ccvm/.venv/bin/python agent/finalize_analysis.py --date <date>`.
-   Invalid or uncited agent output must be corrected through the framework and
-   revalidated. The result is shadow-only; do not invoke `notify.py` or send it.
+Invoke `$curvelens-daily-analysis` and ask it to run Gold for `<date>`. The skill
+uses `agent/analysis_orchestrator.py` and native Codex delegation to review QC,
+fan out every role configured in `gold.yaml`, wait for validated results, and
+then synthesize. It resumes persisted state after interruption and bounds QC
+and response corrections. Do not make direct SDK, HTTP model API, `codex exec`,
+`claude`, or other vendor-model CLI calls.
+
+The result is shadow-only. Do not invoke `notify.py` or send it.
 
 ## Gold-specific conventions
 

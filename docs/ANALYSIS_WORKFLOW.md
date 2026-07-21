@@ -38,19 +38,31 @@ comparison, causal uncertainty, and forward scenarios are analytical tasks.
 Separate specialists reduce cross-domain anchoring. A final coordinator sees
 their completed outputs and explicitly reconciles agreements and tensions.
 
+## Orchestrator choice
+
+Use native Codex subagents rather than LangGraph, CrewAI, or an application-side
+Agents SDK. Native delegation already supplies fan-out, waiting, and isolated
+agent contexts without adding model credentials or repository-owned LLM calls.
+The repository contributes the durable control plane:
+
+- `.agents/skills/curvelens-daily-analysis/SKILL.md` coordinates the host run;
+- `.codex/agents/` defines generic QC, specialist, and synthesis workers;
+- `agent/analysis_orchestrator.py` persists state and emits allowed next actions;
+- product profiles define roles and quality policy without product-name branches.
+
 ## Daily contract
 
-Prepare packets with an explicit product:
+Start or resume the complete orchestration with an explicit product:
 
 ```bash
-CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/run_analysis_workflow.py --date YYYY-MM-DD
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py start --date YYYY-MM-DD
 ```
 
-The command emits a manifest under the product-isolated data directory. It
-contains role names, packet paths, response-template paths, an evidence
-registry, and the synthesis contract. Each role packet contains only configured
-computed sections, routed articles, QC results, required checks, and citation
-rules.
+The command prepares evidence and emits a durable `run.json` plus the next
+native-agent action. State is isolated by product and date. The controller
+enforces `QC_REVIEW_REQUIRED → SPECIALISTS_REQUIRED → SYNTHESIS_REQUIRED →
+READY_TO_FINALIZE → COMPLETE`, with bounded remediation/correction cycles and a
+terminal `BLOCKED` state.
 
 The coordinator delegates every listed role through native framework
 sub-agents. Each specialist fills its own JSON template with:
@@ -62,15 +74,17 @@ sub-agents. Each specialist fills its own JSON template with:
 - a forward view with horizon, confirmations, and invalidations;
 - evidence IDs and open questions.
 
-After every role returns, the coordinator fills the synthesis template and
-runs:
+After each returned action completes, advance the controller:
 
 ```bash
-CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/finalize_analysis.py --date YYYY-MM-DD
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py advance --date YYYY-MM-DD
 ```
 
-The finalizer rejects missing roles, stale packet IDs, placeholder statuses,
-and unknown citations. It writes JSON and Markdown under
+The repository-scoped `$curvelens-daily-analysis` skill runs this loop using
+native Codex subagents. Generic custom agent types cover QC, an arbitrary
+packet-defined specialist, and synthesis; product profiles determine the roles.
+The controller rejects missing roles, stale packet IDs, unanswered required
+checks, placeholder statuses, and unknown citations. It writes JSON and Markdown under
 `data/products/<product>/analysis/trade_date=<date>/`.
 
 ## Rollout

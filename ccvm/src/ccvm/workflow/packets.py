@@ -9,6 +9,9 @@ from typing import Any
 
 from ccvm.reference.product import Product
 
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+PACKET_SCHEMA_VERSION = 2
+
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
     if path is None or not path.exists():
@@ -20,6 +23,13 @@ def load_articles(path: Path | None) -> list[dict[str, Any]]:
 def _article_id(article: dict[str, Any]) -> str:
     raw = str(article.get("url") or article.get("title") or article)
     return "news:" + hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _normalized_article(article: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: article.get(key)
+        for key in ("title", "text", "url", "published_at", "source_key", "source_name")
+    }
 
 
 def _route_articles(articles: list[dict[str, Any]], keywords: tuple[str, ...]) -> list[dict]:
@@ -55,6 +65,7 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
         "data_findings": [],
         "news_findings": [],
         "data_news_comparison": [],
+        "required_check_results": [],
         "forward_view": {
             "horizon": "",
             "bias": "",
@@ -77,6 +88,8 @@ def build_analysis_packets(
     evidence: dict[str, dict[str, Any]] = {}
     role_packets: dict[str, str] = {}
     role_templates: dict[str, str] = {}
+    role_responses: dict[str, str] = {}
+    role_packet_hashes: dict[str, str] = {}
 
     configured_sections = {
         key for role in product.analysis_roles for key in role.section_keys
@@ -92,11 +105,40 @@ def build_analysis_packets(
             "published_at": article.get("published_at"),
             "source_name": article.get("source_name"), "url": article.get("url"),
         }
+    knowledge_sources = []
+    knowledge_dir = _REPO_ROOT / "knowledge" / product.knowledge_pack
+    if knowledge_dir.exists():
+        for path in sorted(p for p in knowledge_dir.rglob("*") if p.is_file()):
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            rel = path.relative_to(_REPO_ROOT).as_posix()
+            evidence_id = f"knowledge:{rel}:{digest[:12]}"
+            item = {"evidence_id": evidence_id, "path": str(path), "sha256": digest}
+            knowledge_sources.append(item)
+            evidence[evidence_id] = {"kind": "knowledge", **item}
 
     fingerprint = json.dumps({
         "product": product.key, "trade_date": trade_date,
         "sections": sections, "quality": quality,
-        "articles": sorted(_article_id(a) for a in articles),
+        "articles": sorted(
+            (_normalized_article(a) for a in articles),
+            key=lambda item: json.dumps(item, sort_keys=True, default=str),
+        ),
+        "knowledge": sorted(item["evidence_id"] for item in knowledge_sources),
+        "packet_schema_version": PACKET_SCHEMA_VERSION,
+        "analysis_contract": [
+            {
+                "key": role.key, "display_name": role.display_name,
+                "mandate": role.mandate, "section_keys": role.section_keys,
+                "news_keywords": role.news_keywords,
+                "required_checks": role.required_checks,
+            }
+            for role in product.analysis_roles
+        ],
+        "quality_policy": {
+            "blocking_sections": product.analysis_blocking_sections,
+            "retryable_empty_sections": product.analysis_retryable_empty_sections,
+            "max_quality_attempts": product.analysis_max_quality_attempts,
+        },
     }, sort_keys=True, default=str).encode()
     packet_id = hashlib.sha256(fingerprint).hexdigest()
 
@@ -110,6 +152,7 @@ def build_analysis_packets(
         }
         news = _route_articles(articles, role.news_keywords)
         packet = {
+            "schema_version": PACKET_SCHEMA_VERSION,
             "packet_id": packet_id,
             "product": product.display_name,
             "trade_date": trade_date,
@@ -119,6 +162,7 @@ def build_analysis_packets(
             "quality": quality,
             "computed_sections": selected,
             "relevant_news": news,
+            "knowledge_sources": knowledge_sources,
             "required_checks": list(role.required_checks),
             "analysis_contract": {
                 "sequence": [
@@ -135,23 +179,39 @@ def build_analysis_packets(
                     "news_findings": {"claim": "text", "evidence_ids": ["news:..."]},
                     "data_news_comparison": {"claim": "text", "evidence_ids": ["feature:...", "news:..."]},
                 },
+                "required_check_schema": {
+                    "instruction": "Return one item per required_checks entry, preserving the exact text and order.",
+                    "item": {
+                        "check": "exact required_checks text",
+                        "status": "pass|concern|not_applicable",
+                        "evidence_ids": ["allowed evidence ID"],
+                    },
+                },
             },
         }
         packet_path = output_dir / f"{role.key}.packet.json"
-        template_path = output_dir / f"{role.key}.response.json"
+        template_path = output_dir / f"{role.key}.template.json"
+        response_path = output_dir / f"{role.key}.response.json"
         packet_path.write_text(json.dumps(packet, indent=2, default=str))
+        role_packet_hashes[role.key] = hashlib.sha256(packet_path.read_bytes()).hexdigest()
         template_path.write_text(json.dumps(_response_template(role.key, packet_id), indent=2))
+        response_path.unlink(missing_ok=True)
         role_packets[role.key] = str(packet_path)
         role_templates[role.key] = str(template_path)
+        role_responses[role.key] = str(response_path)
 
     manifest = {
+        "schema_version": PACKET_SCHEMA_VERSION,
         "packet_id": packet_id,
         "product": product.key,
         "trade_date": trade_date,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "roles": [role.key for role in product.analysis_roles],
         "role_packets": role_packets,
+        "role_packet_hashes": role_packet_hashes,
         "role_response_templates": role_templates,
+        "role_response_paths": role_responses,
+        "knowledge_pack": product.knowledge_pack,
         "evidence_registry": evidence,
         "synthesis_contract": {
             "wait_for_all_roles": True,
@@ -177,9 +237,12 @@ def build_analysis_packets(
         "data_limitations": [],
         "evidence_ids": [],
     }
-    synthesis_path = output_dir / "synthesis.response.json"
-    synthesis_path.write_text(json.dumps(synthesis_template, indent=2))
-    manifest["synthesis_response_template"] = str(synthesis_path)
+    synthesis_template_path = output_dir / "synthesis.template.json"
+    synthesis_response_path = output_dir / "synthesis.response.json"
+    synthesis_template_path.write_text(json.dumps(synthesis_template, indent=2))
+    synthesis_response_path.unlink(missing_ok=True)
+    manifest["synthesis_response_template"] = str(synthesis_template_path)
+    manifest["synthesis_response_path"] = str(synthesis_response_path)
     manifest_path = output_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2, default=str))
     return manifest

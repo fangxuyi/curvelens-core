@@ -12,6 +12,9 @@ sentence:
 - WTI: **Operate the CurveLens WTI deployment.**
 - Gold: **Operate the CurveLens Gold deployment.**
 
+For the shadow multi-specialist report, say: **Use
+`$curvelens-daily-analysis` to run Gold (or WTI) for today.**
+
 The repository instructions select the correct product profile and runbook.
 Both agents share the code and Python environment while keeping their runtime
 state, schedules, outboxes, and delivery destinations separate:

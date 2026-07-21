@@ -1,6 +1,8 @@
 """Tests for the product profile loader (E1)."""
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 
 from ccvm.reference.product import get_product, load_product
@@ -17,6 +19,8 @@ class TestWTIProfile:
         assert p.fundamentals_provider == "eia_weekly_petroleum"
         assert p.cot_contract_market_code == "067651"
         assert p.cot_contract_label == "WTI-PHYSICAL NYMEX"
+        assert p.analysis_blocking_sections == ("futures",)
+        assert p.analysis_retryable_empty_sections == ("futures", "options")
         assert get_product("wti") is p  # lru cached
 
     def test_calendar_module_resolves(self):
@@ -63,6 +67,15 @@ class TestFundamentalsRegistry:
 
 
 class TestNonWTIProfile:
+    def test_rejects_unsafe_analysis_role_key(self, monkeypatch):
+        import ccvm.reference.product as product_module
+
+        profile = deepcopy(product_module._load_yaml("gold"))
+        profile["analysis"]["roles"][0]["key"] = "../escape"
+        monkeypatch.setattr(product_module, "_load_yaml", lambda _key: profile)
+        with pytest.raises(ValueError, match="unsafe analysis role key"):
+            load_product("unsafe")
+
     def test_optional_capabilities_do_not_default_to_wti(self, monkeypatch):
         import ccvm.reference.product as product_module
 
