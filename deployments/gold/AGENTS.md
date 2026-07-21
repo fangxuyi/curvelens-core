@@ -40,7 +40,10 @@ advanced override, not part of fresh setup.
   `ccvm/config/markets/gold.yaml`.
 - Positioning: CFTC Gold code `088691`.
 - News: sources and keywords in the Gold product profile.
-- Fundamentals: none initially. Never run `agent/event_run.py --event eia`.
+- Physical fundamentals: none. Never run `agent/event_run.py --event eia`.
+- Macro: profile-configured FRED series (real yields, broad USD, breakevens,
+  and Treasury rates). Set `FRED_API_KEY` to collect them; see
+  `knowledge/gold/macro.md`. Macro context does not replace live-data acceptance.
 - Interpretation: `knowledge/gold/`.
 
 The existing WTI headed downloader is Section-63-specific and must not be used
@@ -58,7 +61,9 @@ run. Never rename an old PDF to impersonate a new date.
    ccvm/.venv/bin/python agent/run_pipeline.py --date <date>
    ```
 
-4. On `NEED_CME_PDF` or `ERROR`, stop and report the exact missing input/stage.
+4. On `NEED_CME_PDF`, `ERROR`, or `VALIDATION_FAILED`, stop and report the
+   exact missing input, stage, or failed quality section. A validation failure
+   may still include a report path for diagnosis; it is not permission to send.
    Never use `--force-pdf` unless a human explicitly approves a futures-only
    diagnostic.
 5. On `OK`, inspect the report and quality outputs. During experimental status,
@@ -81,6 +86,10 @@ All gates must pass before proposing production status:
 6. Review a Gold-specific downloader, delivery QC, Telegram destination, and
    disabled cron template; enable them only with explicit approval.
 
+An `OK` pipeline exit proves orchestration completed; it does not by itself
+pass these gates. Production status requires clean diagnostics over consecutive
+settlement days and explicit approval of scheduling and delivery.
+
 ## Gold-specific conventions
 
 - GC represents 100 troy ounces and is quoted in USD per troy ounce.
@@ -99,6 +108,18 @@ Use `agent/query.py` with the Gold environment variables. Cite metric dates and
 gold-layer sources, preserve the settlement-only caveat, consult
 `knowledge/gold/`, and refuse intraday or unsupported-product questions. Q&A
 never touches the outbox or triggers delivery.
+
+## Dashboard
+
+Gold uses the shared Streamlit dashboard with an explicit product and port so it
+does not collide with the WTI dashboard:
+
+```bash
+deployments/gold/run_dashboard.sh
+```
+
+The launcher runs from `ccvm/`, sets `CCVM_PRODUCT=gold`, and binds Streamlit to
+`127.0.0.1:8502`. Do not run Gold on WTI's dashboard port.
 
 ## Safety
 

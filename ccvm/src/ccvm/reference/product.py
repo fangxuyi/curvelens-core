@@ -69,6 +69,28 @@ class NewsSpec:
 
 
 @dataclass(frozen=True)
+class MacroSeriesSpec:
+    """One public macro series used by an optional product capability."""
+
+    key: str
+    series_id: str
+    label: str
+    units: str
+    role: str
+    flat_price_sign: int = 0
+
+
+@dataclass(frozen=True)
+class MacroSpec:
+    """Profile-driven macro collection and interpretation settings."""
+
+    provider: str
+    api_key_env: str
+    history_days: int
+    series: tuple[MacroSeriesSpec, ...]
+
+
+@dataclass(frozen=True)
 class Product:
     key: str                              # "wti"
     name: str                             # "WTI Crude Oil"
@@ -95,8 +117,10 @@ class Product:
     exercise_style: str = "American"
     settlement_style: str = "Futures"
     risk_free_rate: float = 0.05
+    rnd_quality_gate: bool = False
     bulletin: Optional[BulletinSpec] = None
     benchmark: Optional[BenchmarkSpec] = None
+    macro: Optional[MacroSpec] = None
     news: NewsSpec = field(default_factory=NewsSpec)
     trigger_definitions: tuple[dict, ...] = ()
     caveats: tuple[str, ...] = ()
@@ -182,6 +206,7 @@ def load_product(key: str) -> Product:
     benchmark = m.get("benchmark", {}) or {}
     news = m.get("news", {}) or {}
     options = m.get("options", {}) or {}
+    macro = m.get("macro", {}) or {}
     bulletin = None
     if b:
         required = ("product_header_call", "product_header_put", "url")
@@ -237,6 +262,7 @@ def load_product(key: str) -> Product:
         exercise_style=options.get("exercise_style", "American"),
         settlement_style=options.get("settlement_style", "Futures"),
         risk_free_rate=float(options.get("risk_free_rate", 0.05)),
+        rnd_quality_gate=bool(options.get("rnd_quality_gate", False)),
         bulletin=bulletin,
         benchmark=(BenchmarkSpec(
             name=benchmark["name"],
@@ -244,6 +270,22 @@ def load_product(key: str) -> Product:
             source_id=benchmark.get("source_id", f"yfinance_{key}_benchmark"),
             filename_prefix=benchmark.get("filename_prefix", f"{key}_benchmark"),
         ) if benchmark else None),
+        macro=(MacroSpec(
+            provider=str(macro["provider"]),
+            api_key_env=str(macro.get("api_key_env", "FRED_API_KEY")),
+            history_days=int(macro.get("history_days", 400)),
+            series=tuple(
+                MacroSeriesSpec(
+                    key=str(key),
+                    series_id=str(spec["series_id"]),
+                    label=str(spec.get("label", key)),
+                    units=str(spec.get("units", "")),
+                    role=str(spec.get("role", "context")),
+                    flat_price_sign=int(spec.get("flat_price_sign", 0)),
+                )
+                for key, spec in (macro.get("series", {}) or {}).items()
+            ),
+        ) if macro else None),
         news=NewsSpec(
             keywords=tuple(str(v).lower() for v in news.get("keywords", [])),
             sources=tuple(

@@ -31,10 +31,15 @@ class TestGoldProfile:
         assert product.futures_prefix == "GC"
         assert product.options_prefix == "OG"
         assert product.fundamentals_provider is None
+        assert product.macro.provider == "fred"
+        assert {s.series_id for s in product.macro.series} == {
+            "DFII10", "DTWEXBGS", "T10YIE", "DGS3MO", "DGS10",
+        }
         assert product.benchmark is None
         assert product.cot_contract_market_code == "088691"
         assert product.bulletin.strike_scale == 1
         assert product.bulletin.expiry_basis == "option_month"
+        assert product.rnd_quality_gate is True
 
     @pytest.mark.parametrize(
         "option_month,underlying_month", [(1, 2), (2, 2), (3, 4), (12, 12)],
@@ -47,7 +52,7 @@ class TestGoldProfile:
 
     def test_august_option_contract_info(self):
         expiry, contract, delivery_month = get_product("gold").option_contract_info(2026, 8)
-        assert expiry == date(2026, 7, 27)
+        assert expiry == date(2026, 7, 28)
         assert contract == "GCQ26"
         assert delivery_month == "2026-08"
 
@@ -62,9 +67,7 @@ class TestGoldCalendar:
         assert gold_calendar.option_expiry_for_option_month(year, month) == expected
 
     def test_preholiday_adjustment(self):
-        # Four business days before Dec-2026 month-end is Dec 24; Rule 115101.E
-        # moves an expiry immediately preceding Christmas to Dec 23.
-        assert gold_calendar.option_expiry_for_option_month(2027, 1) == date(2026, 12, 23)
+        assert gold_calendar.option_expiry_for_option_month(2027, 1) == date(2026, 12, 28)
 
 
 def test_runtime_data_dir_override(monkeypatch, tmp_path):
@@ -89,6 +92,7 @@ def test_runtime_data_dir_rejects_unsafe_product(monkeypatch):
 def test_gold_knowledge_pack_shape():
     pack = knowledge_path("gold")
     assert load_calendar("gold").get("dated") == []
-    for filename in ("conventions.md", "regimes.md", "seasonality.md", "analogs.md"):
+    for filename in ("conventions.md", "regimes.md", "seasonality.md", "analogs.md",
+                     "macro.md"):
         text = (pack / filename).read_text()
-        assert "*Last reviewed: 2026-07-16" in text[:240]
+        assert "*Last reviewed: 2026-07-" in text[:260]

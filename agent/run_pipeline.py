@@ -29,6 +29,10 @@ Result shapes:
      "agreement_state": ..., "confidence": ..., "eia_scenario": ...,
      "alert_worthy": true|false, "headline": ...}
     {"result": "ERROR", "step": ..., "detail": ...}
+    {"result": "VALIDATION_FAILED", "date": ..., "quality_status": "FAIL", ...}
+        All stages completed and the report was written, but a required product
+        acceptance diagnostic failed. The result exits non-zero and must not be
+        treated as production-ready.
 """
 from __future__ import annotations
 
@@ -200,8 +204,22 @@ def _build_summary(as_of: date, as_of_str: str) -> dict:
 
     alert_worthy = (agreement_state in _ALERT_STATES) or (eia_scenario in _ALERT_SCENARIOS)
 
+    quality_path = DATA_DIR / "quality_reports" / f"{as_of_str}.json"
+    quality = json.loads(quality_path.read_text()) if quality_path.exists() else {}
+    quality_status = quality.get("overall_status", "UNKNOWN")
+    result = "VALIDATION_FAILED" if quality_status == "FAIL" else "OK"
+    validation_notes = []
+    if result == "VALIDATION_FAILED":
+        for section_name in ("futures", "options", "fundamentals", "rnd"):
+            section = quality.get(section_name, {})
+            if section.get("status") == "FAIL":
+                validation_notes.append({
+                    "section": section_name,
+                    "notes": section.get("notes", []),
+                })
+
     return {
-        "result": "OK",
+        "result": result,
         "date": as_of_str,
         "report_md": str(report_md) if report_md.exists() else None,
         "report_json": str(report_json) if report_json.exists() else None,
@@ -210,6 +228,8 @@ def _build_summary(as_of: date, as_of_str: str) -> dict:
         "eia_scenario": eia_scenario,
         "alert_worthy": alert_worthy,
         "headline": headline,
+        "quality_status": quality_status,
+        "validation_notes": validation_notes,
     }
 
 

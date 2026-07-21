@@ -9,7 +9,7 @@ Silver layer:
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date
 
 import pyarrow as pa
@@ -50,6 +50,16 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
     n = len(d["trade_date"])
     product = get_product()
 
+    # A settlement key must identify exactly one instrument. Duplicate keys
+    # usually mean another bulletin product leaked into the selected section;
+    # choosing one by row order would silently corrupt surfaces and RNDs.
+    identity_keys = [
+        (d["option_expiry"][i], d["underlying_contract"][i],
+         d["call_put"][i], d["strike"][i])
+        for i in range(n)
+    ]
+    identity_counts = Counter(identity_keys)
+
     # Pre-compute per-expiry strike counts for coverage check
     strike_sets: dict[tuple, set] = defaultdict(set)
     for i in range(n):
@@ -75,7 +85,11 @@ def normalize(bronze: pa.Table, as_of_date: date) -> pa.Table:
         note = ""
 
         # Hard failures
-        if exp_date is None or exp_date <= as_of_date:
+        identity = (exp_str, d["underlying_contract"][i], cp, strike)
+        if identity_counts[identity] > 1:
+            status = "FAIL"
+            note = f"duplicate_contract_key:{identity_counts[identity]}_rows"
+        elif exp_date is None or exp_date <= as_of_date:
             status = "FAIL"
             note = f"option_expiry_not_after_trade_date:{exp_str}"
         elif strike is None or strike <= 0:

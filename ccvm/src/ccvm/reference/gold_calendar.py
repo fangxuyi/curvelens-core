@@ -65,7 +65,17 @@ def option_expiry_for_option_month(option_year: int, option_month: int) -> date:
         prior_year, prior_month = option_year - 1, 12
     else:
         prior_year, prior_month = option_year, option_month - 1
-    expiry = _subtract_business_days(_month_end(prior_year, prior_month), 4)
+    # Count the month-end itself when it is a business day. This matches the
+    # exchange's listed dates: four business days in the inclusive interval
+    # [expiry, month-end], before applying the Friday/pre-holiday adjustment.
+    expiry = _month_end(prior_year, prior_month)
+    remaining = 4
+    while remaining:
+        if is_business_day(expiry):
+            remaining -= 1
+            if remaining == 0:
+                break
+        expiry -= timedelta(days=1)
     next_day = expiry + timedelta(days=1)
     if expiry.weekday() == 4 or (next_day.weekday() < 5 and not is_business_day(next_day)):
         expiry = _previous_business_day(expiry)

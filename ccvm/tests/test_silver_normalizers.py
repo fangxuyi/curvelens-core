@@ -196,3 +196,17 @@ def test_silver_options_fail_negative_settlement():
     bronze = _make_options_bronze(opts)
     silver = silver_options.normalize(bronze, AS_OF)
     assert silver.column("silver_status").to_pylist()[0] == "FAIL"
+
+
+def test_silver_options_fail_duplicate_contract_key():
+    opts = _good_options()
+    opts.append(dict(opts[0], settlement=99.0))
+    bronze = _make_options_bronze(opts)
+    silver = silver_options.normalize(bronze, AS_OF)
+    d = silver.to_pydict()
+    duplicate_notes = [note for note in d["silver_note"]
+                       if note.startswith("duplicate_contract_key:")]
+    assert len(duplicate_notes) == 2
+    assert all(status == "FAIL" for status, note in zip(
+        d["silver_status"], d["silver_note"]
+    ) if note.startswith("duplicate_contract_key:"))

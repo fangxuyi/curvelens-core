@@ -45,7 +45,14 @@ _MONTH_NAME_TO_NUM = {
     "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
 }
 _EXPIRY_RE = re.compile(r'^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2}$', re.IGNORECASE)
-_PRODUCT_HEADER_RE = re.compile(r'^[A-Z]{2,5}\s+(CALL|PUT)\s+\S', re.IGNORECASE)
+# Section 64 contains monthly, numbered-weekly (OG1), and weekday products
+# (for example GWW WED).  Recognize all of them as boundaries so parser state
+# from an OG section can never bleed into another product.
+_PRODUCT_HEADER_RE = re.compile(
+    r'^(?:[A-Z][A-Z0-9-]{1,9}\s+(?:CALL|PUT)\s+\S'
+    r'|[A-Z][A-Z0-9-]{1,9}\s+(?:MON|TUE|WED|THU|FRI)\b.*\bOPTIONS?\b)',
+    re.IGNORECASE,
+)
 _DECIMAL_RE = re.compile(r'^\d*\.\d+$')
 _INT_RE = re.compile(r'^\d+$')
 
@@ -240,6 +247,7 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
 
         # ── TOTAL line marks end of expiry block ──
         if tokens[0].upper() == 'TOTAL':
+            current_expiry_code = None
             continue
 
         # ── Try to parse as a data row ──

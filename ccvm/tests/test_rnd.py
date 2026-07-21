@@ -74,3 +74,21 @@ class TestGuards:
         assert _prob_above(density, 55.0) == pytest.approx(1.0, abs=1e-9)
         assert _prob_above(density, 85.0) == 0.0
         assert _prob_above(density, 70.0) == pytest.approx(0.5, abs=1e-9)
+
+    def test_duplicate_strike_side_withholds_probabilities(self):
+        rows = _synthetic_rows()
+        rows.append({"strike": 75.0, "cp": "C", "settlement": 99.0})
+        result = compute_expiry(rows, 70.0, 0.15, 0.05)
+        assert result["status"] == "invalid_surface"
+        assert result["duplicate_rows"] == 1
+        assert result["prob_ladder"] == {}
+
+    def test_material_negative_density_withholds_probabilities(self):
+        rows = _synthetic_rows()
+        for row in rows:
+            if row["cp"] == "C" and row["strike"] == 75.0:
+                row["settlement"] += 5.0
+        result = compute_expiry(rows, 70.0, 0.15, 0.05)
+        assert result["status"] == "invalid_surface"
+        assert result["negative_mass"] > 0.05
+        assert result["rn_mean"] is None

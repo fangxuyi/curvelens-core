@@ -32,6 +32,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
+from ccvm.collectors.fred_macro import FREDMacroCollector
 from ccvm.fundamentals import get_provider
 from ccvm.reference.product import get_product
 from ccvm.collectors.rss import RSSNewsCollector
@@ -52,7 +53,8 @@ MANIFEST_DB_PATH = DATA_DIR / "manifests" / "manifest.duckdb"
 FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
 _SOURCES = ["yfinance_futures", "yfinance_benchmark", "yfinance_brent", "cftc_cot",
-            "cme_bulletin_pdf", "fundamentals", "eia", "rss_news", "csv_futures", "all"]
+            "cme_bulletin_pdf", "fundamentals", "eia", "macro", "fred_macro",
+            "rss_news", "csv_futures", "all"]
 
 
 def main() -> None:
@@ -114,6 +116,17 @@ def main() -> None:
         result = collector.collect(as_of)
         results["eia"] = result
         print(f"[eia]               {result}")
+
+    if args.source in ("macro", "fred_macro", "all"):
+        macro = get_product().macro
+        if macro is None:
+            print("[macro]             skipped — product has no macro capability")
+        elif macro.provider != "fred":
+            print(f"[macro]             skipped — unsupported provider {macro.provider!r}")
+        else:
+            result = FREDMacroCollector(raw_store, manifest_db).collect(as_of)
+            results["macro"] = result
+            print(f"[macro]             {result}")
 
     if args.source in ("rss_news", "all"):
         collector = RSSNewsCollector(raw_store, manifest_db)

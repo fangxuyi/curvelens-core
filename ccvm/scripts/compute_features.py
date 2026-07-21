@@ -30,6 +30,7 @@ from ccvm.analytics import (
     futures_features,
     history_context,
     monitor_state,
+    macro_context,
     oi_features,
     option_features,
 )
@@ -158,9 +159,28 @@ def main() -> None:
             rnd_path.write_text(json.dumps(rnd_out, indent=2))
             e0 = rnd_out["expiries"][0]
             em = e0.get("expected_move_straddle")
-            logger.info("RND (front %s): expected move %s  RN sigma %.2f  skew %+.2f  mass %.2f",
-                        e0["expiry"], f"+/-{em:.2f}" if em else "n/a",
-                        e0["rn_std"], e0["rn_skew"], e0["raw_mass"])
+            if e0.get("status") == "available":
+                logger.info("RND (front %s): expected move %s  RN sigma %.2f  skew %+.2f  signed mass %.2f",
+                            e0["expiry"], f"+/-{em:.2f}" if em else "n/a",
+                            e0["rn_std"], e0["rn_skew"], e0["signed_mass"])
+            else:
+                logger.warning("RND (front %s): INVALID — %s", e0["expiry"],
+                               "; ".join(e0.get("validation_errors", [])))
+            quality_path = DATA_DIR / "quality_reports" / f"{as_of_str}.json"
+            if quality_path.exists():
+                from ccvm.validation.quality_report import add_rnd_diagnostics
+                add_rnd_diagnostics(quality_path, rnd_out)
+
+    # ── Optional profile-driven macro context ──
+    if pq.exists("silver", "macro", as_of_str):
+        silver_macro = pq.read("silver", "macro", as_of_str)
+        macro = macro_context.compute(silver_macro, gold_fut, gold_opt)
+        macro_path = DATA_DIR / "gold" / "macro" / f"trade_date={as_of_str}" / "macro.json"
+        macro_path.parent.mkdir(parents=True, exist_ok=True)
+        macro_path.write_text(json.dumps(macro, indent=2))
+        logger.info("Macro context: %s (score %s from %s signals)",
+                    macro["flat_price"]["directional_prior"],
+                    macro["flat_price"]["score"], macro["flat_price"]["signals_scored"])
 
     # ── COT positioning context (B3) ──
     cot = cot_features.compute(DATA_DIR, as_of_str)
