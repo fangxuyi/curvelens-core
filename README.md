@@ -32,3 +32,4 @@ enabled.
 - [WTI operating runbook](deployments/wti/AGENTS.md)
 - [Migrate an existing WTI deployment](deployments/wti/MIGRATION.md)
 - [Gold operating runbook](deployments/gold/AGENTS.md)
+- [Multi-agent analysis workflow proposal](docs/ANALYSIS_WORKFLOW.md)

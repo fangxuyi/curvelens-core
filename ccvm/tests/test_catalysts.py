@@ -1,37 +1,18 @@
 """Tests for catalyst extraction, ranking, and store — no live API calls."""
 from __future__ import annotations
 
-import json
 from datetime import date
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from ccvm.agents.catalyst_extractor import extract, _stable_event_id
+from ccvm.agents.catalyst_extractor import (
+    DirectModelInvocationDisabled, extract, _stable_event_id,
+)
 from ccvm.agents.catalyst_ranker import score, rank_events
 from ccvm.agents.catalyst_store import CatalystStore
 
 AS_OF = date(2026, 6, 25)
 FRONT_MONTH = "2026-08"
-
-_MOCK_API_RESPONSE = {
-    "content": [{
-        "text": json.dumps({
-            "event_type": "outage",
-            "title": "Libya outage reduces Sahara blend export by 300kb/d",
-            "effective_start": "2026-06-20",
-            "effective_end": None,
-            "commodity": "crude_oil",
-            "region": "North Africa",
-            "direction": "bullish_supply",
-            "magnitude": "high",
-            "affected_horizon": "prompt_3m",
-            "source_quality": "high_quality_secondary",
-            "evidence": ["Libya's Sharara field shuttered by protests"],
-        })
-    }]
-}
 
 _OPEC_EVENT = {
     "event_id": "opec01",
@@ -96,73 +77,18 @@ def test_event_id_differs_for_different_inputs():
 
 
 # ──────────────────────────────────────────────────────────
-# extraction (mocked API)
+# direct extraction is retired
 # ──────────────────────────────────────────────────────────
 
-def test_extract_returns_event_with_mocked_api():
-    mock_result = MagicMock(
-        returncode=0,
-        stdout=_MOCK_API_RESPONSE["content"][0]["text"],
-        stderr="",
-    )
-
-    with (
-        patch("shutil.which", return_value="/usr/local/bin/claude"),
-        patch("subprocess.run", return_value=mock_result),
-    ):
-        event = extract(
+def test_extract_requires_agent_framework():
+    with pytest.raises(DirectModelInvocationDisabled):
+        extract(
             text="Libya Sharara field shut down by protests.",
             source_url="https://example.com/libya",
             published_at="2026-06-25",
             observation_date=AS_OF,
             api_key="sk-test",
         )
-
-    assert event is not None
-    assert event["event_type"] == "outage"
-    assert event["direction"] == "bullish_supply"
-    assert "event_id" in event
-    assert "observation_date" in event
-
-
-def test_extract_returns_none_without_api_key():
-    with patch("shutil.which", return_value=None):
-        result = extract(
-            text="Some article.",
-            source_url="https://example.com",
-            published_at="2026-06-25",
-            observation_date=AS_OF,
-            api_key="",
-        )
-    assert result is None
-
-
-def test_extract_handles_no_catalyst_response():
-    no_catalyst_resp = {
-        "content": [{
-            "text": json.dumps({
-                "event_type": "other",
-                "title": "no_catalyst_found",
-                "effective_start": None, "effective_end": None,
-                "commodity": "crude_oil", "region": None,
-                "direction": "unclear", "magnitude": "unknown",
-                "affected_horizon": "prompt_1m",
-                "source_quality": "other", "evidence": [],
-            })
-        }]
-    }
-    mock_result = MagicMock(
-        returncode=0,
-        stdout=no_catalyst_resp["content"][0]["text"],
-        stderr="",
-    )
-
-    with (
-        patch("shutil.which", return_value="/usr/local/bin/claude"),
-        patch("subprocess.run", return_value=mock_result),
-    ):
-        event = extract("Generic news.", "https://x.com", "2026-06-25", AS_OF, api_key="sk-test")
-    assert event is None
 
 
 # ──────────────────────────────────────────────────────────

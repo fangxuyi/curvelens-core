@@ -202,7 +202,6 @@ if not available:
         "```\npython scripts/collect_day.py --date YYYY-MM-DD --source all\n"
         "python scripts/normalize_day.py --date YYYY-MM-DD\n"
         "python scripts/compute_features.py --date YYYY-MM-DD\n"
-        "python scripts/extract_catalysts.py --date YYYY-MM-DD\n"
         "python scripts/generate_report.py --date YYYY-MM-DD\n```"
     )
     st.stop()
@@ -258,7 +257,7 @@ st.sidebar.markdown(
     f'<p style="font-family:JetBrains Mono,monospace;font-size:0.58rem;letter-spacing:0.16em;'
     f'text-transform:uppercase;color:{C["muted"]};margin-bottom:0.6rem">PIPELINE</p>'
     f'<div style="font-family:JetBrains Mono,monospace;font-size:0.58rem;color:{C["muted"]};line-height:2.1">'
-    f'collect_day.py<br>normalize_day.py<br>compute_features.py<br>extract_catalysts.py<br>generate_report.py'
+    f'collect_day.py<br>normalize_day.py<br>compute_features.py<br>generate_report.py'
     f'</div></div>',
     unsafe_allow_html=True,
 )
@@ -658,8 +657,8 @@ with tab_cats:
 
     if not catalysts:
         st.info(
-            "No catalyst events for this date.\n\n"
-            f"Run: `python scripts/extract_catalysts.py --date {selected_date}`"
+            "No legacy catalyst events for this date. News interpretation is "
+            "now produced by the agent-framework analysis workflow."
         )
     else:
         _section(f"{len(catalysts)} EVENTS — RANKED BY RELEVANCE")

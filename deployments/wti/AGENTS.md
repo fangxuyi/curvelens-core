@@ -58,6 +58,25 @@ The agent's own job is narrow but load-bearing in three places the pipeline
    worth interrupting someone, and may hold a borderline alert (the daily brief
    still goes out).
 
+### Multi-agent analysis shadow run
+
+The existing deterministic production brief and delivery sequence below remain
+authoritative. To evaluate the analyst-style workflow without disrupting it:
+
+1. Run `ccvm/.venv/bin/python agent/run_analysis_workflow.py --date <date>`.
+2. Read the returned manifest and use the host OpenClaw/OpenAI agent framework's
+   native sub-agent delegation to run one specialist per listed role (WTI
+   currently has futures curve, volatility surface, and physical fundamentals).
+   Give each only its packet, response-template path, and active WTI knowledge
+   pack. Repository code must not call an LLM SDK, model HTTP API, `claude`, or
+   another vendor CLI.
+3. Each specialist separately assesses data quality, what the data says, what
+   relevant news says, their agreement or conflict, and a cited forward view.
+   Wait for all roles before the coordinator fills `synthesis.response.json`.
+4. Run `ccvm/.venv/bin/python agent/finalize_analysis.py --date <date>`.
+   This writes shadow artifacts only. Do not queue or deliver them; continue to
+   use the production sequence below until the shadow workflow is approved.
+
 A recurring run is three passes, back-to-back. The cron job fires every 30
 minutes across the early-morning retry window regardless of state; the freshness
 gate in Pass 1 is what keeps a firing cheap — once that day's bulletin has been
@@ -158,7 +177,7 @@ Pipeline package (`ccvm/`):
 - `ccvm/scripts/collect_day.py` — raw ingest (futures / CME PDF / EIA / RSS)
 - `ccvm/scripts/normalize_day.py` — raw → bronze → silver + quality report
 - `ccvm/scripts/compute_features.py` — silver → gold (curve, BAW vol surface, agreement)
-- `ccvm/scripts/extract_catalysts.py` — RSS → ranked catalyst events (needs `claude` CLI)
+- `agent/run_analysis_workflow.py` — prepares cited specialist packets; model work is delegated by the host framework
 - `ccvm/scripts/generate_report.py` — gold → `ccvm/data/products/wti/reports/<date>.md` + `.json`
 - `ccvm/src/ccvm/` — the analytics package (collectors, normalizers, analytics, reporting)
 - `ccvm/config/sources.yaml` — configured RSS/EIA sources

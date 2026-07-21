@@ -91,6 +91,18 @@ class MacroSpec:
 
 
 @dataclass(frozen=True)
+class AnalysisRoleSpec:
+    """One profile-driven perspective in the single-operator workflow."""
+
+    key: str
+    display_name: str
+    mandate: str
+    section_keys: tuple[str, ...]
+    news_keywords: tuple[str, ...]
+    required_checks: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Product:
     key: str                              # "wti"
     name: str                             # "WTI Crude Oil"
@@ -122,6 +134,7 @@ class Product:
     benchmark: Optional[BenchmarkSpec] = None
     macro: Optional[MacroSpec] = None
     news: NewsSpec = field(default_factory=NewsSpec)
+    analysis_roles: tuple[AnalysisRoleSpec, ...] = ()
     trigger_definitions: tuple[dict, ...] = ()
     caveats: tuple[str, ...] = ()
     # CFTC Commitments of Traders (B3). Both None → the deployment has no COT
@@ -207,6 +220,27 @@ def load_product(key: str) -> Product:
     news = m.get("news", {}) or {}
     options = m.get("options", {}) or {}
     macro = m.get("macro", {}) or {}
+    analysis = m.get("analysis", {}) or {}
+    analysis_roles = tuple(
+        AnalysisRoleSpec(
+            key=str(role["key"]),
+            display_name=str(role.get("display_name", role["key"])),
+            mandate=str(role.get("mandate", "")),
+            section_keys=tuple(str(v) for v in role.get("section_keys", [])),
+            news_keywords=tuple(str(v).lower() for v in role.get("news_keywords", [])),
+            required_checks=tuple(str(v) for v in role.get("required_checks", [])),
+        )
+        for role in analysis.get("roles", [])
+    )
+    role_keys = [role.key for role in analysis_roles]
+    if len(role_keys) != len(set(role_keys)):
+        raise ValueError(f"Product profile {key!r} has duplicate analysis role keys")
+    for role in analysis_roles:
+        if not role.mandate or not role.section_keys or not role.required_checks:
+            raise ValueError(
+                f"Product profile {key!r} analysis role {role.key!r} requires "
+                "mandate, section_keys, and required_checks"
+            )
     bulletin = None
     if b:
         required = ("product_header_call", "product_header_put", "url")
@@ -293,6 +327,7 @@ def load_product(key: str) -> Product:
                 for s in news.get("sources", [])
             ),
         ),
+        analysis_roles=analysis_roles,
         trigger_definitions=tuple(m.get("triggers", []) or []),
         caveats=tuple(str(v) for v in m.get("caveats", []) or []),
         cot_contract_market_code=(m.get("cot", {}) or {}).get("contract_market_code"),
