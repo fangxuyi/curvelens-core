@@ -8,7 +8,12 @@ from pathlib import Path
 import pyarrow as pa
 import pytest
 
-from ccvm.validation.quality_report import generate, futures_section, options_section
+from ccvm.validation.quality_report import (
+    add_rnd_diagnostics,
+    generate,
+    futures_section,
+    options_section,
+)
 
 AS_OF = date(2026, 6, 24)
 
@@ -102,6 +107,18 @@ def test_options_section_none():
     assert section["status"] == "INSUFFICIENT_DATA"
 
 
+def test_options_section_duplicate_keys_are_hard_failure():
+    table = _silver_options_table(n=20)
+    d = table.to_pydict()
+    d["silver_status"][0] = "FAIL"
+    d["silver_status"][1] = "FAIL"
+    d["silver_note"][0] = "duplicate_contract_key:2_rows"
+    d["silver_note"][1] = "duplicate_contract_key:2_rows"
+    section = options_section(pa.table(d, schema=table.schema))
+    assert section["status"] == "FAIL"
+    assert section["duplicate_row_count"] == 2
+
+
 def test_generate_creates_files(tmp_path):
     report = generate(
         trade_date=AS_OF,
@@ -139,3 +156,15 @@ def test_generate_no_data(tmp_path):
         output_dir=tmp_path,
     )
     assert report["overall_status"] == "INSUFFICIENT_DATA"
+
+
+def test_rnd_invalid_surface_updates_overall_quality(tmp_path):
+    generate(AS_OF, _silver_futures_table(), _silver_options_table(), None, tmp_path)
+    report = add_rnd_diagnostics(tmp_path / "2026-06-24.json", {"expiries": [{
+        "expiry": "2026-07-18", "status": "invalid_surface",
+        "signed_mass": 1.0, "negative_mass": 0.9,
+        "convexity_violations": 12,
+    }]}, required=True)
+    assert report["overall_status"] == "FAIL"
+    assert report["rnd"]["status"] == "FAIL"
+    assert "Risk-Neutral Density" in (tmp_path / "2026-06-24.md").read_text()

@@ -1,6 +1,6 @@
 # Gold Conventions
 
-*Last reviewed: 2026-07-16 — provenance: verified external*
+*Last reviewed: 2026-07-20 — provenance: verified external*
 
 - Product: COMEX Gold futures (`GC`) and monthly Gold options (`OG`).
 - Contract unit: 100 troy ounces; quotation: USD per troy ounce; minimum
@@ -13,6 +13,8 @@
   NOV/DEC into DEC.
 - Code source of truth: `ccvm/src/ccvm/reference/gold_calendar.py` and the
   `bulletin.underlying_month_map` in `ccvm/config/markets/gold.yaml`.
+- The August–January 2026/27 option dates in the pinned fixture were checked
+  against the expiration row printed in the 2026-07-17 Section 64 bulletin.
 - Official sources: CME/COMEX Rulebook Chapters 113 and 115, CME Gold contract
   specifications, CME Section 64 Metals Option Products bulletin.
 

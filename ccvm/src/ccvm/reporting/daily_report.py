@@ -267,7 +267,7 @@ def _quality_notes(quality_report: dict) -> str:
     if quality_report.get("overall_status", "PASS") == "PASS":
         return ""
     parts = []
-    for section in ("futures", "options", "fundamentals"):
+    for section in ("futures", "options", "fundamentals", "rnd"):
         s = quality_report.get(section, {})
         status = s.get("status", "PASS")
         if status != "PASS":
@@ -524,6 +524,17 @@ def _render_markdown(report: dict) -> str:
     for ex in (rnd_sec.get("expiries") or [])[:1]:  # front expiry in the brief
         em = ex.get("expected_move_straddle")
         em_str = f"±${em:.2f}" if em is not None else "n/a"
+        if ex.get("status") != "available":
+            errors = "; ".join(ex.get("validation_errors", [])) or "surface failed validation"
+            lines += [
+                f"**Market-Implied Distribution — {ex.get('expiry')}**",
+                f"- **Unavailable:** {errors}",
+                f"- Signed mass {ex.get('signed_mass')} · positive mass {ex.get('positive_mass')} · "
+                f"negative mass {ex.get('negative_mass')} · duplicates {ex.get('duplicate_rows')}",
+                "- Probability and moment estimates are withheld until the surface is unique and arbitrage-consistent.",
+                "",
+            ]
+            continue
         ladder = ex.get("prob_ladder") or {}
         ladder_str = " · ".join(
             f"P(>${k.split('_')[-1]}): {v:.0%}" for k, v in sorted(
@@ -538,7 +549,8 @@ def _render_markdown(report: dict) -> str:
         if ladder_str:
             lines.append(f"- {ladder_str}")
         lines.append(f"- *diagnostics: {ex.get('n_strikes')} strikes, "
-                     f"raw mass {ex.get('raw_mass'):.2f} (→1.00 = clean grid)*")
+                     f"signed mass {ex.get('signed_mass'):.2f}, negative mass "
+                     f"{ex.get('negative_mass'):.3f}*")
         lines.append("")
 
     # ── Term structure (C4) ──

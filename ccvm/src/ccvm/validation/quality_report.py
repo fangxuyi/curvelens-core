@@ -114,10 +114,15 @@ def options_section(silver_options: Optional[pa.Table]) -> dict:
     ivs = [v for v in _col_values(silver_options, "implied_volatility") if v is not None and v > 0]
 
     notes = []
+    silver_notes = _col_values(silver_options, "silver_note")
+    duplicate_rows = sum(1 for note in silver_notes
+                         if str(note).startswith("duplicate_contract_key:"))
     if fail_n > 0:
         notes.append(f"{fail_n} rows failed quality checks")
     if warn_n > 0:
         notes.append(f"{warn_n} rows have coverage warnings")
+    if duplicate_rows:
+        notes.append(f"{duplicate_rows} rows have duplicate contract keys")
 
     # Per-expiry strike counts
     expiry_coverage: dict[str, dict] = {}
@@ -135,7 +140,8 @@ def options_section(silver_options: Optional[pa.Table]) -> dict:
                 expiry_coverage[exp] = {}
             expiry_coverage[exp][cp] = len(strikes)
 
-    status = "FAIL" if fail_n > n // 2 else ("WARN" if (warn_n > 0 or fail_n > 0) else "PASS")
+    status = "FAIL" if (duplicate_rows or fail_n > n // 2) else (
+        "WARN" if (warn_n > 0 or fail_n > 0) else "PASS")
 
     return {
         "status": status,
@@ -143,6 +149,7 @@ def options_section(silver_options: Optional[pa.Table]) -> dict:
         "pass_count": pass_n,
         "warn_count": warn_n,
         "fail_count": fail_n,
+        "duplicate_row_count": duplicate_rows,
         "expiry_count": len(expiries),
         "expiries": expiries[:10],
         "underlyings": underlyings,
@@ -284,6 +291,37 @@ def generate(
     return report
 
 
+def add_rnd_diagnostics(report_path: Path, rnd_output: dict,
+                        required: bool | None = None) -> dict:
+    """Add post-feature RND validation and recompute the report status."""
+    if required is None:
+        from ..reference.product import get_product
+        required = get_product().rnd_quality_gate
+    report = json.loads(report_path.read_text())
+    expiries = rnd_output.get("expiries", [])
+    invalid = [e for e in expiries if e.get("status") != "available"]
+    if not expiries:
+        section = {"status": "INSUFFICIENT_DATA", "expiries": [],
+                   "notes": ["no RND expiries computed"]}
+    elif invalid:
+        section = {
+            "status": "FAIL" if required else "WARN", "expiries": expiries,
+            "notes": [f"{len(invalid)} expiry surface(s) failed RND validity checks"],
+        }
+    else:
+        section = {"status": "PASS", "expiries": expiries, "notes": []}
+    report["rnd"] = section
+    base_statuses = [report.get(k, {}).get("status")
+                     for k in ("futures", "options", "fundamentals")]
+    if section["status"] == "FAIL" or "FAIL" in base_statuses:
+        report["overall_status"] = "FAIL"
+    elif section["status"] == "WARN" or "WARN" in base_statuses:
+        report["overall_status"] = "WARN"
+    report_path.write_text(json.dumps(report, indent=2))
+    report_path.with_suffix(".md").write_text(_render_markdown(report))
+    return report
+
+
 def _render_markdown(report: dict) -> str:
     td = report["trade_date"]
     overall = report["overall_status"]
@@ -337,6 +375,17 @@ def _render_markdown(report: dict) -> str:
             f"- Fraction with |Δ| > 0.05: {dc.get('pct_diff_over_0_05', 0):.1%}",
         ]
         for note in dc.get("notes", []):
+            lines.append(f"- ⚠ {note}")
+
+    rnd = report.get("rnd")
+    if rnd:
+        lines += ["\n## Risk-Neutral Density", f"- Status: **{rnd['status']}**"]
+        for expiry in rnd.get("expiries", []):
+            lines.append(
+                f"- {expiry.get('expiry')}: {expiry.get('status')} — signed mass "
+                f"{expiry.get('signed_mass')}, negative mass {expiry.get('negative_mass')}, "
+                f"convexity violations {expiry.get('convexity_violations')}")
+        for note in rnd.get("notes", []):
             lines.append(f"- ⚠ {note}")
 
     lines += ["\n## Caveats"]

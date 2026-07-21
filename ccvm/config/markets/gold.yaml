@@ -26,6 +26,7 @@ market:
     exercise_style: American
     settlement_style: Futures
     risk_free_rate: 0.05
+    rnd_quality_gate: true
     expiry_rule: four_business_days_before_prior_month_end
 
   futures_depth: 12

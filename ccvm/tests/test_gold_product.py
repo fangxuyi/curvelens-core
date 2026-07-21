@@ -39,6 +39,7 @@ class TestGoldProfile:
         assert product.cot_contract_market_code == "088691"
         assert product.bulletin.strike_scale == 1
         assert product.bulletin.expiry_basis == "option_month"
+        assert product.rnd_quality_gate is True
 
     @pytest.mark.parametrize(
         "option_month,underlying_month", [(1, 2), (2, 2), (3, 4), (12, 12)],
@@ -51,7 +52,7 @@ class TestGoldProfile:
 
     def test_august_option_contract_info(self):
         expiry, contract, delivery_month = get_product("gold").option_contract_info(2026, 8)
-        assert expiry == date(2026, 7, 27)
+        assert expiry == date(2026, 7, 28)
         assert contract == "GCQ26"
         assert delivery_month == "2026-08"
 
@@ -66,9 +67,7 @@ class TestGoldCalendar:
         assert gold_calendar.option_expiry_for_option_month(year, month) == expected
 
     def test_preholiday_adjustment(self):
-        # Four business days before Dec-2026 month-end is Dec 24; Rule 115101.E
-        # moves an expiry immediately preceding Christmas to Dec 23.
-        assert gold_calendar.option_expiry_for_option_month(2027, 1) == date(2026, 12, 23)
+        assert gold_calendar.option_expiry_for_option_month(2027, 1) == date(2026, 12, 28)
 
 
 def test_runtime_data_dir_override(monkeypatch, tmp_path):

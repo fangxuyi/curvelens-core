@@ -117,6 +117,7 @@ class Product:
     exercise_style: str = "American"
     settlement_style: str = "Futures"
     risk_free_rate: float = 0.05
+    rnd_quality_gate: bool = False
     bulletin: Optional[BulletinSpec] = None
     benchmark: Optional[BenchmarkSpec] = None
     macro: Optional[MacroSpec] = None
@@ -261,6 +262,7 @@ def load_product(key: str) -> Product:
         exercise_style=options.get("exercise_style", "American"),
         settlement_style=options.get("settlement_style", "Futures"),
         risk_free_rate=float(options.get("risk_free_rate", 0.05)),
+        rnd_quality_gate=bool(options.get("rnd_quality_gate", False)),
         bulletin=bulletin,
         benchmark=(BenchmarkSpec(
             name=benchmark["name"],
