@@ -2,11 +2,13 @@
 #
 # Gold is experimental. Do not register or enable schedules from this file.
 # Before production, replace this placeholder with a reviewed Section-64
-# downloader flow and commands that explicitly set:
+# downloader flow and an isolated agent turn that explicitly sets:
 #
 #   CCVM_PRODUCT=gold
 #   # data defaults automatically to ccvm/data/products/gold
 #
 # The future schedule must read AGENTS.md plus deployments/gold/AGENTS.md,
-# preserve notify freshness/dedup/ack behavior, use a Gold-only delivery
-# destination, omit EIA petroleum jobs, and ship disabled for explicit approval.
+# acquire and verify the exact Section 64 bulletin, and invoke
+# `$curvelens-daily-analysis` for its internal trade date. It must resume
+# persisted state, omit EIA petroleum jobs, perform no delivery by default, and
+# ship disabled for explicit approval. A bare Python cron is unsupported.

@@ -1,4 +1,4 @@
-"""Validate agent-framework outputs and render the shadow analysis report."""
+"""Validate agent-framework outputs and render the daily analysis report."""
 from __future__ import annotations
 
 import hashlib
@@ -191,7 +191,8 @@ def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Pa
         "specialist_analyses": responses,
         "synthesis": synthesis,
         "status": synthesis["status"],
-        "shadow_mode": True,
+        "workflow_mode": "agent_orchestrated",
+        "delivery_approved": False,
     }
     json_path = output_dir / "analysis.json"
     md_path = output_dir / "analysis.md"
@@ -204,7 +205,7 @@ def _render_markdown(result: dict[str, Any]) -> str:
     synthesis = result["synthesis"]
     lines = [
         f"# {result['product'].upper()} Forward Analysis — {result['trade_date']}",
-        "", "> Shadow workflow output — not approved for automatic delivery.", "",
+        "", "> Agent-orchestrated daily analysis — automatic delivery is not enabled.", "",
         f"## {synthesis.get('headline') or 'Executive Summary'}", "",
         synthesis.get("executive_summary", ""), "",
     ]

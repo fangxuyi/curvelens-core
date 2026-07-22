@@ -81,7 +81,7 @@ def initialize_state(
             for role in manifest["roles"]
         },
         "synthesis": {"status": "pending", "corrections": 0, "last_response_hash": ""},
-        "shadow_mode": True,
+        "workflow_mode": "agent_orchestrated",
         "delivery_queued": False,
     }
     _write_qc_artifacts(state, quality, quality_attempts, repo_root)

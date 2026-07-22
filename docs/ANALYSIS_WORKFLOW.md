@@ -21,8 +21,8 @@ flowchart LR
   E1 --> F[Coordinator synthesis]
   E2 --> F
   E3 --> F
-  F --> G[Validate citations and render shadow report]
-  G --> H[Human review before promotion]
+  F --> G[Validate citations and render daily report]
+  G --> H[Optional separately approved delivery]
 ```
 
 ## Why the boundary is deliberate
@@ -87,9 +87,14 @@ The controller rejects missing roles, stale packet IDs, unanswered required
 checks, placeholder statuses, and unknown citations. It writes JSON and Markdown under
 `data/products/<product>/analysis/trade_date=<date>/`.
 
-## Rollout
+## Supported operating path
 
-This branch is shadow-only. It does not modify `notify.py`, outboxes, schedules,
-or current production delivery. Compare shadow reports with the deterministic
-brief over multiple dates, review failure modes and runtime cost, then promote
-the synthesized report only through a separate reviewed change.
+This is the sole supported end-to-end daily-analysis workflow. The former
+script-only `agent/run_pipeline.py` entry point was removed so scheduled and
+interactive runs cannot silently bypass QC review, specialist analysis, or
+synthesis. The deterministic scripts remain internal evidence-preparation
+stages owned by the controller.
+
+Analysis and delivery remain separate authorities. The controller never touches
+`notify.py`, an outbox, or a delivery destination. A product runbook may permit
+delivery only after its acceptance gates and an explicit human approval.

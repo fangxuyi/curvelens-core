@@ -13,7 +13,7 @@ curvelens-core/
 ├── AGENTS.md / SOUL.md / IDENTITY.md / HEARTBEAT.md   shared rules + identity
 ├── .agents/skills/curvelens-daily-analysis/           native-agent workflow
 ├── .codex/agents/                                    generic specialist types
-├── agent/            pipeline · analysis controller · notify · query
+├── agent/            analysis controller · evidence preparation · notify · query
 ├── deployments/<product>/          product runbook + cron template
 ├── knowledge/<pack>/               ← product knowledge pack + MAINTENANCE.md
 └── ccvm/                            the deterministic engine
@@ -61,19 +61,20 @@ storage.
 cd ccvm && PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
 ```
 
-**First day of data** (bulletin products: PDF must be on disk first —
-production gets it via the agent's Playwright downloader):
-```bash
-ccvm/.venv/bin/python agent/run_pipeline.py --date YYYY-MM-DD
-# → NEED_CME_PDF (fetch the bulletin)  |  OK (brief written)  |  ERROR <stage>
-```
+**First daily analysis**: activate the registered product agent and say “Use
+`$curvelens-daily-analysis` to run `<product>` for `YYYY-MM-DD`.” Bulletin
+products require the correctly dated PDF; the controller returns
+`NEED_CME_PDF` and its required path when it is absent. The skill then runs the
+durable QC → specialists → synthesis flow and reports the final analysis paths.
+Do not invoke the internal preparation scripts as an alternative daily flow.
 
 **Agent + schedules**: register a separate OpenClaw agent for each product.
 Give it the onboarding instruction in `deployments/README.md`; it must read the
 root framework rules plus exactly one `deployments/<product>/AGENTS.md`.
-Adapt only that deployment's cron template. Production templates ship disabled
-with delivery placeholders; fill destinations at registration time only and
-never commit them. Delivery/dedup state lives below the automatically isolated
+Adapt only that deployment's cron template. A daily schedule must trigger an
+agent turn that invokes `$curvelens-daily-analysis`, not a bare Python command.
+Templates ship disabled; enabling a schedule or delivery requires separate
+explicit approval. Delivery/dedup state lives below the automatically isolated
 `ccvm/data/products/<product>/agent_outbox/`.
 
 ---
@@ -173,8 +174,9 @@ back into root instructions.
 ## 3. Port validation protocol
 
 1. `pytest` green, including the new calendar fixture tests
-2. One real day end-to-end: collect → normalize → compute → report; inspect
-   the brief for unit sanity (price scale, strike scale!)
+2. One real day end-to-end through `$curvelens-daily-analysis`; inspect the
+   deterministic evidence and synthesized analysis for unit sanity (price
+   scale, strike scale!)
 3. **Delta check** in the brief's caveats (model delta vs venue-published
    delta) — the empirical detector for wrong TTE/strike-scale/model setup;
    mean |diff| should be ~0.01 or better

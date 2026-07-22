@@ -1,20 +1,27 @@
 # CurveLens Core
 
-CurveLens Core is one shared futures-and-options analytics framework. WTI and
-Gold are product configurations in the same repository; they share code and a
-Python environment while keeping data, workflow state, schedules, outboxes,
-and delivery destinations isolated.
+CurveLens Core is a shared futures-and-options analysis framework. WTI and Gold
+are product configurations in one repository: they share code and a Python
+environment, while market data, workflow state, schedules, and delivery state
+remain isolated by product.
 
-## Fresh installation
+The supported daily workflow is agent-orchestrated. Deterministic Python code
+collects and checks data, computes market features, prepares evidence packets,
+persists workflow state, and validates the final report. A Codex operating
+agent creates temporary native sub-agents for data-quality review, each
+profile-configured specialist desk, and final synthesis. Repository code does
+not call a model API, model SDK, or vendor-model CLI.
+
+## Install
 
 Prerequisites:
 
 - Python 3.12 or newer;
 - Poppler/`pdftotext` for CME bulletin parsing (`brew install poppler` on macOS);
-- a Codex/OpenClaw agent environment for native sub-agent analysis and optional
-  delivery integration.
-
-Install and verify:
+- a Codex/OpenClaw environment that supports repository skills and native
+  sub-agents;
+- headed-browser access for protected CME bulletins;
+- `EIA_API_KEY` for WTI fundamentals or `FRED_API_KEY` for Gold macro data.
 
 ```bash
 git clone https://github.com/fangxuyi/curvelens-core.git
@@ -25,35 +32,98 @@ cp ccvm/.env.example ccvm/.env
 cd ccvm && PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
 ```
 
-Fill only the data-provider keys needed by the product in `ccvm/.env`: WTI
-uses `EIA_API_KEY`; Gold macro collection uses `FRED_API_KEY`. Model API keys,
-Telegram tokens, and chat IDs do not belong in the repository.
+Put provider keys in `ccvm/.env`. Do not put model credentials, Telegram
+tokens, chat IDs, or other delivery secrets in the repository. The native
+sub-agents use the operating Codex environment, so this project needs no model
+API key.
 
-## Onboard an agent
+## Onboard one operating agent
 
-Set the repository root as the agent's working directory and give it exactly
-one product sentence:
+Set the repository root as the agent's working directory and register it with
+one sentence:
 
 - **Operate the CurveLens WTI deployment.**
 - **Operate the CurveLens Gold deployment.**
 
-The root `AGENTS.md` makes the agent establish `CCVM_PRODUCT`, read exactly one
-deployment runbook, verify the environment, and preserve product isolation. Do
-not combine both products in one runtime agent; use one agent registration per
-product, while both registrations may share this checkout and virtualenv.
+That sentence is intentionally sufficient. On first activation, `AGENTS.md`
+requires the agent to select the product, read exactly one product runbook,
+verify the environment without printing secrets, run the tests, and use the
+checked-in daily-analysis skill. Use one operating-agent registration per
+product; WTI and Gold agents may share the clone and virtual environment.
 
-For the multi-specialist shadow analysis, say:
+The operating agent needs:
+
+- read/write access to this checkout and its selected product data directory;
+- permission to run the repository Python environment and native sub-agents;
+- access to the product's provider keys through the local environment;
+- the product-approved CME bulletin acquisition method;
+- an explicit date or permission to determine the latest bulletin trade date.
+
+It does not need a separately installed orchestration framework or a direct
+OpenAI/Anthropic API credential.
+
+## Run the daily analysis
+
+Give the registered product agent one sentence:
 
 - **Use `$curvelens-daily-analysis` to run WTI for today.**
 - **Use `$curvelens-daily-analysis` to run Gold for today.**
 
-Codex then natively delegates data-quality review, every specialist role in the
-active product profile, and synthesis. Repository code makes no model API or
-vendor-model CLI calls.
+`$curvelens-daily-analysis` is a repository skill invocation, not a shell
+variable. For bulletin-backed runs, use the date printed inside the approved
+bulletin when it differs from the calendar date.
+
+The execution flow is:
+
+```text
+deterministic collection and calculations
+                  ↓
+       Codex data-quality reviewer
+                  ↓
+ profile-configured specialists in parallel
+                  ↓
+           Codex synthesizer
+                  ↓
+ deterministic validation and daily report
+```
+
+WTI configures futures-curve, volatility-surface, and physical-fundamentals
+desks. Gold configures futures-curve, volatility-surface, and macro desks. The
+specialists are temporary native Codex sub-agents created for the run; their
+validated responses and the controller's `run.json` remain on disk so an
+interrupted run can resume.
+
+`agent/analysis_orchestrator.py` is the only supported daily-analysis
+controller. The former script-only `agent/run_pipeline.py` entry point has been
+removed. The controller still invokes deterministic scripts internally to
+prepare reproducible evidence; those scripts are not an alternate analysis
+workflow.
+
+## Set up a daily schedule
+
+Schedule an isolated turn of the registered product agent—never a bare Python
+command. Start from `deployments/<product>/cron.example`, replace its checkout
+path and agent name, and keep it disabled until its product runbook's data and
+delivery gates have passed and a human explicitly approves enabling it.
+
+The scheduled message must tell the agent to:
+
+1. work from this repository and read the root plus selected product runbook;
+2. set `CCVM_PRODUCT` on every runtime command;
+3. acquire and verify the exact product bulletin and its internal trade date;
+4. invoke `$curvelens-daily-analysis` for that date;
+5. resume persisted state instead of restarting an existing run;
+6. report completion or the exact blocker; and
+7. avoid delivery unless that deployment has separate explicit approval.
+
+The WTI template includes a disabled retry-window schedule. Gold remains
+validation-only, so its template is deliberately non-executable. Creating or
+enabling either schedule changes external state and is never performed merely
+because an agent was onboarded.
 
 ## Runtime isolation
 
-Always select the product explicitly:
+Every runtime command selects the product explicitly:
 
 ```text
 CCVM_PRODUCT=wti  -> ccvm/data/products/wti/
@@ -61,16 +131,12 @@ CCVM_PRODUCT=gold -> ccvm/data/products/gold/
 ```
 
 `CCVM_DATA_DIR` is an advanced override for migrations or external storage.
-Never point two products at the same override.
+Never configure two products with the same override.
 
-| Product | Specialist desks | Deployment status |
+| Product | Specialist desks | Status |
 |---|---|---|
-| WTI | Futures curve, volatility surface, physical fundamentals | Operational deterministic brief; multi-agent analysis remains shadow-only |
+| WTI | Futures curve, volatility surface, physical fundamentals | Agent-orchestrated daily analysis supported; automatic delivery separately controlled |
 | Gold | Futures curve, volatility surface, macro | Validation-only; schedules and delivery disabled |
-
-Bulletin-backed runs require the exact CME bulletin and trade date. Follow the
-selected deployment runbook for download, freshness, acceptance, scheduling,
-and delivery policy. A successful shadow analysis does not authorize delivery.
 
 ## Documentation
 
@@ -79,4 +145,4 @@ and delivery policy. A successful shadow analysis does not authorize delivery.
 - [WTI operating runbook](deployments/wti/AGENTS.md)
 - [WTI history migration](deployments/wti/MIGRATION.md)
 - [Gold operating runbook](deployments/gold/AGENTS.md)
-- [Multi-agent analysis workflow](docs/ANALYSIS_WORKFLOW.md)
+- [Orchestration design and state machine](docs/ANALYSIS_WORKFLOW.md)

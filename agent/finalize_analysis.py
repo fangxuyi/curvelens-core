@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Validate specialist/synthesis responses and render a shadow report."""
+"""Validate specialist/synthesis responses and render the daily analysis."""
 from __future__ import annotations
 
 import argparse

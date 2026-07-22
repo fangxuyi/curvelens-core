@@ -170,7 +170,9 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     synthesis_path.write_text(json.dumps(synthesis))
     json_path, md_path = validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "out")
     assert json_path.exists() and md_path.exists()
-    assert json.loads(json_path.read_text())["shadow_mode"] is True
+    output = json.loads(json_path.read_text())
+    assert output["workflow_mode"] == "agent_orchestrated"
+    assert output["delivery_approved"] is False
     markdown = md_path.read_text()
     assert "Overall forward view" in markdown and "Data limitations" in markdown
 
@@ -382,7 +384,7 @@ def test_orchestrator_cli_reports_persisted_next_action(tmp_path):
     assert output["actions"][0]["agent_type"] == "curvelens_data_qc"
 
 
-def test_shadow_workflow_has_no_direct_model_client_calls():
+def test_agent_workflow_has_no_direct_model_client_calls():
     root = Path(__file__).resolve().parents[2]
     files = [
         root / "agent" / "run_analysis_workflow.py",
@@ -395,3 +397,8 @@ def test_shadow_workflow_has_no_direct_model_client_calls():
     for path in files:
         text = path.read_text().lower()
         assert not any(term in text for term in prohibited)
+
+
+def test_obsolete_script_only_daily_entry_point_is_removed():
+    root = Path(__file__).resolve().parents[2]
+    assert not (root / "agent" / "run_pipeline.py").exists()

@@ -51,23 +51,23 @@ for Gold. Until a Section-64-capable downloader is reviewed, a human-approved
 PDF must be saved to `ccvm/data/products/gold/cme_bulletin/<date>.pdf` before a validation
 run. Never rename an old PDF to impersonate a new date.
 
-## Validation run
+## Supported validation run
 
 1. Confirm the PDF's internal bulletin date and Section 64 identity.
 2. Save it at `ccvm/data/products/gold/cme_bulletin/<date>.pdf`.
-3. Run:
+3. Invoke:
 
-   ```bash
-   ccvm/.venv/bin/python agent/run_pipeline.py --date <date>
-   ```
+   > Use `$curvelens-daily-analysis` to run Gold for `<date>`.
 
-4. On `NEED_CME_PDF`, `ERROR`, or `VALIDATION_FAILED`, stop and report the
-   exact missing input, stage, or failed quality section. A validation failure
-   may still include a report path for diagnosis; it is not permission to send.
-   Never use `--force-pdf` unless a human explicitly approves a futures-only
-   diagnostic.
-5. On `OK`, inspect the report and quality outputs. During experimental status,
-   do not run `notify.py --prepare` against a live delivery outbox and do not
+4. The skill uses `agent/analysis_orchestrator.py` to start or resume persisted
+   state, review QC, fan out every role configured in `gold.yaml`, wait for
+   validated results, and synthesize. Never use `--restart` unless the user
+   explicitly requests a fresh run.
+5. On `NEED_CME_PDF`, `ORCHESTRATION_BLOCKED`, or `ORCHESTRATION_ERROR`, stop
+   and report the exact missing input or failed gate. Never use a force-PDF path
+   unless a human explicitly approves a futures-only diagnostic.
+6. On `ORCHESTRATION_COMPLETE`, inspect the analysis and quality outputs.
+   During experimental status, do not invoke `notify.py`, mutate an outbox, or
    send Telegram messages.
 
 ## Live-data acceptance gates
@@ -86,23 +86,13 @@ All gates must pass before proposing production status:
 6. Review a Gold-specific downloader, delivery QC, Telegram destination, and
    disabled cron template; enable them only with explicit approval.
 
-An `OK` pipeline exit proves orchestration completed; it does not by itself
-pass these gates. Production status requires clean diagnostics over consecutive
-settlement days and explicit approval of scheduling and delivery.
-
-## Multi-agent analysis shadow run
-
-This workflow supplements the validation run; it does not change Gold's
-experimental status or authorize delivery.
-
-Invoke `$curvelens-daily-analysis` and ask it to run Gold for `<date>`. The skill
-uses `agent/analysis_orchestrator.py` and native Codex delegation to review QC,
-fan out every role configured in `gold.yaml`, wait for validated results, and
-then synthesize. It resumes persisted state after interruption and bounds QC
-and response corrections. Do not make direct SDK, HTTP model API, `codex exec`,
-`claude`, or other vendor-model CLI calls.
-
-The result is shadow-only. Do not invoke `notify.py` or send it.
+An `ORCHESTRATION_COMPLETE` result proves that the workflow completed; it does
+not by itself pass these gates. Production status requires clean diagnostics
+over consecutive settlement days and explicit approval of scheduling and
+delivery. This agent-orchestrated path is the only supported daily analysis;
+do not invoke internal preparation scripts as an alternate workflow. Do not
+make direct SDK, HTTP model API, `codex exec`, `claude`, or other vendor-model
+CLI calls.
 
 ## Gold-specific conventions
 

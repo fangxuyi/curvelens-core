@@ -1,9 +1,12 @@
 """Regression coverage for the migrated rich notification formatters."""
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 AGENT_DIR = Path(__file__).resolve().parents[2] / "agent"
 sys.path.insert(0, str(AGENT_DIR))
@@ -120,3 +123,21 @@ def test_rich_formatting_does_not_reintroduce_wti_units(monkeypatch):
     assert "$2,350.00/ozt" in text
     assert "/bbl" not in text
     assert "Brent-WTI" not in text
+
+
+def test_daily_delivery_requires_completed_agent_orchestration(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(notify, "DATA_DIR", tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        notify.cmd_prepare("2026-07-20")
+    assert exc.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["result"] == "ANALYSIS_NOT_COMPLETE"
+
+    state_path = tmp_path / "analysis_workflow" / "trade_date=2026-07-20" / "run.json"
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({"phase": "SPECIALISTS_REQUIRED"}))
+    with pytest.raises(SystemExit) as exc:
+        notify.cmd_prepare("2026-07-20")
+    assert exc.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["phase"] == "SPECIALISTS_REQUIRED"

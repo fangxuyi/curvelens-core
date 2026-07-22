@@ -1,6 +1,6 @@
 ---
 name: curvelens-daily-analysis
-description: Run or resume the native-Codex multi-agent CurveLens daily analysis for any configured product. Use when asked to operate, execute, test, or monitor the specialist market-analysis workflow, including data QC, futures/curve analysis, volatility analysis, macro or fundamentals analysis, synthesis, and shadow-report validation.
+description: Run or resume the native-Codex multi-agent CurveLens daily analysis for any configured product. Use when asked to operate, execute, test, schedule, or monitor the daily workflow, including data QC, futures/curve analysis, volatility analysis, macro or fundamentals analysis, synthesis, and report validation.
 ---
 
 # CurveLens Daily Analysis
@@ -40,7 +40,7 @@ or a vendor model CLI.
    and provide the controller's validation error; otherwise spawn the named
    generic agent again with the updated task file. Correction and QC cycles are
    bounded by the controller.
-7. Report the final shadow analysis paths and material retained limitations.
+7. Report the final daily-analysis paths and material retained limitations.
    Do not call `notify.py`, touch an outbox, enable a schedule, or deliver the
    report. Promotion is a separate explicitly approved change.
 

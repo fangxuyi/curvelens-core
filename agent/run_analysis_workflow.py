@@ -131,7 +131,7 @@ def main() -> None:
         "quality_attempts": history, "news_status": "ok" if news_rc == 0 else "failed",
         "preparation_warnings": stage_failures,
         "next_step": "Delegate each role packet through the agent framework, then synthesize and run finalize_analysis.py.",
-        "shadow_mode": True, "delivery_queued": False,
+        "workflow_mode": "agent_orchestrated", "delivery_queued": False,
     })
 
 
