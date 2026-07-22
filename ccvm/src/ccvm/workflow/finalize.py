@@ -301,7 +301,7 @@ def validate_synthesis_response(
     return synthesis
 
 
-def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Path]:
+def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Path, Path]:
     manifest = load_manifest(manifest_path)
     packet_id = manifest.get("packet_id")
     responses = {
@@ -323,9 +323,95 @@ def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Pa
     }
     json_path = output_dir / "analysis.json"
     md_path = output_dir / "analysis.md"
+    statistics_path = output_dir / "statistics.md"
     json_path.write_text(json.dumps(result, indent=2))
     md_path.write_text(_render_markdown(result))
-    return json_path, md_path
+    statistics_path.write_text(_render_statistics_markdown(result))
+    return json_path, md_path, statistics_path
+
+
+def _markdown_cell(value: Any) -> str:
+    """Keep generated statistics tables valid when agent text contains markup."""
+    return str(value or "").replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _render_metric_table(metrics: list[dict[str, Any]]) -> list[str]:
+    lines = [
+        "| Measure | Value | Comparison | Plain-English meaning |",
+        "|---|---:|---|---|",
+    ]
+    if not metrics:
+        lines.append("| No validated statistics available | — | — | — |")
+        return lines
+    for metric in metrics:
+        lines.append(
+            f"| {_markdown_cell(metric.get('label'))} | "
+            f"{_markdown_cell(metric.get('value'))} | "
+            f"{_markdown_cell(metric.get('comparison'))} | "
+            f"{_markdown_cell(metric.get('plain_english_meaning'))} |"
+        )
+    return lines
+
+
+def _render_statistics_markdown(result: dict[str, Any]) -> str:
+    """Render the validated numbers separately from the forward analysis."""
+    synthesis = result["synthesis"]
+    responses = result["specialist_analyses"]
+    lines = [
+        f"# {result['product'].upper()} Daily Statistics — {result['trade_date']}", "",
+        "> Numerical supplement generated from validated daily-analysis outputs. "
+        "It is descriptive and does not replace the forward analysis.", "",
+        "## Run coverage", "",
+        f"- Overall status: **{_markdown_cell(result.get('status'))}**",
+        f"- Specialist desks: **{len(responses)}**",
+        f"- Snapshot measures: **{len(synthesis.get('market_snapshot', []))}**", "",
+        "| Specialist desk | Status | Validated measures | Evidence references |",
+        "|---|---|---:|---:|",
+    ]
+    for role, response in responses.items():
+        lines.append(
+            f"| {_markdown_cell(role.replace('_', ' ').title())} | "
+            f"{_markdown_cell(response.get('status'))} | "
+            f"{len(response.get('key_metrics', []))} | "
+            f"{len(set(response.get('evidence_ids', [])))} |"
+        )
+    lines.extend(["", "## Market snapshot", ""])
+    lines.extend(_render_metric_table(synthesis.get("market_snapshot", [])))
+    lines.append("")
+    for role, response in responses.items():
+        lines.extend([
+            f"## {role.replace('_', ' ').title()} statistics", "",
+            f"Data quality: {_markdown_cell(response.get('data_quality_assessment'))}", "",
+        ])
+        lines.extend(_render_metric_table(response.get("key_metrics", [])))
+        lines.append("")
+    lines.extend(["## Retained data limitations", ""])
+    limitations = synthesis.get("data_limitations", [])
+    if limitations:
+        lines.extend(
+            f"- {_markdown_cell(item if isinstance(item, str) else json.dumps(item))}"
+            for item in limitations
+        )
+    else:
+        lines.append("- None reported by the validated synthesis.")
+    lines.append("")
+    evidence_ids = set(synthesis.get("evidence_ids", []))
+    evidence_ids.update(
+        evidence_id
+        for response in responses.values()
+        for evidence_id in response.get("evidence_ids", [])
+    )
+    source_counts = {
+        prefix: sum(1 for evidence_id in evidence_ids if evidence_id.startswith(f"{prefix}:"))
+        for prefix in ("feature", "news", "knowledge")
+    }
+    lines.extend([
+        "## Evidence coverage", "",
+        f"- Computed-feature references: **{source_counts['feature']}**",
+        f"- News references: **{source_counts['news']}**",
+        f"- Knowledge-pack references: **{source_counts['knowledge']}**", "",
+    ])
+    return "\n".join(lines)
 
 
 def _render_markdown(result: dict[str, Any]) -> str:

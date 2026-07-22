@@ -84,6 +84,7 @@ def _summary(state: dict) -> dict:
     if state["phase"] == "COMPLETE":
         result["analysis_json"] = state.get("analysis_json")
         result["analysis_md"] = state.get("analysis_md")
+        result["statistics_md"] = state.get("statistics_md")
     if state["phase"] == "QC_REVIEW_REQUIRED" and state["qc"].get("last_error"):
         result["validation_error"] = state["qc"]["last_error"]
     return result
@@ -151,10 +152,13 @@ def main() -> None:
 
             if state["phase"] == "READY_TO_FINALIZE":
                 output_dir = data_dir() / "analysis" / f"trade_date={as_of_str}"
-                json_path, md_path = validate_and_render(Path(state["manifest_path"]), output_dir)
+                json_path, md_path, statistics_path = validate_and_render(
+                    Path(state["manifest_path"]), output_dir,
+                )
                 state["phase"] = "COMPLETE"
                 state["analysis_json"] = str(json_path)
                 state["analysis_md"] = str(md_path)
+                state["statistics_md"] = str(statistics_path)
                 save_state(state_path, state)
             _emit(_summary(state), state["phase"] != "BLOCKED")
     except (AnalysisValidationError, FileNotFoundError, KeyError, json.JSONDecodeError) as exc:

@@ -40,7 +40,9 @@ or a vendor model CLI.
    and provide the controller's validation error; otherwise spawn the named
    generic agent again with the updated task file. Correction and QC cycles are
    bounded by the controller.
-7. Report the final daily-analysis paths and material retained limitations.
+7. Report the final `analysis_json`, `analysis_md`, and `statistics_md` paths,
+   plus material retained limitations. `statistics_md` is the descriptive
+   numerical supplement; it is not a second forecast.
    Do not call `notify.py`, touch an outbox, enable a schedule, or deliver the
    report. Promotion is a separate explicitly approved change.
 

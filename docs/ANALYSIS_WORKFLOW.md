@@ -21,7 +21,7 @@ flowchart LR
   E1 --> F[Coordinator synthesis]
   E2 --> F
   E3 --> F
-  F --> G[Validate citations and render daily report]
+  F --> G[Validate citations and render analysis plus statistics]
   G --> H[Optional separately approved delivery]
 ```
 
@@ -84,8 +84,10 @@ The repository-scoped `$curvelens-daily-analysis` skill runs this loop using
 native Codex subagents. Generic custom agent types cover QC, an arbitrary
 packet-defined specialist, and synthesis; product profiles determine the roles.
 The controller rejects missing roles, stale packet IDs, unanswered required
-checks, placeholder statuses, and unknown citations. It writes JSON and Markdown under
-`data/products/<product>/analysis/trade_date=<date>/`.
+checks, placeholder statuses, and unknown citations. It writes `analysis.json`,
+the interpretive `analysis.md`, and the descriptive `statistics.md` under
+`data/products/<product>/analysis/trade_date=<date>/`. The statistics renderer
+reuses validated key metrics and does not invoke another model.
 
 ## Supported operating path
 
