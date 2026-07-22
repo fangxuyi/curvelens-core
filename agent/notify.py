@@ -486,10 +486,38 @@ def queue_message(msg_type: str, date_str: str, text: str) -> dict:
 
 
 def cmd_prepare(date_str: str) -> None:
+    run_state_path = (
+        DATA_DIR / "analysis_workflow" / f"trade_date={date_str}" / "run.json"
+    )
+    if not run_state_path.exists():
+        _emit({
+            "result": "ANALYSIS_NOT_COMPLETE", "date": date_str,
+            "detail": (
+                "daily delivery requires a completed $curvelens-daily-analysis run; "
+                f"workflow state not found at {run_state_path}"
+            ),
+        })
+        sys.exit(1)
+    try:
+        run_state = json.loads(run_state_path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        _emit({
+            "result": "ANALYSIS_NOT_COMPLETE", "date": date_str,
+            "detail": f"workflow state is unreadable: {run_state_path}",
+        })
+        sys.exit(1)
+    if run_state.get("phase") != "COMPLETE":
+        _emit({
+            "result": "ANALYSIS_NOT_COMPLETE", "date": date_str,
+            "phase": run_state.get("phase"),
+            "detail": "daily delivery is gated on ORCHESTRATION_COMPLETE",
+        })
+        sys.exit(1)
+
     report_json = DATA_DIR / "reports" / f"{date_str}.json"
     if not report_json.exists():
         _emit({"result": "NO_REPORT", "date": date_str,
-               "detail": f"{report_json} not found — run run_pipeline.py first"})
+               "detail": f"{report_json} not found after the completed daily analysis"})
         sys.exit(1)
 
     report = json.loads(report_json.read_text())
@@ -557,7 +585,7 @@ def cmd_list_pending() -> None:
 def cmd_is_new(date_str: str) -> None:
     """Report whether a bulletin date still needs processing.
 
-    A date is "new" (needs the pipeline + delivery) when its DAILY_BRIEF has not
+    A date is "new" (needs analysis + delivery) when its DAILY_BRIEF has not
     yet been delivered. Used as the up-front freshness gate: the agent downloads
     the CME "current" bulletin, reads its internal date, and calls this before
     saving/recomputing — if not new, it discards the download and stays silent.

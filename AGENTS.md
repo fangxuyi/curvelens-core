@@ -28,9 +28,10 @@ On first activation in a fresh clone:
 4. Run the shared tests before proposing operational use. Perform only the
    validation or analysis the user requested; never infer approval for a cron,
    live delivery, destination, or production-status change.
-5. Use `$curvelens-daily-analysis` for native multi-specialist analysis. The
+5. Use `$curvelens-daily-analysis` for every daily analysis. The
    checked-in skill and product profile define the roles; do not reconstruct or
-   hardcode Gold/WTI prompts from memory.
+   hardcode Gold/WTI prompts from memory, and do not bypass it with a script-only
+   daily workflow.
 
 The supported registration sentences remain “Operate the CurveLens WTI
 deployment.” and “Operate the CurveLens Gold deployment.” A single runtime
@@ -67,8 +68,8 @@ environment are shared.
 
 - Never fabricate market data or silently substitute another product's feed.
 - Bulletin-backed products require the exact configured bulletin and date.
-- `agent/run_pipeline.py` and `agent/notify.py` never hold delivery credentials
-  or call Telegram directly. Delivery uses the deployment agent integration.
+- `agent/notify.py` never holds delivery credentials or calls Telegram directly.
+  Delivery uses the deployment agent integration.
 - Send only messages queued by the selected deployment's isolated outbox, and
   ack every successful send to preserve deduplication.
 - Never enable schedules or live delivery without explicit approval.
@@ -94,15 +95,18 @@ PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
 For a product change, also run a smoke check with explicit `CCVM_PRODUCT`. Do
 not enable a product deployment until its runbook's acceptance gates pass.
 
-## Agent-framework analysis workflow
+## Daily analysis workflow
 
-Use the repository skill `$curvelens-daily-analysis` for the analyst-style
-shadow workflow. `agent/analysis_orchestrator.py` persists and enforces the
+Use the repository skill `$curvelens-daily-analysis` for the daily workflow.
+`agent/analysis_orchestrator.py` is the only supported daily controller and
+persists and enforces the
 product-neutral phase graph; deterministic code prepares evidence and validates
 outputs, while the host Codex framework natively delegates QC, every
 profile-configured specialist role, and synthesis. Do not call model SDKs, HTTP
 model APIs, `codex exec`, or vendor model CLIs from repository code.
 
 The controller must emit a synthesis action only after every configured role
-validates. Until a deployment runbook explicitly promotes this path, outputs
-are shadow artifacts only: do not queue or deliver them.
+validates. The removed `agent/run_pipeline.py` path must not be recreated or
+used as an alternate daily workflow. Automatic delivery remains a separate
+deployment capability and requires explicit approval; completing analysis does
+not authorize queuing or sending it.

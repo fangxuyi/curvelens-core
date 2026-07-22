@@ -29,6 +29,8 @@ def test_readme_exposes_one_sentence_product_deployment():
     ):
         assert sentence in readme
         assert sentence in deployments
+    assert "$curvelens-daily-analysis" in readme
+    assert "agent/analysis_orchestrator.py" in readme
 
 
 def test_each_product_has_a_minimal_deployment_instruction_set():
@@ -45,10 +47,14 @@ def test_wti_runbook_is_explicit_and_product_scoped():
     cron = _read("deployments/wti/cron.example")
     assert "export CCVM_PRODUCT=wti" in runbook
     assert "ccvm/data/products/wti" in runbook
-    assert "Section 63 Energy Options" in runbook
-    assert "--event eia" in runbook
+    assert "Section 63" in runbook
+    assert "$curvelens-daily-analysis" in runbook
     assert "CCVM_PRODUCT=wti" in cron
-    assert cron.count("--disabled") >= 3
+    assert "$curvelens-daily-analysis" in cron
+    assert "--session isolated" in cron
+    assert "--no-deliver" in cron
+    assert cron.count("--disabled") >= 1
+    assert "python agent/" not in cron
 
 
 def test_gold_runbook_is_experimental_and_cannot_schedule_itself():

@@ -76,7 +76,8 @@ def _summary(state: dict) -> dict:
         "run_id": state["run_id"], "product": state["product"],
         "date": state["trade_date"], "phase": state["phase"],
         "state_path": str(Path(state["manifest_path"]).parent / "run.json"),
-        "actions": next_actions(state), "shadow_mode": True, "delivery_queued": False,
+        "actions": next_actions(state), "workflow_mode": "agent_orchestrated",
+        "delivery_queued": False,
     }
     if state.get("block_reason"):
         result["detail"] = state["block_reason"]
