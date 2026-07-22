@@ -385,6 +385,14 @@ def _render_markdown(report: dict) -> str:
                 f"- {expiry.get('expiry')}: {expiry.get('status')} — signed mass "
                 f"{expiry.get('signed_mass')}, negative mass {expiry.get('negative_mass')}, "
                 f"convexity violations {expiry.get('convexity_violations')}")
+            if expiry.get("projection_applied"):
+                lines.append(
+                    f"  - Convex projection: projected mass {expiry.get('projected_mass')}, "
+                    f"maximum repair {expiry.get('projection_max_adjustment_ticks')} premium "
+                    f"ticks (limit {expiry.get('projection_limit_ticks')})"
+                )
+            for warning in expiry.get("validation_warnings", []):
+                lines.append(f"  - ⚠ {warning}")
         for note in rnd.get("notes", []):
             lines.append(f"- ⚠ {note}")
 

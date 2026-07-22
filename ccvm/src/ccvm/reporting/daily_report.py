@@ -542,15 +542,33 @@ def _render_markdown(report: dict) -> str:
         )
         lines += [
             f"**Market-Implied Distribution — {ex.get('expiry')}** "
-            f"*(Breeden–Litzenberger on the settlement curve)*",
+            f"*(tick-bounded convex projection of the settlement curve)*",
             f"- Expected move to expiry: **{em_str}** (straddle)  |  "
             f"RN σ: ${ex.get('rn_std'):.2f}  |  RN skew: {ex.get('rn_skew'):+.2f}",
         ]
         if ladder_str:
             lines.append(f"- {ladder_str}")
+        projection_note = (
+            f", convex repair max {ex.get('projection_max_adjustment_ticks'):.2f} premium ticks"
+            if ex.get("projection_applied") and
+            ex.get("projection_max_adjustment_ticks") is not None else ""
+        )
+        displayed_mass = ex.get("projected_mass", ex.get("signed_mass"))
         lines.append(f"- *diagnostics: {ex.get('n_strikes')} strikes, "
-                     f"signed mass {ex.get('signed_mass'):.2f}, negative mass "
-                     f"{ex.get('negative_mass'):.3f}*")
+                     f"raw signed mass {ex.get('signed_mass'):.2f}, raw negative mass "
+                     f"{ex.get('negative_mass'):.3f}, projected mass "
+                     f"{displayed_mass:.2f}{projection_note}*")
+        if ex.get("exercise_adjustment") == "baw_iv_to_black76":
+            lines.append(
+                "- *Method caveat: American settlements are converted to "
+                "European-equivalent prices from BAW implied volatility before density "
+                "extraction; the result remains a model-derived settlement approximation.*"
+            )
+        elif ex.get("exercise_style", "").lower() == "american":
+            lines.append(
+                "- *Method caveat: no early-exercise adjustment was available for this "
+                "American-style surface; treat the density as provisional.*"
+            )
         lines.append("")
 
     # ── Term structure (C4) ──

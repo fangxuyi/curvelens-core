@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import math
 
+import pyarrow as pa
 import pytest
 
 from ccvm.analytics.black76 import black76_price
-from ccvm.analytics.rnd import _prob_above, compute_expiry
+from ccvm.analytics.rnd import _prob_above, compute, compute_expiry
 
 
 def _synthetic_rows(F=70.0, T=0.15, r=0.05, vol=0.25, lo=40, hi=110, step=0.5):
@@ -63,6 +64,27 @@ class TestLognormalRecovery:
         # a lognormal density is right-skewed
         assert self._result()["rn_skew"] > 0
 
+    def test_product_compute_converts_american_prices_to_european_equivalents(self):
+        rows = _synthetic_rows(self.F, self.T, self.R, self.VOL)
+        table = pa.Table.from_pylist([
+            {
+                "option_expiry": "2026-08-17",
+                "strike": row["strike"],
+                "call_put": row["cp"],
+                "settlement": row["settlement"],
+                "forward_price": self.F,
+                "time_to_expiry_years": self.T,
+                "baw_iv": self.VOL,
+            }
+            for row in rows
+        ])
+
+        result = compute(table, "2026-07-20", rate=self.R, n_expiries=1)["expiries"][0]
+
+        assert result["exercise_adjustment"] == "baw_iv_to_black76"
+        assert result["exercise_adjusted_rows"] == len(rows)
+        assert result["method"].startswith("otm_european_equivalent")
+
 
 class TestGuards:
     def test_too_few_strikes_none(self):
@@ -92,3 +114,38 @@ class TestGuards:
         assert result["status"] == "invalid_surface"
         assert result["negative_mass"] > 0.05
         assert result["rn_mean"] is None
+
+    def test_tick_rounded_dense_surface_is_repaired_when_adjustment_is_small(self):
+        rows = _synthetic_rows(
+            F=4000.0, T=0.05, vol=0.20, lo=2500, hi=5500, step=5.0,
+        )
+        for row in rows:
+            row["settlement"] = round(row["settlement"] / 0.10) * 0.10
+
+        result = compute_expiry(
+            rows, 4000.0, 0.05, 0.05,
+            price_tick=0.10, max_projection_ticks=2.0,
+        )
+
+        assert result["status"] == "available"
+        assert result["negative_mass"] > 0.05
+        assert result["projection_applied"] is True
+        assert result["projection_max_adjustment_ticks"] <= 2.0
+        assert result["projected_mass"] == pytest.approx(1.0, abs=0.05)
+        assert result["rn_mean"] == pytest.approx(4000.0, abs=10.0)
+        assert result["validation_warnings"]
+
+    def test_tick_aware_projection_still_rejects_material_price_corruption(self):
+        rows = _synthetic_rows()
+        for row in rows:
+            if row["cp"] == "C" and row["strike"] == 75.0:
+                row["settlement"] += 5.0
+
+        result = compute_expiry(
+            rows, 70.0, 0.15, 0.05,
+            price_tick=0.10, max_projection_ticks=2.0,
+        )
+
+        assert result["status"] == "invalid_surface"
+        assert result["projection_max_adjustment_ticks"] > 2.0
+        assert result["prob_ladder"] == {}
