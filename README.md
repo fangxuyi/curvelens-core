@@ -95,9 +95,11 @@ interrupted run can resume.
 
 Each specialist response is mechanically required to include profile-defined
 key metrics with an exact value, unit, dated or historical comparison, plain-
-English meaning, and evidence IDs. The final report begins with a six-to-ten
-item numerical market snapshot, followed by a plain-English summary and the
-futures, options, and macro/fundamentals desk detail. Product profiles decide
+English meaning, and evidence IDs. The final report leads with exactly three
+ranked market views. Each view shows whether the desks cross-support or conflict,
+the exact supporting numbers, contrary evidence, horizon, and confidence. A
+six-to-ten item numerical market snapshot and the futures, options, and
+macro/fundamentals desk detail follow. Product profiles decide
 which measures are mandatory. Young local history is disclosed once; it does
 not excuse omitting current market numbers, and a proxy benchmark must always
 be labeled as a proxy.

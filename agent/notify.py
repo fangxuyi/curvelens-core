@@ -167,13 +167,32 @@ def _analysis_synthesis_text(date_str: str) -> str:
     if summary:
         out.extend(["", "*Bottom line*", _short(_clean_analysis_text(summary), 650)])
 
+    top_views = synthesis.get("top_views") or []
+    for view in top_views[:3]:
+        relationship = str(view.get("evidence_relationship", "")).replace("_", " ")
+        confidence = view.get("confidence", "")
+        out.extend([
+            "", f"*{view.get('rank')}. {_clean_analysis_text(view.get('title', ''))}*",
+            _short(_clean_analysis_text(view.get("plain_english_view", "")), 330),
+            f"_{relationship}; {confidence} confidence; {_clean_analysis_text(view.get('horizon', ''))}_",
+        ])
+        out.extend(_metric_line(item) for item in (view.get("key_metrics") or [])[:3])
+        support = view.get("supporting_evidence") or []
+        conflicts = view.get("conflicting_evidence") or []
+        for item in support[:2]:
+            claim = item.get("claim", "") if isinstance(item, dict) else item
+            out.append(_short(f"- Supports: {_clean_analysis_text(claim)}", 250))
+        for item in conflicts[:1]:
+            claim = item.get("claim", "") if isinstance(item, dict) else item
+            out.append(_short(f"- Conflicts: {_clean_analysis_text(claim)}", 250))
+
     role_titles = {
         "futures_curve": "Futures and curve",
         "vol_surface": "Options and volatility",
         "macro": "Macro and news",
         "fundamentals": "Physical fundamentals and news",
     }
-    for role, response in specialists.items():
+    for role, response in specialists.items() if not top_views else []:
         metrics = response.get("key_metrics") or []
         news = response.get("news_findings") or []
         if not metrics and not news:

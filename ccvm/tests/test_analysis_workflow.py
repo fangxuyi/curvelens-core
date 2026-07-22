@@ -32,6 +32,34 @@ def _metrics(evidence_id, count=5):
     ]
 
 
+def _top_views(manifest):
+    views = []
+    for rank, role in enumerate(manifest["roles"], start=1):
+        response = json.loads(Path(manifest["role_response_paths"][role]).read_text())
+        evidence_id = response["evidence_ids"][0]
+        views.append({
+            "rank": rank, "title": f"View from {role}",
+            "plain_english_view": "This is a ranked market condition with concrete support.",
+            "horizon": "next 1-5 sessions", "confidence": "low",
+            "evidence_relationship": "single_desk", "specialist_roles": [role],
+            "key_metrics": response["key_metrics"][:2],
+            "supporting_evidence": [{"claim": "The desk evidence supports this view.",
+                                     "evidence_ids": [evidence_id]}],
+            "conflicting_evidence": [],
+        })
+    return views
+
+
+def _synthesis_ids(manifest):
+    return sorted({
+        evidence_id
+        for role in manifest["roles"]
+        for evidence_id in json.loads(
+            Path(manifest["role_response_paths"][role]).read_text()
+        )["evidence_ids"]
+    })
+
+
 def test_quality_retries_only_missing_market_inputs():
     missing = assess_quality(_quality(futures_count=0, futures_status="INSUFFICIENT_DATA"), 1, 2)
     assert missing["should_retry"] is True
@@ -174,17 +202,19 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     synthesis.update({"status": "limited", "headline": "Test", "executive_summary": "Test",
                       "plain_english_summary": "The test signals are mixed.",
                       "market_snapshot": _metrics(used_id, 6),
+                      "top_views": _top_views(manifest),
                       "data_limitations": ["Specialists were limited."],
-                      "evidence_ids": [used_id]})
+                      "evidence_ids": _synthesis_ids(manifest)})
     synthesis_path.write_text(json.dumps(synthesis))
     with pytest.raises(AnalysisValidationError, match="forward view requires horizon"):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "incomplete")
     synthesis.update({"status": "limited", "headline": "Test", "executive_summary": "Test",
                       "plain_english_summary": "The test signals are mixed.",
                       "market_snapshot": _metrics(used_id, 6),
+                      "top_views": _top_views(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Mixed."},
                       "data_limitations": ["Specialists were limited."],
-                      "evidence_ids": [used_id]})
+                      "evidence_ids": _synthesis_ids(manifest)})
     synthesis_path.write_text(json.dumps(synthesis))
     json_path, md_path = validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "out")
     assert json_path.exists() and md_path.exists()
@@ -248,9 +278,10 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
                       "executive_summary": "Specialists identify a mixed setup.",
                       "plain_english_summary": "The market signals are mixed today.",
                       "market_snapshot": _metrics(used, 6),
+                      "top_views": _top_views(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Signals are mixed."},
                       "data_limitations": ["Synthetic evidence is limited."],
-                      "evidence_ids": [used]})
+                      "evidence_ids": _synthesis_ids(manifest)})
     Path(manifest["synthesis_response_path"]).write_text(json.dumps(synthesis))
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "READY_TO_FINALIZE"

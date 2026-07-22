@@ -161,6 +161,33 @@ def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_langu
             "confirmations": ["Settlement falls below $4,015.90/oz."],
             "invalidations": ["Settlement recovers above $4,018.80/oz."],
             "data_limitations": ["Only two local GC settlement dates are available."],
+            "top_views": [
+                {"rank": 1, "title": "Curve carry is a headwind",
+                 "plain_english_view": "Deferred gold settled above the front contract.",
+                 "evidence_relationship": "cross_supported", "confidence": "medium",
+                 "horizon": "next week", "key_metrics": [
+                     metric("Front settlement", "$4,015.90/oz", "Gold fell $2.90 on the day."),
+                     metric("M1-M3 spread", "-$27.30/oz", "The curve is in contango."),
+                 ], "supporting_evidence": [{"claim": "Price and curve evidence are defensive."}],
+                 "conflicting_evidence": []},
+                {"rank": 2, "title": "Options favor downside protection",
+                 "plain_english_view": "Puts carry more implied volatility than calls.",
+                 "evidence_relationship": "single_desk", "confidence": "medium",
+                 "horizon": "front expiry", "key_metrics": [
+                     metric("Front ATM IV", "19.94%", "This is the annualized volatility estimate."),
+                     metric("25-delta risk reversal", "-3.26 vol points", "Puts cost more volatility than calls."),
+                     metric("25-delta butterfly", "+0.45 vol points", "The wings are richer than the center."),
+                 ], "supporting_evidence": [{"claim": "Skew is negative."}],
+                 "conflicting_evidence": []},
+                {"rank": 3, "title": "Macro evidence is mixed",
+                 "plain_english_view": "Lower real yields help gold, while the dollar offsets that support.",
+                 "evidence_relationship": "conflicting", "confidence": "low",
+                 "horizon": "next week", "key_metrics": [
+                     metric("10-year real yield", "2.31%", "It fell 4 basis points."),
+                     metric("Broad dollar", "120.53", "It rose 0.17%."),
+                 ], "supporting_evidence": [{"claim": "Real yields fell."}],
+                 "conflicting_evidence": [{"claim": "The dollar strengthened."}]},
+            ],
         },
         "specialist_analyses": {
             "futures_curve": {"key_metrics": [
@@ -179,11 +206,11 @@ def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_langu
     }
     (analysis_dir / "analysis.json").write_text(json.dumps(analysis))
     text = notify._analysis_synthesis_text("2026-07-20")
-    assert "*Futures and curve*" in text
+    assert "*1. Curve carry is a headwind*" in text
     assert "$4,015.90/oz" in text and "-$27.30/oz" in text
-    assert "*Options and volatility*" in text
+    assert "*2. Options favor downside protection*" in text
     assert "19.94%" in text and "-3.26 vol points" in text and "+0.45 vol points" in text
-    assert "*Macro and news*" in text and "2.31%" in text
-    assert "No relevant dated macro catalyst" in text
+    assert "*3. Macro evidence is mixed*" in text and "2.31%" in text
+    assert "Conflicts: The dollar strengthened." in text
     assert "*Data notes*" in text
     assert len(text) <= 3900

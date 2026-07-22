@@ -245,6 +245,25 @@ def build_analysis_packets(
             "required_sections": [role.key for role in product.analysis_roles],
             "focus": "Forward-looking risks, cross-section agreements, tensions, confirmations, and invalidations.",
             "reporting": {
+                "top_views": (
+                    "Rank exactly three distinct market views by decision relevance. Each view must state "
+                    "the condition, why it matters, 2-3 exact key metrics, supporting evidence, any "
+                    "conflicting evidence, horizon, confidence, and whether it is cross-supported, "
+                    "conflicting, or a single-desk observation. Across the three views, cover every "
+                    "configured specialist role."
+                ),
+                "top_view_schema": {
+                    "rank": "1|2|3",
+                    "title": "short concrete market condition",
+                    "plain_english_view": "what is happening and why it matters",
+                    "horizon": "time window",
+                    "confidence": "high|medium|low",
+                    "evidence_relationship": "cross_supported|conflicting|single_desk",
+                    "specialist_roles": ["configured role key"],
+                    "key_metrics": ["copy 2-3 complete specialist key_metric objects exactly"],
+                    "supporting_evidence": [{"claim": "reason", "evidence_ids": ["allowed ID"]}],
+                    "conflicting_evidence": [{"claim": "contrary evidence", "evidence_ids": ["allowed ID"]}],
+                },
                 "market_snapshot_items": "6 to 10 exact values drawn from specialist key_metrics",
                 "plain_english": (
                     "Write for an informed reader who is not an options specialist. Use short sentences, "
@@ -265,6 +284,7 @@ def build_analysis_packets(
         "headline": "",
         "executive_summary": "",
         "plain_english_summary": "",
+        "top_views": [],
         "market_snapshot": [],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],

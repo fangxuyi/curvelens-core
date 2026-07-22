@@ -65,6 +65,82 @@ def _check_key_metrics(
     return metrics
 
 
+def _check_top_views(
+    views: Any, responses: dict[str, dict[str, Any]], allowed: set[str],
+) -> set[str]:
+    if not isinstance(views, list) or len(views) != 3:
+        raise AnalysisValidationError("synthesis must contain exactly three top_views")
+    if [item.get("rank") if isinstance(item, dict) else None for item in views] != [1, 2, 3]:
+        raise AnalysisValidationError("synthesis top_views must be ranked 1, 2, 3")
+    valid_roles = set(responses)
+    covered_roles: set[str] = set()
+    cited_ids: set[str] = set()
+    specialist_metrics = {
+        (
+            str(metric.get("label", "")), str(metric.get("value", "")),
+            str(metric.get("comparison", "")), str(metric.get("plain_english_meaning", "")),
+        )
+        for response in responses.values() for metric in response.get("key_metrics", [])
+    }
+    evidence_roles: dict[str, set[str]] = {}
+    for role, response in responses.items():
+        for evidence_id in response.get("evidence_ids", []):
+            evidence_roles.setdefault(evidence_id, set()).add(role)
+    for index, view in enumerate(views):
+        label = f"synthesis.top_views[{index}]"
+        if not isinstance(view, dict):
+            raise AnalysisValidationError(f"{label} must be an object")
+        for field in ("title", "plain_english_view", "horizon", "confidence"):
+            if not str(view.get(field, "")).strip():
+                raise AnalysisValidationError(f"{label}.{field} is required")
+        if view.get("confidence") not in {"high", "medium", "low"}:
+            raise AnalysisValidationError(f"{label}.confidence must be high, medium, or low")
+        relationship = view.get("evidence_relationship")
+        if relationship not in {"cross_supported", "conflicting", "single_desk"}:
+            raise AnalysisValidationError(f"{label}.evidence_relationship is invalid")
+        roles = view.get("specialist_roles")
+        if not isinstance(roles, list) or not roles or set(roles) - valid_roles:
+            raise AnalysisValidationError(f"{label}.specialist_roles must name configured roles")
+        if relationship in {"cross_supported", "conflicting"} and len(set(roles)) < 2:
+            raise AnalysisValidationError(f"{label} requires at least two specialist roles")
+        covered_roles.update(roles)
+        metrics = _check_key_metrics(view.get("key_metrics"), allowed, label, 2)
+        view_ids: set[str] = set()
+        for metric in metrics:
+            identity = (
+                str(metric.get("label", "")), str(metric.get("value", "")),
+                str(metric.get("comparison", "")), str(metric.get("plain_english_meaning", "")),
+            )
+            if identity not in specialist_metrics:
+                raise AnalysisValidationError(
+                    f"{label}.key_metrics must copy validated specialist metrics exactly"
+                )
+            view_ids.update(metric["evidence_ids"])
+        for field in ("supporting_evidence", "conflicting_evidence"):
+            claims = view.get(field)
+            if not isinstance(claims, list):
+                raise AnalysisValidationError(f"{label}.{field} must be a list")
+            if field == "supporting_evidence" and not claims:
+                raise AnalysisValidationError(f"{label}.supporting_evidence cannot be empty")
+            if relationship == "conflicting" and field == "conflicting_evidence" and not claims:
+                raise AnalysisValidationError(f"{label}.conflicting_evidence cannot be empty")
+            for claim_index, claim in enumerate(claims):
+                claim_label = f"{label}.{field}[{claim_index}]"
+                if not isinstance(claim, dict) or not str(claim.get("claim", "")).strip():
+                    raise AnalysisValidationError(f"{claim_label} must contain a claim")
+                ids = _check_ids(claim.get("evidence_ids"), allowed, claim_label)
+                if not ids:
+                    raise AnalysisValidationError(f"{claim_label} must cite evidence")
+                view_ids.update(ids)
+        roles_from_evidence = set().union(*(evidence_roles.get(item, set()) for item in view_ids))
+        if not set(roles).issubset(roles_from_evidence):
+            raise AnalysisValidationError(f"{label}.specialist_roles are not supported by cited evidence")
+        cited_ids.update(view_ids)
+    if covered_roles != valid_roles:
+        raise AnalysisValidationError("synthesis top_views must collectively cover every specialist role")
+    return cited_ids
+
+
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
     manifest = _read(manifest_path)
     if manifest.get("schema_version") != PACKET_SCHEMA_VERSION:
@@ -200,6 +276,10 @@ def validate_synthesis_response(
             and not synthesis["data_limitations"]:
         raise AnalysisValidationError("synthesis must preserve specialist limitations")
     allowed = set().union(*(set(item.get("evidence_ids", [])) for item in responses.values()))
+    top_view_ids = (
+        set() if synthesis["status"] == "blocked"
+        else _check_top_views(synthesis.get("top_views"), responses, allowed)
+    )
     snapshot = _check_key_metrics(
         synthesis.get("market_snapshot"), allowed, "synthesis",
         0 if synthesis["status"] == "blocked" else 6,
@@ -213,6 +293,10 @@ def validate_synthesis_response(
     if not snapshot_ids.issubset(set(synthesis["evidence_ids"])):
         raise AnalysisValidationError(
             "synthesis.evidence_ids must include every market-snapshot citation"
+        )
+    if not top_view_ids.issubset(set(synthesis["evidence_ids"])):
+        raise AnalysisValidationError(
+            "synthesis.evidence_ids must include every top-view citation"
         )
     return synthesis
 
@@ -251,8 +335,34 @@ def _render_markdown(result: dict[str, Any]) -> str:
         "", "> Agent-orchestrated daily analysis — automatic delivery is not enabled.", "",
         f"## {synthesis.get('headline') or 'Executive Summary'}", "",
         synthesis.get("plain_english_summary") or synthesis.get("executive_summary", ""), "",
-        "## Market snapshot", "",
+        "## Top three market views", "",
     ]
+    for view in synthesis.get("top_views", []):
+        relationship = str(view.get("evidence_relationship", "")).replace("_", " ")
+        lines.extend([
+            f"### {view.get('rank')}. {view.get('title', '')}", "",
+            f"- Evidence relationship: {relationship}",
+            f"- Confidence: {view.get('confidence', '')}",
+            f"- Horizon: {view.get('horizon', '')}",
+            f"- View: {view.get('plain_english_view', '')}",
+            "- Key numbers:",
+        ])
+        for metric in view.get("key_metrics", []):
+            lines.append(
+                f"  - {metric.get('label', '')}: {metric.get('value', '')} "
+                f"({metric.get('comparison', '')})"
+            )
+        lines.append("- Supporting evidence:")
+        lines.extend(
+            f"  - {item.get('claim', '')}" for item in view.get("supporting_evidence", [])
+        )
+        lines.append("- Conflicting evidence:")
+        conflicts = view.get("conflicting_evidence", [])
+        lines.extend(f"  - {item.get('claim', '')}" for item in conflicts)
+        if not conflicts:
+            lines.append("  - None identified.")
+        lines.append("")
+    lines.extend(["## Market snapshot", ""])
     for item in synthesis.get("market_snapshot", []):
         comparison = f" ({item['comparison']})" if item.get("comparison") else ""
         lines.append(
