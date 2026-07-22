@@ -93,6 +93,13 @@ specialists are temporary native Codex sub-agents created for the run; their
 validated responses and the controller's `run.json` remain on disk so an
 interrupted run can resume.
 
+Every completed run writes three outputs in the product-isolated analysis
+directory: `analysis.json` (validated structured result), `analysis.md`
+(forward analysis), and `statistics.md` (a descriptive numerical supplement
+with the market snapshot, desk-level measures, comparisons, coverage, and
+retained data limitations). The statistics report adds no model call and does
+not make a separate forecast.
+
 Each specialist response is mechanically required to include profile-defined
 key metrics with an exact value, unit, dated or historical comparison, plain-
 English meaning, and evidence IDs. The final report leads with exactly three
