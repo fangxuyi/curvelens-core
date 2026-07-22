@@ -47,7 +47,7 @@ export CCVM_PRODUCT=wti               # deployment's product; always explicit
 ```
 
 That is the only product-specific setup required. Runtime state automatically
-resolves to `ccvm/data/products/wti/` (or `ccvm/data/products/gold/`).
+resolves to `ccvm/data/products/wti/` (or the selected Gold/Corn namespace).
 `CCVM_DATA_DIR` is an optional advanced override for migration or external
 storage.
 
@@ -102,6 +102,8 @@ reference (all under the top-level `market:` mapping):
 | `knowledge_pack` | `wti` | `knowledge/<pack>/` resolution |
 | `fundamentals_provider` | `eia_weekly_petroleum` | fundamentals registry (§2.3); omit for none |
 | `futures_depth`, `options_expiry_depth` | 12, 5 | collection scope |
+| `listed_futures_months` | `[3, 5, 7, 9, 12]` for Corn | prevents nonexistent contract construction |
+| `futures_price_scale` | `0.01` for Corn | source quote → framework price-unit conversion |
 | `settlement_min`, `settlement_max` | 1, 500 | product-scale silver validation |
 | `options.risk_free_rate` | 0.05 | BAW/Black-76/RND rate assumption |
 | `options.premium_tick_size` | 0.10 for Gold | scales the RND convex-repair diagnostic |
@@ -109,6 +111,7 @@ reference (all under the top-level `market:` mapping):
 | `bulletin.product_header_call/put` | `LO CALL` / `LO PUT` | PDF section detection |
 | `bulletin.url` | CME Section 63 URL | agent preflight/download instructions |
 | `bulletin.strike_scale` | `100` (cents → $) | strike conversion — **verify per product!** |
+| `bulletin.premium_format` | Corn grain eighths | premium quote → framework price-unit conversion |
 | `bulletin.underlying_month_offset` | `1` (AUG label → Sep contract) | label → underlying mapping |
 | `bulletin.underlying_month_map` | Gold serial-month map | non-linear option month → futures mapping; use instead of offset |
 | `bulletin.expiry_basis` | `underlying_month` or `option_month` | selects the calendar rule input |

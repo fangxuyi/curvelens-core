@@ -50,7 +50,7 @@ def test_quality_policy_is_profile_driven_not_product_named():
     assert result["blocked_sections"] == ["curves"]
 
 
-@pytest.mark.parametrize("product_key", ["gold", "wti"])
+@pytest.mark.parametrize("product_key", ["gold", "wti", "corn"])
 def test_profiles_define_three_independent_roles(product_key):
     roles = load_product(product_key).analysis_roles
     assert len(roles) == 3

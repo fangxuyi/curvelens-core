@@ -117,7 +117,7 @@ def main() -> None:
         except Exception as exc:
             logger.error("Failed to normalize options %s: %s", raw_path.name, exc)
 
-    # --- Bronze + Silver + Gold: EIA ---
+    # --- Bronze + Silver + Gold: profile-selected fundamentals ---
     # E4: fundamentals stages come from the product profile registry
     provider = get_provider(get_product().fundamentals_provider)
     frag = provider.source_id_fragment if provider else "\x00none"
@@ -132,10 +132,10 @@ def main() -> None:
         sha256 = entry["sha256"]
         try:
             bronze_table = provider.bronze.parse(raw_path, sha256)
-            logger.info("Bronze EIA: %d rows from %s", len(bronze_table), raw_path.name)
+            logger.info("Bronze fundamentals: %d rows from %s", len(bronze_table), raw_path.name)
             bronze_eia_tables.append(bronze_table)
         except Exception as exc:
-            logger.error("Failed to parse EIA %s: %s", raw_path.name, exc)
+            logger.error("Failed to parse fundamentals %s: %s", raw_path.name, exc)
 
     if bronze_eia_tables:
         import pyarrow as pa
@@ -145,18 +145,12 @@ def main() -> None:
         silver_eia_table = provider.silver.normalize(combined_bronze, as_of)
         pq_store.write("silver", "eia", as_of_str, silver_eia_table)
         pass_n = sum(1 for s in silver_eia_table.column("silver_status").to_pylist() if s == "PASS")
-        logger.info("Silver EIA: %d rows, %d PASS", len(silver_eia_table), pass_n)
+        logger.info("Silver fundamentals: %d rows, %d PASS", len(silver_eia_table), pass_n)
 
         gold_eia_table = provider.features.compute(silver_eia_table, as_of)
         pq_store.write("gold", "fundamentals_features", as_of_str, gold_eia_table)
-        gd = gold_eia_table.to_pydict()
-        logger.info(
-            "Gold EIA: period=%s  crude_draw=%.0f MBBL  supply_signal=%s  scenario_trigger=%s",
-            gd["eia_period"][0],
-            gd["crude_draw"][0] or 0,
-            gd["supply_signal"][0],
-            gd["scenario_trigger"][0],
-        )
+        logger.info("Gold fundamentals: provider=%s rows=%d",
+                    provider.name, len(gold_eia_table))
 
     # --- Silver: optional profile-driven FRED macro history ---
     product = get_product()

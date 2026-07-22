@@ -1,7 +1,7 @@
 # CurveLens Core
 
-CurveLens Core is a shared futures-and-options analysis framework. WTI and Gold
-are product configurations in one repository: they share code and a Python
+CurveLens Core is a shared futures-and-options analysis framework. WTI, Gold,
+and Corn are product configurations in one repository: they share code and a Python
 environment, while market data, workflow state, schedules, and delivery state
 remain isolated by product.
 
@@ -21,7 +21,8 @@ Prerequisites:
 - a Codex/OpenClaw environment that supports repository skills and native
   sub-agents;
 - headed-browser access for protected CME bulletins;
-- `EIA_API_KEY` for WTI fundamentals or `FRED_API_KEY` for Gold macro data.
+- `EIA_API_KEY` for WTI fundamentals, `FRED_API_KEY` for macro data, or
+  `USDA_NASS_API_KEY` for Corn crop observations.
 
 ```bash
 git clone https://github.com/fangxuyi/curvelens-core.git
@@ -44,12 +45,13 @@ one sentence:
 
 - **Operate the CurveLens WTI deployment.**
 - **Operate the CurveLens Gold deployment.**
+- **Operate the CurveLens Corn deployment.**
 
 That sentence is intentionally sufficient. On first activation, `AGENTS.md`
 requires the agent to select the product, read exactly one product runbook,
 verify the environment without printing secrets, run the tests, and use the
 checked-in daily-analysis skill. Use one operating-agent registration per
-product; WTI and Gold agents may share the clone and virtual environment.
+product; all product agents may share the clone and virtual environment.
 
 The operating agent needs:
 
@@ -68,6 +70,7 @@ Give the registered product agent one sentence:
 
 - **Use `$curvelens-daily-analysis` to run WTI for today.**
 - **Use `$curvelens-daily-analysis` to run Gold for today.**
+- **Use `$curvelens-daily-analysis` to run Corn for today.**
 
 `$curvelens-daily-analysis` is a repository skill invocation, not a shell
 variable. For bulletin-backed runs, use the date printed inside the approved
@@ -89,7 +92,8 @@ deterministic collection and calculations
 
 WTI configures futures-curve, volatility-surface, and physical-fundamentals
 desks. Gold configures futures-curve, volatility-surface, and macro desks. The
-specialists are temporary native Codex sub-agents created for the run; their
+Corn profile configures futures-curve, volatility-surface, and crop-fundamentals
+desks. The specialists are temporary native Codex sub-agents created for the run; their
 validated responses and the controller's `run.json` remain on disk so an
 interrupted run can resume.
 
@@ -137,6 +141,7 @@ Every runtime command selects the product explicitly:
 ```text
 CCVM_PRODUCT=wti  -> ccvm/data/products/wti/
 CCVM_PRODUCT=gold -> ccvm/data/products/gold/
+CCVM_PRODUCT=corn -> ccvm/data/products/corn/
 ```
 
 `CCVM_DATA_DIR` is an advanced override for migrations or external storage.
@@ -146,6 +151,7 @@ Never configure two products with the same override.
 |---|---|---|
 | WTI | Futures curve, volatility surface, physical fundamentals | Agent-orchestrated daily analysis supported; automatic delivery separately controlled |
 | Gold | Futures curve, volatility surface, macro | Validation-only; schedules and delivery disabled |
+| Corn | Futures curve, volatility surface, crop fundamentals | Validation-only; schedules and delivery disabled |
 
 ## Documentation
 
@@ -154,4 +160,5 @@ Never configure two products with the same override.
 - [WTI operating runbook](deployments/wti/AGENTS.md)
 - [WTI history migration](deployments/wti/MIGRATION.md)
 - [Gold operating runbook](deployments/gold/AGENTS.md)
+- [Corn operating runbook](deployments/corn/AGENTS.md)
 - [Orchestration design and state machine](docs/ANALYSIS_WORKFLOW.md)

@@ -24,20 +24,27 @@ logger = logging.getLogger(__name__)
 
 def _active_contracts(as_of_date: date, num_months: int | None = None) -> list[tuple[str, str, str]]:
     """
-    Return list of (yf_ticker, contract_code, delivery_month) for the next N calendar months.
-    The front month rolls before the 20th of the prior month, so start 2 months out
-    to avoid including an already-expired contract. Prefix/suffix come from the
-    product profile (E1): WTI → CLQ26.NYM, NG → NGQ26.NYM, ...
+    Return (yf_ticker, contract_code, delivery_month) for the next N listed months.
+    The product calendar excludes expired delivery months. Prefix/suffix and
+    listed months come from the profile: WTI → CLQ26.NYM, Corn → ZCU26.CBT.
     """
     p = get_product()
     depth = num_months if num_months is not None else p.futures_depth
     contracts = []
-    # Start offset: skip current month (likely expired) and next (may be about to expire)
-    offset = 1
-    for i in range(depth):
+    # Start with the current delivery month and let the product calendar remove
+    # expired contracts. This matters for grains near delivery-month boundaries.
+    offset = 0
+    i = 0
+    max_scan = max(depth * 12 + 12, 24)
+    while len(contracts) < depth and i < max_scan:
         total = as_of_date.month + offset + i - 1
         month = total % 12 + 1
         year = as_of_date.year + total // 12
+        i += 1
+        if month not in p.listed_futures_months:
+            continue
+        if p.calendar.futures_last_trade_date(year, month) < as_of_date:
+            continue
         letter = p.month_letters[month]
         year_2d = str(year)[2:]
         code = f"{p.futures_prefix}{letter}{year_2d}"
@@ -122,13 +129,14 @@ class YFinanceFuturesCollector:
                 if volume is not None and not pd.isna(volume):
                     vol_int = int(float(volume))
 
+                settlement = float(close) * p.futures_price_scale
                 records.append({
                     "trade_date": as_of_date.isoformat(),
                     "exchange": p.exchange,
                     "product": p.product_code,
                     "contract_code": contract_code,
                     "delivery_month": delivery_month,
-                    "settlement": round(float(close), 4),
+                    "settlement": round(settlement, 6),
                     "volume": vol_int,
                     "open_interest": None,
                     "currency": p.currency,
@@ -136,7 +144,7 @@ class YFinanceFuturesCollector:
                     "source_id": self.source_id,
                 })
                 logger.info("  %s  delivery=%s  settle=%.2f  vol=%s",
-                            contract_code, delivery_month, float(close), vol_int)
+                            contract_code, delivery_month, settlement, vol_int)
 
             except Exception as exc:
                 logger.warning("Error processing %s: %s", ticker, exc)

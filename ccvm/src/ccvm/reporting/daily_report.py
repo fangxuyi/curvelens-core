@@ -217,6 +217,12 @@ def _term_structure_section(gold_futures, gold_options) -> dict:
         fd = gold_futures.to_pydict()
         settles = fd["settlement"]
         codes = fd["contract_code"]
+        delivery_months = fd.get("delivery_month", [None] * len(codes))
+        out["futures_strip"] = [
+            {"contract": code, "delivery_month": delivery_months[index],
+             "settlement": settles[index]}
+            for index, code in enumerate(codes[:12])
+        ]
         m1 = settles[0] if settles else None
 
         def _spread(n):

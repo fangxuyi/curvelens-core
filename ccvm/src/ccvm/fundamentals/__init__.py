@@ -71,8 +71,29 @@ def _eia_weekly_petroleum() -> FundamentalsProvider:
     )
 
 
+def _usda_nass_corn() -> FundamentalsProvider:
+    from ..analytics import corn_fundamentals
+    from ..collectors.usda_nass import USDANASSCornCollector
+    from ..normalizers import silver_usda_nass
+    from ..parsers import bronze_usda_nass
+    return FundamentalsProvider(
+        name="usda_nass_corn",
+        display_name="USDA Corn Crop Fundamentals",
+        collector_cls=USDANASSCornCollector,
+        bronze=bronze_usda_nass,
+        silver=silver_usda_nass,
+        features=corn_fundamentals,
+        source_id_fragment="usda_nass_corn",
+        cadence_note=(
+            "weekly Crop Progress during the growing season plus monthly/quarterly NASS estimates"
+        ),
+        report_section_builder=corn_fundamentals.report_section,
+    )
+
+
 _REGISTRY = {
     "eia_weekly_petroleum": _eia_weekly_petroleum,
+    "usda_nass_corn": _usda_nass_corn,
     # "eia_ng_storage": ...   ← Henry Hub port adds its provider here
 }
 

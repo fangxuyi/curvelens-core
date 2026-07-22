@@ -114,8 +114,8 @@ def main() -> None:
         print("[fundamentals]      skipped — product has no fundamentals_provider")
     elif args.source in ("fundamentals", "eia", "market", "all"):
         result = collector.collect(as_of)
-        results["eia"] = result
-        print(f"[eia]               {result}")
+        results["fundamentals"] = result
+        print(f"[fundamentals]      {result}")
 
     if args.source in ("macro", "fred_macro", "market", "all"):
         macro = get_product().macro

@@ -1,0 +1,180 @@
+market:
+  name: CBOT Corn
+  display_name: Corn
+  exchange: CBOT
+  product_code: ZC
+  currency: USD
+  price_unit: USD/BU
+  contract_multiplier: 5000
+  tick_size: 0.0025
+
+  month_codes:
+    F: 1
+    G: 2
+    H: 3
+    J: 4
+    K: 5
+    M: 6
+    N: 7
+    Q: 8
+    U: 9
+    V: 10
+    X: 11
+    Z: 12
+  listed_futures_months: [3, 5, 7, 9, 12]
+  futures_price_scale: 0.01  # Yahoo quotes cents/bushel; framework stores USD/bushel.
+
+  options:
+    exercise_style: American
+    settlement_style: Futures
+    risk_free_rate: 0.05
+    rnd_quality_gate: true
+    premium_tick_size: 0.00125  # one eighth cent/bushel
+    rnd_max_projection_ticks: 2.0
+    expiry_rule: last_friday_at_least_two_business_days_before_prior_month_end
+
+  futures_depth: 12
+  options_expiry_depth: 5
+  warn_strikes_below: 5
+  fail_strikes_below: 2
+  settlement_min: 1.0
+  settlement_max: 20.0
+
+  futures_prefix: ZC
+  options_prefix: OZC
+  yfinance_contract_suffix: .CBT
+  calendar_module: ccvm.reference.corn_calendar
+  knowledge_pack: corn
+  fundamentals_provider: usda_nass_corn
+
+  bulletin:
+    product_header_call: "CORN CALL"
+    product_header_put: "CORN PUT"
+    url: https://www.cmegroup.com/daily_bulletin/current/Section56_Corn_Oat_RoughRice_Options.pdf
+    strike_scale: 100
+    premium_format: grain_eighth_cents_to_dollars
+    expiry_basis: option_month
+    underlying_month_map:
+      1: 3
+      2: 3
+      3: 3
+      4: 5
+      5: 5
+      6: 7
+      7: 7
+      8: 9
+      9: 9
+      10: 12
+      11: 12
+      12: 12
+
+  cot:
+    contract_market_code: "002602"
+    contract_label: "CORN - CHICAGO BOARD OF TRADE"
+
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 400
+    series:
+      broad_usd:
+        series_id: DTWEXBGS
+        label: Nominal broad U.S. dollar index
+        units: index
+        role: export_competitiveness
+        flat_price_sign: -1
+      crude_oil:
+        series_id: DCOILWTICO
+        label: WTI spot crude oil price
+        units: USD/BBL
+        role: ethanol_and_input_cost_context
+        flat_price_sign: 0
+      treasury_3m:
+        series_id: DGS3MO
+        label: U.S. 3-month Treasury yield
+        units: percent
+        role: financing_carry
+        flat_price_sign: 0
+
+  news:
+    keywords:
+      - corn
+      - maize
+      - grain
+      - crop condition
+      - crop progress
+      - planting
+      - harvest
+      - yield
+      - acreage
+      - grain stocks
+      - wasde
+      - usda
+      - export sales
+      - ethanol
+      - drought
+      - precipitation
+      - heat
+      - china
+      - mexico
+      - brazil
+      - argentina
+      - black sea
+    sources:
+      - key: usda_nass_news
+        url: https://www.nass.usda.gov/rss/news.xml
+        name: USDA NASS News and Events
+
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options]
+    max_quality_attempts: 2
+    roles:
+      - key: futures_curve
+        display_name: Futures Curve Analyst
+        mandate: Explain old-crop and new-crop flat price, calendar spreads, carry, positioning, and forward implications.
+        section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
+        news_keywords: [corn, grain, acreage, stocks, export, ethanol, brazil, argentina, china]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the front settlement and one-day dollar-per-bushel and percentage change.
+          - Report nearby spreads plus the July-December or September-December old-crop/new-crop spread when listed.
+          - Report annualized roll yield and distinguish storage carry from evidence of scarcity.
+          - Report managed-money positioning and historical percentile when available.
+        required_checks:
+          - Distinguish settlement evidence from executable cash or basis prices.
+          - Check whether flat price, nearby carry, and old-crop/new-crop spreads agree or diverge.
+      - key: vol_surface
+        display_name: Volatility Surface Analyst
+        mandate: Explain implied volatility, skew, term structure, and event premium around USDA and weather risk.
+        section_keys: [market_risk, rnd, term_structure, next_review]
+        news_keywords: [corn, options, volatility, wasde, acreage, grain stocks, crop, drought, heat, rain]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report front ATM implied volatility and its dated change when available.
+          - Report 25-delta risk reversal and explain which tail is more expensive.
+          - Report 25-delta butterfly and explain wing richness.
+          - Report front-to-second-expiry ATM volatility spread and relate it to scheduled USDA or weather risk.
+          - Treat projected RND output as diagnostic and retain all raw validity limitations.
+        required_checks:
+          - Treat failed RND diagnostics as a limitation, never as probabilities.
+          - Separate seasonal weather premium and scheduled-report premium from a directional forecast.
+      - key: fundamentals
+        display_name: Crop Fundamentals Analyst
+        mandate: Explain crop condition, development progress, yield and production estimates, exports, ethanol demand, weather, and policy risks.
+        section_keys: [fundamentals, macro, cot, what_changed, catalysts, next_review]
+        news_keywords: [corn, crop condition, crop progress, planting, harvest, yield, acreage, stocks, wasde, export, ethanol, drought, precipitation, heat]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report latest good-plus-excellent condition and weekly change when available.
+          - Report the active planting, development, or harvest stage and compare it with history when available.
+          - Report latest USDA yield and production estimates with report dates; do not treat them as daily observations.
+          - Name the most relevant verified USDA, weather, export, or ethanol news and compare it with futures and options.
+        required_checks:
+          - Separate dated USDA observations from forecasts, analyst inference, and missing feeds.
+          - State whether crop fundamentals support or conflict with the futures curve and option surface.
+
+  caveats:
+    - "Corn futures and option settlements are normalized from cents and eighth-cents into USD per bushel"
+    - "USDA NASS crop-condition changes are descriptive supply evidence, not a standalone yield forecast"
+    - "Cash basis, barge/freight, export sales, ethanol margins, and gridded weather require additional feeds before production status"
