@@ -1,0 +1,8 @@
+# CurveLens Corn cron template — intentionally non-executable.
+#
+# Corn is experimental. Do not register or enable schedules from this file.
+# A future schedule must start an isolated agent turn, read AGENTS.md plus
+# deployments/corn/AGENTS.md, set CCVM_PRODUCT=corn, acquire and verify the
+# exact Section 56 bulletin, and invoke `$curvelens-daily-analysis` for its
+# internal trade date. It must resume persisted state and perform no delivery
+# by default. A bare Python cron is unsupported.

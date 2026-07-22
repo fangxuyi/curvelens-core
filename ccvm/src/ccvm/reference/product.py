@@ -40,6 +40,7 @@ class BulletinSpec:
     underlying_month_offset: int = 0
     underlying_month_map: tuple[tuple[int, int], ...] = ()
     expiry_basis: str = "underlying_month"
+    premium_format: str = "decimal"
 
     def underlying_month(self, option_year: int, option_month: int) -> tuple[int, int]:
         """Map a bulletin option month to its underlying futures month."""
@@ -125,6 +126,8 @@ class Product:
     fundamentals_provider: Optional[str]
     futures_depth: int
     options_expiry_depth: int
+    listed_futures_months: tuple[int, ...] = tuple(range(1, 13))
+    futures_price_scale: float = 1.0
     fail_strikes_below: int = 2
     pass_strikes_at: int = 5
     settlement_min: float = 0.0
@@ -237,6 +240,18 @@ def load_product(key: str) -> Product:
         )
     macro = m.get("macro", {}) or {}
     analysis = m.get("analysis", {}) or {}
+    listed_futures_months = tuple(
+        int(value) for value in m.get("listed_futures_months", range(1, 13))
+    )
+    if (not listed_futures_months
+            or len(set(listed_futures_months)) != len(listed_futures_months)
+            or any(month < 1 or month > 12 for month in listed_futures_months)):
+        raise ValueError(
+            f"Product profile {key!r} listed_futures_months must be unique months 1..12"
+        )
+    futures_price_scale = float(m.get("futures_price_scale", 1.0))
+    if futures_price_scale <= 0:
+        raise ValueError(f"Product profile {key!r} futures_price_scale must be positive")
     analysis_roles = tuple(
         AnalysisRoleSpec(
             key=str(role["key"]),
@@ -294,6 +309,7 @@ def load_product(key: str) -> Product:
                 sorted((int(k), int(v)) for k, v in month_map.items())
             ),
             expiry_basis=expiry_basis,
+            premium_format=str(b.get("premium_format", "decimal")),
         )
     return Product(
         key=key,
@@ -314,6 +330,8 @@ def load_product(key: str) -> Product:
         fundamentals_provider=m.get("fundamentals_provider"),
         futures_depth=int(m.get("futures_depth", 12)),
         options_expiry_depth=int(m.get("options_expiry_depth", 5)),
+        listed_futures_months=listed_futures_months,
+        futures_price_scale=futures_price_scale,
         fail_strikes_below=int(m.get("fail_strikes_below", 2)),
         pass_strikes_at=int(m.get("warn_strikes_below",
                                   m.get("min_strikes_per_expiry", 5))),

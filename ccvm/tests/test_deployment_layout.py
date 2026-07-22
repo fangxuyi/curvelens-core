@@ -26,6 +26,7 @@ def test_readme_exposes_one_sentence_product_deployment():
     for sentence in (
         "Operate the CurveLens WTI deployment.",
         "Operate the CurveLens Gold deployment.",
+        "Operate the CurveLens Corn deployment.",
     ):
         assert sentence in readme
         assert sentence in deployments
@@ -34,7 +35,7 @@ def test_readme_exposes_one_sentence_product_deployment():
 
 
 def test_each_product_has_a_minimal_deployment_instruction_set():
-    for product in ("wti", "gold"):
+    for product in ("wti", "gold", "corn"):
         base = ROOT / "deployments" / product
         for filename in ("AGENTS.md", "cron.example"):
             assert (base / filename).exists(), f"missing deployments/{product}/{filename}"
@@ -65,6 +66,18 @@ def test_gold_runbook_is_experimental_and_cannot_schedule_itself():
     assert "Section 64" in runbook
     assert "experimental — validation only" in runbook
     assert "Never run `agent/event_run.py --event eia`" in runbook
+    assert "openclaw cron add" not in cron
+    assert "Do not register or enable schedules" in cron
+
+
+def test_corn_runbook_is_experimental_and_product_scoped():
+    runbook = _read("deployments/corn/AGENTS.md")
+    cron = _read("deployments/corn/cron.example")
+    assert "export CCVM_PRODUCT=corn" in runbook
+    assert "ccvm/data/products/corn" in runbook
+    assert "Section 56" in runbook
+    assert "experimental — validation only" in runbook
+    assert "USDA_NASS_API_KEY" in runbook
     assert "openclaw cron add" not in cron
     assert "Do not register or enable schedules" in cron
 

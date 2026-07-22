@@ -1,7 +1,7 @@
 # AGENTS.md — CurveLens Core Framework
 
 This repository is the shared CurveLens framework. It contains reusable market
-analytics plus product implementations such as WTI and Gold. It is not itself
+analytics plus product implementations such as WTI, Gold, and Corn. It is not itself
 a single-product operational deployment.
 
 ## Instruction precedence
@@ -11,6 +11,7 @@ exactly one deployment runbook:
 
 - `deployments/wti/AGENTS.md`
 - `deployments/gold/AGENTS.md`
+- `deployments/corn/AGENTS.md`
 
 The deployment runbook is authoritative for product-specific collection,
 schedules, QC, and delivery. `CCVM_PRODUCT` selects which runbook applies. If a
@@ -30,12 +31,12 @@ On first activation in a fresh clone:
    live delivery, destination, or production-status change.
 5. Use `$curvelens-daily-analysis` for every daily analysis. The
    checked-in skill and product profile define the roles; do not reconstruct or
-   hardcode Gold/WTI prompts from memory, and do not bypass it with a script-only
+   hardcode product prompts from memory, and do not bypass it with a script-only
    daily workflow.
 
-The supported registration sentences remain “Operate the CurveLens WTI
-deployment.” and “Operate the CurveLens Gold deployment.” A single runtime
-agent operates one product; separate product agents may share the checkout.
+The supported registration sentence is “Operate the CurveLens `<product>`
+deployment.” for WTI, Gold, or Corn. A single runtime agent operates one
+product; separate product agents may share the checkout.
 
 ## Runtime isolation
 
@@ -46,7 +47,7 @@ CCVM_PRODUCT=<product>
 ```
 
 Runtime state is automatically isolated under `ccvm/data/products/<product>/`;
-WTI and Gold therefore coexist safely in one clone. `CCVM_DATA_DIR` is an
+WTI, Gold, and Corn therefore coexist safely in one clone. `CCVM_DATA_DIR` is an
 optional advanced override for migrations or external storage. Never configure
 two products with the same override. Delivery destinations, agent
 registrations, and cron jobs remain product-specific; code and virtual
@@ -60,7 +61,7 @@ environment are shared.
   calendar module, `knowledge/<product>/`, or `deployments/<product>/`.
 - A product-specific requirement that generalizes cleanly should improve the
   shared interface and retain regression coverage for existing products.
-- Keep WTI and Gold tests green for framework changes.
+- Keep WTI, Gold, and Corn tests green for framework changes.
 - Settlement analytics describe settled markets; they do not establish
   executability or confirmed mispricing.
 

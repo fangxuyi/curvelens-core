@@ -49,7 +49,7 @@ _EXPIRY_RE = re.compile(r'^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\d{2
 # (for example GWW WED).  Recognize all of them as boundaries so parser state
 # from an OG section can never bleed into another product.
 _PRODUCT_HEADER_RE = re.compile(
-    r'^(?:[A-Z][A-Z0-9-]{1,9}\s+(?:CALL|PUT)\s+\S'
+    r'^(?:[A-Z][A-Z0-9-]{1,9}\s+(?:CALL|PUT)(?:\s+\S|$)'
     r'|[A-Z][A-Z0-9-]{1,9}\s+(?:MON|TUE|WED|THU|FRI)\b.*\bOPTIONS?\b)',
     re.IGNORECASE,
 )
@@ -192,6 +192,20 @@ def _parse_data_row(tokens: list[str]) -> Optional[dict]:
     }
 
 
+def _premium_value(raw: float, premium_format: str) -> float:
+    """Convert a bulletin premium into the same price unit as the underlying."""
+    if premium_format == "decimal":
+        return raw
+    if premium_format == "grain_eighth_cents_to_dollars":
+        encoded = int(round(raw))
+        eighth = encoded % 10
+        if eighth > 7:
+            raise ValueError(f"invalid grain eighth digit: {eighth}")
+        cents = encoded // 10 + eighth / 8.0
+        return cents / 100.0
+    raise ValueError(f"unsupported bulletin premium_format: {premium_format!r}")
+
+
 def parse(pdf_path: Path, trade_date: date) -> list[dict]:
     """
     Parse configured option settlements from a CME daily bulletin PDF.
@@ -219,8 +233,8 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             p = product
             hdr_call = re.escape(p.bulletin.product_header_call).replace(r"\ ", r"\s+")
             hdr_put = re.escape(p.bulletin.product_header_put).replace(r"\ ", r"\s+")
-            lo_call = bool(re.match(rf"^{hdr_call}\s+\S", stripped, re.IGNORECASE))
-            lo_put = bool(re.match(rf"^{hdr_put}\s+\S", stripped, re.IGNORECASE))
+            lo_call = bool(re.match(rf"^{hdr_call}(?:\s+\S|$)", stripped, re.IGNORECASE))
+            lo_put = bool(re.match(rf"^{hdr_put}(?:\s+\S|$)", stripped, re.IGNORECASE))
             if lo_call:
                 in_lo_call, in_lo_put = True, False
             elif lo_put:
@@ -238,9 +252,17 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             continue
 
         # ── Expiry month header (e.g., "AUG26") ──
-        if len(tokens) == 1 and _EXPIRY_RE.match(tokens[0]):
-            current_expiry_code = tokens[0].upper()
-            continue
+        if _EXPIRY_RE.match(tokens[0]):
+            tail = " ".join(tokens[1:]).upper()
+            call_header = product.bulletin.product_header_call.upper()
+            put_header = product.bulletin.product_header_put.upper()
+            if not tail or call_header in tail or put_header in tail:
+                current_expiry_code = tokens[0].upper()
+                if call_header in tail:
+                    in_lo_call, in_lo_put = True, False
+                elif put_header in tail:
+                    in_lo_call, in_lo_put = False, True
+                continue
 
         if current_expiry_code is None:
             continue
@@ -286,7 +308,9 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             "underlying_delivery_month": underlying_delivery_month,
             "strike": strike,
             "call_put": call_put,
-            "settlement": row['settlement'],
+            "settlement": _premium_value(
+                row['settlement'], product.bulletin.premium_format,
+            ),
             "bid": None,
             "ask": None,
             "volume": total_volume,
