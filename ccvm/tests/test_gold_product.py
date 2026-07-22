@@ -33,7 +33,7 @@ class TestGoldProfile:
         assert product.fundamentals_provider is None
         assert product.macro.provider == "fred"
         assert {s.series_id for s in product.macro.series} == {
-            "DFII10", "DTWEXBGS", "T10YIE", "DGS3MO", "DGS10",
+            "DFII10", "DTWEXBGS", "T10YIE", "DGS3MO", "DGS10", "GVZCLS",
         }
         assert product.benchmark is None
         assert product.cot_contract_market_code == "088691"

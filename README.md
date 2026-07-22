@@ -93,6 +93,15 @@ specialists are temporary native Codex sub-agents created for the run; their
 validated responses and the controller's `run.json` remain on disk so an
 interrupted run can resume.
 
+Each specialist response is mechanically required to include profile-defined
+key metrics with an exact value, unit, dated or historical comparison, plain-
+English meaning, and evidence IDs. The final report begins with a six-to-ten
+item numerical market snapshot, followed by a plain-English summary and the
+futures, options, and macro/fundamentals desk detail. Product profiles decide
+which measures are mandatory. Young local history is disclosed once; it does
+not excuse omitting current market numbers, and a proxy benchmark must always
+be labeled as a proxy.
+
 `agent/analysis_orchestrator.py` is the only supported daily-analysis
 controller. The former script-only `agent/run_pipeline.py` entry point has been
 removed. The controller still invokes deterministic scripts internally to

@@ -7,10 +7,13 @@ data/agent_outbox/pending.json. The standalone CurveLens agent reads the queue
 (--list-pending), delivers each message via its own Telegram integration, and
 acknowledges what it sent (--ack) so nothing is delivered twice.
 
-Two message types are produced from one report:
+Legacy report message types:
     DAILY_BRIEF     always — a compact digest of the day's forward-risk brief
     PRIORITY_ALERT  only when the day is alert-worthy (confirmed directional
                     agreement, or an EIA bull/bear-confirmed scenario)
+
+Agent-orchestrated product deployments produce one report-derived message:
+    DAILY_SYNTHESIS a plain-English synthesis that preserves specialist numbers
 
 Message ids are deterministic ("<date>:<type>"), so a given date can queue each
 type at most once — re-running --prepare is idempotent and will not re-queue a
@@ -20,13 +23,14 @@ Usage:
     python agent/notify.py --is-new 2026-07-02        # freshness gate (before saving PDF)
     python agent/notify.py --prepare --date 2026-07-02
     python agent/notify.py --list-pending
-    python agent/notify.py --ack 2026-07-02:DAILY_BRIEF
+    python agent/notify.py --ack 2026-07-02:DAILY_SYNTHESIS
     python agent/notify.py --ack-all
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -129,6 +133,74 @@ def _short(text, limit=96):
         return ""
     text = " ".join(str(text).split())
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
+
+
+def _clean_analysis_text(text: str) -> str:
+    text = re.sub(r"\s*\[(?:feature|knowledge|news):[^\]]+\]", "", str(text or ""))
+    text = text.replace("**", "").replace("__", "")
+    return " ".join(text.split()).strip()
+
+
+def _metric_line(item: dict) -> str:
+    label = _clean_analysis_text(item.get("label", "Metric"))
+    value = _clean_analysis_text(item.get("value", ""))
+    comparison = _clean_analysis_text(item.get("comparison", ""))
+    meaning = _clean_analysis_text(item.get("plain_english_meaning", ""))
+    context = f" vs {comparison}" if comparison else ""
+    explanation = f" — {meaning}" if meaning else ""
+    return _short(f"- {label}: {value}{context}{explanation}", 230)
+
+
+def _analysis_synthesis_text(date_str: str) -> str:
+    path = DATA_DIR / "analysis" / f"trade_date={date_str}" / "analysis.json"
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found after completed analysis")
+    analysis = json.loads(path.read_text())
+    synthesis = analysis.get("synthesis", {})
+    specialists = analysis.get("specialist_analyses", {})
+    product = str(analysis.get("product") or _product().display_name).upper()
+    summary = synthesis.get("plain_english_summary") or synthesis.get("executive_summary", "")
+    out = [f"*{product} Daily Analysis — {date_str}*"]
+    headline = _clean_analysis_text(synthesis.get("headline", ""))
+    if headline:
+        out.extend(["", f"*{headline}*"])
+    if summary:
+        out.extend(["", "*Bottom line*", _short(_clean_analysis_text(summary), 650)])
+
+    role_titles = {
+        "futures_curve": "Futures and curve",
+        "vol_surface": "Options and volatility",
+        "macro": "Macro and news",
+        "fundamentals": "Physical fundamentals and news",
+    }
+    for role, response in specialists.items():
+        metrics = response.get("key_metrics") or []
+        news = response.get("news_findings") or []
+        if not metrics and not news:
+            continue
+        out.extend(["", f"*{role_titles.get(role, role.replace('_', ' ').title())}*"])
+        out.extend(_metric_line(item) for item in metrics[:5])
+        if news:
+            claim = news[0].get("claim", "") if isinstance(news[0], dict) else news[0]
+            out.append(_short(f"- News: {_clean_analysis_text(claim)}", 280))
+
+    confirmations = synthesis.get("confirmations") or []
+    invalidations = synthesis.get("invalidations") or []
+    if confirmations or invalidations:
+        out.extend(["", "*What to watch next*"])
+        out.extend(f"- Confirms: {_short(_clean_analysis_text(item), 210)}" for item in confirmations[:2])
+        out.extend(f"- Changes the view: {_short(_clean_analysis_text(item), 210)}" for item in invalidations[:2])
+
+    limitations = synthesis.get("data_limitations") or []
+    if limitations:
+        out.extend(["", "*Data notes*"])
+        out.extend(f"- {_short(_clean_analysis_text(item), 220)}" for item in limitations[:2])
+    message = "\n".join(out)
+    return message if len(message) <= 3900 else message[:3899].rstrip() + "…"
+
+
+def _daily_message_type() -> str:
+    return "DAILY_SYNTHESIS" if _product().analysis_roles else "DAILY_BRIEF"
 
 
 def _ordinal(n) -> str:
@@ -523,23 +595,25 @@ def cmd_prepare(date_str: str) -> None:
     report = json.loads(report_json.read_text())
     sections = report.get("sections", {})
 
-    agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={date_str}" / "agreement.json"
-    agreement = json.loads(agr_path.read_text()) if agr_path.exists() else {}
-
-    eia = sections.get("fundamentals", sections.get("eia_fundamentals", {})) or {}
-    eia_scenario = eia.get("scenario_trigger", "none")
-    state = agreement.get("state", "insufficient_data")
-    alert_worthy = (state in _ALERT_STATES) or (eia_scenario in _ALERT_SCENARIOS)
-
     pending = _load(PENDING_PATH)
     delivered_ids = {d["id"] for d in _load(DELIVERED_PATH)}
     pending_ids = {p["id"] for p in pending}
 
-    to_queue = [("DAILY_BRIEF", _daily_brief_text(date_str, sections, agreement))]
-    if alert_worthy:
-        to_queue.append(
-            ("PRIORITY_ALERT", _priority_alert_text(date_str, sections, agreement, eia_scenario))
-        )
+    alert_worthy = False
+    if _daily_message_type() == "DAILY_SYNTHESIS":
+        to_queue = [("DAILY_SYNTHESIS", _analysis_synthesis_text(date_str))]
+    else:
+        agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={date_str}" / "agreement.json"
+        agreement = json.loads(agr_path.read_text()) if agr_path.exists() else {}
+        eia = sections.get("fundamentals", sections.get("eia_fundamentals", {})) or {}
+        eia_scenario = eia.get("scenario_trigger", "none")
+        state = agreement.get("state", "insufficient_data")
+        alert_worthy = (state in _ALERT_STATES) or (eia_scenario in _ALERT_SCENARIOS)
+        to_queue = [("DAILY_BRIEF", _daily_brief_text(date_str, sections, agreement))]
+        if alert_worthy:
+            to_queue.append(
+                ("PRIORITY_ALERT", _priority_alert_text(date_str, sections, agreement, eia_scenario))
+            )
 
     queued, skipped = [], []
     for msg_type, text in to_queue:
@@ -574,8 +648,8 @@ def cmd_list_pending() -> None:
         "count": len(pending),
         "instructions": (
             "Deliver each item's `text` verbatim via your Telegram integration "
-            "(Markdown parse mode). Send PRIORITY_ALERT items immediately; a "
-            "DAILY_BRIEF is the routine digest. After each successful send, ack "
+            "(Markdown parse mode). Send PRIORITY_ALERT items before routine "
+            "items. Agent-orchestrated runs normally have one DAILY_SYNTHESIS. After each successful send, ack "
             "its id with: python agent/notify.py --ack <id>"
         ),
         "items": pending,
@@ -585,8 +659,8 @@ def cmd_list_pending() -> None:
 def cmd_is_new(date_str: str) -> None:
     """Report whether a bulletin date still needs processing.
 
-    A date is "new" (needs analysis + delivery) when its DAILY_BRIEF has not
-    yet been delivered. Used as the up-front freshness gate: the agent downloads
+    A date is "new" when its product-specific daily message has not yet been
+    delivered. Used as the up-front freshness gate: the agent downloads
     the CME "current" bulletin, reads its internal date, and calls this before
     saving/recomputing — if not new, it discards the download and stays silent.
 
@@ -594,12 +668,14 @@ def cmd_is_new(date_str: str) -> None:
     queueing but before delivering still counts as new and can recover.
     """
     delivered_ids = {d["id"] for d in _load(DELIVERED_PATH)}
-    already_delivered = f"{date_str}:DAILY_BRIEF" in delivered_ids
+    delivered_id = f"{date_str}:{_daily_message_type()}"
+    already_delivered = delivered_id in delivered_ids
     _emit({
         "result": "DATE_STATUS",
         "date": date_str,
         "is_new": not already_delivered,
         "already_delivered": already_delivered,
+        "delivery_id": delivered_id,
     })
 
 

@@ -101,6 +101,8 @@ class AnalysisRoleSpec:
     section_keys: tuple[str, ...]
     news_keywords: tuple[str, ...]
     required_checks: tuple[str, ...]
+    report_requirements: tuple[str, ...] = ()
+    minimum_key_metrics: int = 1
 
 
 @dataclass(frozen=True)
@@ -233,6 +235,8 @@ def load_product(key: str) -> Product:
             section_keys=tuple(str(v) for v in role.get("section_keys", [])),
             news_keywords=tuple(str(v).lower() for v in role.get("news_keywords", [])),
             required_checks=tuple(str(v) for v in role.get("required_checks", [])),
+            report_requirements=tuple(str(v) for v in role.get("report_requirements", [])),
+            minimum_key_metrics=int(role.get("minimum_key_metrics", 1)),
         )
         for role in analysis.get("roles", [])
     )
@@ -248,6 +252,11 @@ def load_product(key: str) -> Product:
             raise ValueError(
                 f"Product profile {key!r} analysis role {role.key!r} requires "
                 "mandate, section_keys, and required_checks"
+            )
+        if role.minimum_key_metrics < 1:
+            raise ValueError(
+                f"Product profile {key!r} analysis role {role.key!r} requires "
+                "minimum_key_metrics >= 1"
             )
     bulletin = None
     if b:

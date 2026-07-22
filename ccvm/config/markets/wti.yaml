@@ -125,6 +125,12 @@ market:
         mandate: Explain flat price, curve shape, carry, positioning, and the forward implications.
         section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
         news_keywords: [crude, oil, wti, brent, opec, tanker, pipeline, sanctions]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the front settlement and one-day dollar and percentage change.
+          - Report at least two front-to-deferred curve spreads and annualized roll yield.
+          - Compare with measured history and applicable WTI knowledge-pack reference bands.
+          - Report managed-money positioning and its historical percentile when available.
         required_checks:
           - Distinguish settled-market evidence from executable prices.
           - Check whether flat-price and curve signals agree or diverge.
@@ -133,6 +139,13 @@ market:
         mandate: Explain implied volatility, skew, term structure, and risk-neutral-density diagnostics.
         section_keys: [market_risk, rnd, term_structure]
         news_keywords: [crude, oil, volatility, options, opec, geopolitical, hurricane]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report front ATM implied volatility and its dated change when available.
+          - Report 25-delta risk reversal and explain that negative means puts are more expensive than calls.
+          - Report 25-delta butterfly and explain that it measures wing richness.
+          - Report the front-to-second-expiry ATM volatility spread.
+          - Compare current measures with measured history and WTI knowledge-pack reference bands.
         required_checks:
           - Treat failed RND diagnostics as a limitation, never as probabilities.
           - Compare the surface move with realized price and event risk.
@@ -141,6 +154,12 @@ market:
         mandate: Explain inventories, balances, refining, supply, demand, and physical-market risks.
         section_keys: [fundamentals, eia_seasonal, agreement, scenarios]
         news_keywords: [inventory, stockpile, cushing, refinery, gasoline, production, demand, supply, opec, spr]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the latest crude inventory change, Cushing stocks, and refinery utilization with release dates.
+          - Compare inventory and refinery figures with seasonal and WTI knowledge-pack reference bands.
+          - Name the most relevant verified supply or demand news, its date, and why it matters.
+          - Compare physical evidence with the futures curve and price response.
         required_checks:
           - Compare reported balances with the futures curve and price response.
           - Identify stale or missing releases before drawing a conclusion.

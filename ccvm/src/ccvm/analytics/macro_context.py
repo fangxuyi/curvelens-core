@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import statistics
 from datetime import date
 from pathlib import Path
 
 import pyarrow as pa
 
 from ..reference.product import MacroSeriesSpec, get_product
+from .history_context import percentile_of
 
 _SCHEMA = pa.schema([
     pa.field("as_of_date", pa.string()),
@@ -85,6 +87,7 @@ def compute(silver_macro: pa.Table, gold_futures: pa.Table,
         change = latest[1] - prior[1] if prior else None
         change_pct = ((latest[1] / prior[1]) - 1) if prior and prior[1] else None
         sign = int(meta[key]["flat_price_sign"])
+        history_values = [value for _, value in rows]
         # Yield series are interpreted in basis points; indices in percent.
         impulse = change * 100 if meta[key]["units"] == "percent" else (
             change_pct * 100 if change_pct is not None else None)
@@ -98,6 +101,11 @@ def compute(silver_macro: pa.Table, gold_futures: pa.Table,
             "change": change, "change_pct": change_pct,
             "change_display_unit": "bp" if meta[key]["units"] == "percent" else "percent",
             "signed_flat_price_impulse": sign * impulse if impulse is not None else None,
+            "history_observations": len(history_values),
+            "history_percentile": percentile_of(history_values, latest[1]),
+            "history_median": statistics.median(history_values),
+            "history_low": min(history_values),
+            "history_high": max(history_values),
             "source_url": f"https://fred.stlouisfed.org/series/{meta[key]['series_id']}",
         }
 

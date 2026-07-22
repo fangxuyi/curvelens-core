@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,24 @@ def _check_findings(response: dict[str, Any], allowed: set[str], role: str) -> N
                     f"{role}.{field}[{index}] must contain a claim"
                 )
             _check_ids(finding.get("evidence_ids"), allowed, f"{role}.{field}[{index}]")
+
+
+def _check_key_metrics(
+    metrics: Any, allowed: set[str], label: str, minimum: int,
+) -> list[dict[str, Any]]:
+    if not isinstance(metrics, list) or len(metrics) < minimum:
+        raise AnalysisValidationError(f"{label} requires at least {minimum} key_metrics")
+    for index, metric in enumerate(metrics):
+        item_label = f"{label}.key_metrics[{index}]"
+        if not isinstance(metric, dict):
+            raise AnalysisValidationError(f"{item_label} must be an object")
+        for field in ("label", "value", "comparison", "plain_english_meaning"):
+            if not str(metric.get(field, "")).strip():
+                raise AnalysisValidationError(f"{item_label}.{field} is required")
+        if not re.search(r"\d", str(metric["value"])):
+            raise AnalysisValidationError(f"{item_label}.value must contain a number")
+        _check_ids(metric.get("evidence_ids"), allowed, item_label)
+    return metrics
 
 
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
@@ -88,6 +107,10 @@ def validate_role_response(
       | {item["evidence_id"] for item in packet.get("knowledge_sources", [])}
     _check_ids(response.get("evidence_ids"), allowed, role)
     _check_findings(response, allowed, role)
+    metrics = _check_key_metrics(
+        response.get("key_metrics"), allowed, role,
+        0 if response["status"] == "blocked" else int(packet.get("minimum_key_metrics", 1)),
+    )
     expected_checks = list(packet.get("required_checks", []))
     results = response.get("required_check_results")
     if not isinstance(results, list) or not all(isinstance(item, dict) for item in results) \
@@ -104,6 +127,8 @@ def validate_role_response(
         for evidence_id in finding["evidence_ids"]
     } | {
         evidence_id for item in results for evidence_id in item["evidence_ids"]
+    } | {
+        evidence_id for item in metrics for evidence_id in item["evidence_ids"]
     }
     if not cited_in_findings.issubset(set(response["evidence_ids"])):
         raise AnalysisValidationError(
@@ -149,6 +174,13 @@ def validate_synthesis_response(
         synthesis.get("executive_summary", "")
     ).strip():
         raise AnalysisValidationError("synthesis requires a headline and executive summary")
+    plain_summary = str(synthesis.get("plain_english_summary", "")).strip()
+    if not plain_summary:
+        raise AnalysisValidationError("synthesis requires a plain_english_summary")
+    if re.search(r"\[(?:feature|knowledge|news):", plain_summary):
+        raise AnalysisValidationError(
+            "synthesis plain_english_summary must not embed evidence IDs"
+        )
     view = synthesis.get("overall_forward_view")
     if not isinstance(view, dict):
         raise AnalysisValidationError("synthesis overall_forward_view must be an object")
@@ -168,9 +200,20 @@ def validate_synthesis_response(
             and not synthesis["data_limitations"]:
         raise AnalysisValidationError("synthesis must preserve specialist limitations")
     allowed = set().union(*(set(item.get("evidence_ids", [])) for item in responses.values()))
+    snapshot = _check_key_metrics(
+        synthesis.get("market_snapshot"), allowed, "synthesis",
+        0 if synthesis["status"] == "blocked" else 6,
+    )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
     if synthesis["status"] != "blocked" and not synthesis["evidence_ids"]:
         raise AnalysisValidationError("synthesis requires cited evidence")
+    snapshot_ids = {
+        evidence_id for item in snapshot for evidence_id in item["evidence_ids"]
+    }
+    if not snapshot_ids.issubset(set(synthesis["evidence_ids"])):
+        raise AnalysisValidationError(
+            "synthesis.evidence_ids must include every market-snapshot citation"
+        )
     return synthesis
 
 
@@ -207,8 +250,16 @@ def _render_markdown(result: dict[str, Any]) -> str:
         f"# {result['product'].upper()} Forward Analysis — {result['trade_date']}",
         "", "> Agent-orchestrated daily analysis — automatic delivery is not enabled.", "",
         f"## {synthesis.get('headline') or 'Executive Summary'}", "",
-        synthesis.get("executive_summary", ""), "",
+        synthesis.get("plain_english_summary") or synthesis.get("executive_summary", ""), "",
+        "## Market snapshot", "",
     ]
+    for item in synthesis.get("market_snapshot", []):
+        comparison = f" ({item['comparison']})" if item.get("comparison") else ""
+        lines.append(
+            f"- **{item.get('label', '')}: {item.get('value', '')}**{comparison} — "
+            f"{item.get('plain_english_meaning', '')}"
+        )
+    lines.append("")
     overall = synthesis.get("overall_forward_view", {})
     lines.extend([
         "### Overall forward view", "",
@@ -235,6 +286,14 @@ def _render_markdown(result: dict[str, Any]) -> str:
     for role, response in result["specialist_analyses"].items():
         title = role.replace("_", " ").title()
         lines.extend([f"## {title}", "", f"Status: {response['status']}", ""])
+        lines.extend(["### Key numbers", ""])
+        for item in response.get("key_metrics", []):
+            comparison = f" ({item['comparison']})" if item.get("comparison") else ""
+            lines.append(
+                f"- **{item.get('label', '')}: {item.get('value', '')}**{comparison} — "
+                f"{item.get('plain_english_meaning', '')}"
+            )
+        lines.append("")
         for heading, key in (
             ("Data quality", "data_quality_assessment"),
             ("What the data says", "data_findings"),
@@ -246,7 +305,10 @@ def _render_markdown(result: dict[str, Any]) -> str:
             if value:
                 lines.extend([f"### {heading}", ""])
                 if isinstance(value, list):
-                    lines.extend(f"- {item if isinstance(item, str) else json.dumps(item)}" for item in value)
+                    lines.extend(
+                        f"- {item if isinstance(item, str) else item.get('claim', json.dumps(item))}"
+                        for item in value
+                    )
                 else:
                     lines.append(str(value))
                 lines.append("")

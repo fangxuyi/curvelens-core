@@ -59,6 +59,8 @@ def test_compute_flat_price_carry_and_vol():
     assert result["curve"]["implied_carry"] == pytest.approx(0.06)
     assert result["curve"]["carry_gap"] == pytest.approx(0.02)
     assert result["vol_surface"]["interpretation"] == "call_skew"
+    assert result["series"]["real_yield_10y"]["history_observations"] == 2
+    assert result["series"]["real_yield_10y"]["history_percentile"] is None
 
 
 def test_fred_collector_skips_without_key(monkeypatch, tmp_path):
@@ -73,4 +75,4 @@ def test_fred_collector_skips_without_key(monkeypatch, tmp_path):
     collector = FREDMacroCollector(RawStore(tmp_path), ManifestDB(tmp_path / "m.duckdb"))
     result = collector.collect(date(2026, 7, 20))
     assert result["status"] == "skipped"
-    assert result["skipped"] == 5
+    assert result["skipped"] == 6
