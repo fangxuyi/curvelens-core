@@ -18,10 +18,12 @@ Construction notes:
   put-call parity C(K) = P(K) + df·(F−K) for K < F — sidestepping CME's
   ITM-settlement inconsistency (see the active product's conventions.md).
 - Second derivative via central differences on the (uneven) strike grid.
-  Signed, positive, and negative mass are reported separately. Duplicate,
-  non-monotone, or materially non-convex surfaces are rejected rather than
-  turned into probabilities. Small rounding violations are projected to a
-  bounded convex call curve with weighted isotonic regression before moments.
+  Signed, positive, and negative mass are reported separately. Exchange-tick
+  rounding can create many tiny convexity violations on a dense strike grid,
+  so a bounded convex call curve is fitted with weighted isotonic regression.
+  The fit is accepted only when every premium adjustment stays within the
+  product profile's tick-aware repair limit; larger distortions, duplicates,
+  missing tail mass, and unrepairable monotonicity are rejected.
 - Expected move is straddle-implied: E|F_T − F| = e^{rT}·(C(F)+P(F)),
   interpolated at the forward.
 """
@@ -34,6 +36,8 @@ from typing import Optional
 
 import pyarrow as pa
 
+from .black76 import black76_price
+
 logger = logging.getLogger(__name__)
 
 _MIN_STRIKES = 15
@@ -44,10 +48,12 @@ _MAX_SIGNED_MASS_ERROR = 0.10
 
 def _call_curve(rows: list[dict], fwd: float, df: float) -> list[tuple[float, float]]:
     """(strike, call_price) OTM-constructed: calls above F, parity-puts below."""
-    calls = {r["strike"]: r["settlement"] for r in rows
-             if r["cp"] == "C" and r["strike"] >= fwd and r["settlement"] >= _MIN_PRICE}
-    puts = {r["strike"]: r["settlement"] for r in rows
-            if r["cp"] == "P" and r["strike"] < fwd and r["settlement"] >= _MIN_PRICE}
+    calls = {r["strike"]: r.get("curve_settlement", r["settlement"]) for r in rows
+             if r["cp"] == "C" and r["strike"] >= fwd
+             and r.get("curve_settlement", r["settlement"]) >= _MIN_PRICE}
+    puts = {r["strike"]: r.get("curve_settlement", r["settlement"]) for r in rows
+            if r["cp"] == "P" and r["strike"] < fwd
+            and r.get("curve_settlement", r["settlement"]) >= _MIN_PRICE}
     curve = dict(calls)
     for k, p in puts.items():
         curve[k] = p + df * (fwd - k)
@@ -159,7 +165,10 @@ def _interp_price(rows: list[dict], cp: str, x: float) -> Optional[float]:
     return None
 
 
-def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Optional[dict]:
+def compute_expiry(
+    rows: list[dict], fwd: float, tte: float, rate: float,
+    *, price_tick: float | None = None, max_projection_ticks: float = 2.0,
+) -> Optional[dict]:
     """RND summary for one expiry from its option rows."""
     df = math.exp(-rate * tte)
     key_counts = Counter((r["cp"], r["strike"]) for r in rows)
@@ -178,15 +187,53 @@ def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Opt
         1 for (_, c0), (_, c1) in zip(curve, curve[1:]) if c1 > c0 + 1e-10
     )
 
+    projected_curve = _project_convex_curve(curve, df)
+    projection_adjustments = [
+        abs(raw_price - projected_price)
+        for (_, raw_price), (_, projected_price) in zip(curve, projected_curve)
+    ]
+    max_projection_adjustment = max(projection_adjustments, default=0.0)
+    mean_projection_adjustment = (
+        sum(projection_adjustments) / len(projection_adjustments)
+        if projection_adjustments else 0.0
+    )
+    max_projection_adjustment_ticks = (
+        max_projection_adjustment / price_tick
+        if price_tick is not None and price_tick > 0 else None
+    )
+    projection_is_tick_bounded = (
+        max_projection_adjustment_ticks is not None
+        and max_projection_adjustment_ticks <= max_projection_ticks
+    )
+    projected_density = _density(projected_curve, 1.0 / df)
+    projected_mass = _integrate(projected_density)
+
     reasons = []
+    warnings = []
     if duplicate_keys:
         reasons.append(f"{duplicate_keys} duplicate call/put-strike keys ({duplicate_rows} extra rows)")
     if monotonicity_violations:
-        reasons.append(f"{monotonicity_violations} call-price monotonicity violations")
+        if projection_is_tick_bounded:
+            warnings.append(
+                f"repaired {monotonicity_violations} call-price monotonicity violations "
+                f"within {max_projection_adjustment_ticks:.2f} premium ticks"
+            )
+        else:
+            reasons.append(f"{monotonicity_violations} call-price monotonicity violations")
     if abs(signed_mass - 1.0) > _MAX_SIGNED_MASS_ERROR:
         reasons.append(f"signed mass {signed_mass:.4f} is not near 1")
     if negative_mass > _MAX_NEGATIVE_MASS:
-        reasons.append(f"negative density mass {negative_mass:.4f} exceeds {_MAX_NEGATIVE_MASS:.2f}")
+        if projection_is_tick_bounded:
+            warnings.append(
+                f"raw negative density mass {negative_mass:.4f} was repaired "
+                f"within {max_projection_adjustment_ticks:.2f} premium ticks"
+            )
+        else:
+            reasons.append(
+                f"negative density mass {negative_mass:.4f} exceeds {_MAX_NEGATIVE_MASS:.2f}"
+            )
+    if abs(projected_mass - 1.0) > _MAX_SIGNED_MASS_ERROR:
+        reasons.append(f"projected mass {projected_mass:.4f} is not near 1")
 
     diagnostics = {
         "raw_mass": round(signed_mass, 4),  # compatibility: now genuinely pre-clipping
@@ -197,6 +244,16 @@ def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Opt
         "monotonicity_violations": monotonicity_violations,
         "duplicate_keys": duplicate_keys,
         "duplicate_rows": duplicate_rows,
+        "projection_applied": max_projection_adjustment > 1e-10,
+        "projection_max_adjustment": round(max_projection_adjustment, 6),
+        "projection_mean_adjustment": round(mean_projection_adjustment, 6),
+        "projection_max_adjustment_ticks": (
+            round(max_projection_adjustment_ticks, 4)
+            if max_projection_adjustment_ticks is not None else None
+        ),
+        "projection_limit_ticks": max_projection_ticks,
+        "projected_mass": round(projected_mass, 4),
+        "validation_warnings": warnings,
     }
 
     # Straddle remains a directly observed statistic even when the RND is bad.
@@ -212,9 +269,7 @@ def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Opt
             "prob_ladder": {}, "validation_errors": reasons,
         }
 
-    projected_curve = _project_convex_curve(curve, df)
-    density = _density(projected_curve, 1.0 / df)
-    projected_mass = _integrate(density)
+    density = projected_density
     if projected_mass <= 0.5:
         return None
     density = [(k, max(0.0, f) / projected_mass) for k, f in density]
@@ -232,7 +287,6 @@ def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Opt
         "forward": fwd,
         "n_strikes": len(curve),
         **diagnostics,
-        "projected_mass": round(projected_mass, 4),
         "rn_mean": round(m["mean"], 3),
         "rn_std": round(m["std"], 3),
         "rn_skew": round(m["skew"], 3),
@@ -244,17 +298,28 @@ def compute_expiry(rows: list[dict], fwd: float, tte: float, rate: float) -> Opt
 def compute(gold_options: pa.Table, as_of_str: str, rate: float | None = None,
             n_expiries: int = 2) -> dict:
     """RND summaries for the front n expiries from a gold option_features table."""
+    from ..reference.product import get_product
+    product = get_product()
     if rate is None:
-        from ..reference.product import get_product
-        rate = get_product().risk_free_rate
+        rate = product.risk_free_rate
     d = gold_options.to_pydict()
     by_expiry: dict[str, dict] = {}
     for i in range(len(d["option_expiry"])):
         exp = d["option_expiry"][i]
         e = by_expiry.setdefault(exp, {"rows": [], "fwd": None, "tte": None})
         if d["settlement"][i] is not None and d["strike"][i] is not None:
-            e["rows"].append({"strike": d["strike"][i], "cp": d["call_put"][i],
-                              "settlement": d["settlement"][i]})
+            row = {"strike": d["strike"][i], "cp": d["call_put"][i],
+                   "settlement": d["settlement"][i]}
+            baw_iv = (d.get("baw_iv") or [None] * len(d["option_expiry"]))[i]
+            fwd_i = d["forward_price"][i]
+            tte_i = d["time_to_expiry_years"][i]
+            if product.exercise_style.lower() == "american" and baw_iv is not None \
+                    and baw_iv > 0 and fwd_i is not None and tte_i is not None and tte_i > 0:
+                row["curve_settlement"] = black76_price(
+                    fwd_i, d["strike"][i], tte_i, rate, baw_iv, d["call_put"][i]
+                )
+                e["exercise_adjusted_rows"] = e.get("exercise_adjusted_rows", 0) + 1
+            e["rows"].append(row)
         if e["fwd"] is None and d["forward_price"][i] is not None:
             e["fwd"] = d["forward_price"][i]
             e["tte"] = d["time_to_expiry_years"][i]
@@ -264,7 +329,24 @@ def compute(gold_options: pa.Table, as_of_str: str, rate: float | None = None,
         e = by_expiry[exp]
         if e["fwd"] is None or e["tte"] is None or e["tte"] <= 0:
             continue
-        r = compute_expiry(e["rows"], e["fwd"], e["tte"], rate)
+        r = compute_expiry(
+            e["rows"], e["fwd"], e["tte"], rate,
+            price_tick=product.option_premium_tick_size,
+            max_projection_ticks=product.rnd_max_projection_ticks,
+        )
         if r is not None:
+            adjusted_rows = e.get("exercise_adjusted_rows", 0)
+            r["method"] = (
+                "otm_european_equivalent_tick_bounded_convex_projection"
+                if adjusted_rows else "otm_settlement_tick_bounded_convex_projection"
+            )
+            r["exercise_style"] = product.exercise_style
+            r["exercise_adjustment"] = (
+                "baw_iv_to_black76" if adjusted_rows else (
+                    "unavailable" if product.exercise_style.lower() == "american"
+                    else "not_required"
+                )
+            )
+            r["exercise_adjusted_rows"] = adjusted_rows
             out["expiries"].append({"expiry": exp, **r})
     return out

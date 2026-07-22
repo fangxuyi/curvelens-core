@@ -81,8 +81,11 @@ All gates must pass before proposing production status:
    rows are selected; weekly `OG1`–`OG5` rows must be excluded.
 4. Compare strikes, premiums, deltas, option expiries, and underlying GC
    contracts against the visible bulletin.
-5. Confirm model-vs-bulletin delta error, RND raw mass, units, curve ordering,
-   and young-history labels across several consecutive days.
+5. Confirm model-vs-bulletin delta error, RND raw and projected mass, maximum
+   convex-repair size in premium ticks, units, curve ordering, and young-history
+   labels across several consecutive days. A tick-bounded projection may repair
+   bulletin rounding noise, but a repair beyond the profile limit must continue
+   to invalidate probabilities.
 6. Review a Gold-specific downloader, delivery QC, Telegram destination, and
    disabled cron template; enable them only with explicit approval.
 

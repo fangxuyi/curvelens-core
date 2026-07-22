@@ -21,6 +21,8 @@ class TestWTIProfile:
         assert p.cot_contract_label == "WTI-PHYSICAL NYMEX"
         assert p.analysis_blocking_sections == ("futures",)
         assert p.analysis_retryable_empty_sections == ("futures", "options")
+        assert p.option_premium_tick_size == pytest.approx(0.01)
+        assert p.rnd_max_projection_ticks == pytest.approx(2.0)
         assert get_product("wti") is p  # lru cached
 
     def test_calendar_module_resolves(self):
@@ -67,6 +69,11 @@ class TestFundamentalsRegistry:
 
 
 class TestNonWTIProfile:
+    def test_gold_rnd_projection_policy_is_profile_driven(self):
+        p = get_product("gold")
+        assert p.option_premium_tick_size == pytest.approx(0.10)
+        assert p.rnd_max_projection_ticks == pytest.approx(2.0)
+
     def test_rejects_unsafe_analysis_role_key(self, monkeypatch):
         import ccvm.reference.product as product_module
 

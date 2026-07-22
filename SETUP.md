@@ -104,6 +104,8 @@ reference (all under the top-level `market:` mapping):
 | `futures_depth`, `options_expiry_depth` | 12, 5 | collection scope |
 | `settlement_min`, `settlement_max` | 1, 500 | product-scale silver validation |
 | `options.risk_free_rate` | 0.05 | BAW/Black-76/RND rate assumption |
+| `options.premium_tick_size` | 0.10 for Gold | scales the RND convex-repair diagnostic |
+| `options.rnd_max_projection_ticks` | 2.0 | maximum tick-bounded repair before RND is rejected |
 | `bulletin.product_header_call/put` | `LO CALL` / `LO PUT` | PDF section detection |
 | `bulletin.url` | CME Section 63 URL | agent preflight/download instructions |
 | `bulletin.strike_scale` | `100` (cents → $) | strike conversion — **verify per product!** |
