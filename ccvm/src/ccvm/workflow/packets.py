@@ -10,7 +10,7 @@ from typing import Any
 from ccvm.reference.product import Product
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 2
+PACKET_SCHEMA_VERSION = 3
 
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
@@ -62,6 +62,7 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
         "role": role_key,
         "status": "complete|limited|blocked",
         "data_quality_assessment": "",
+        "key_metrics": [],
         "data_findings": [],
         "news_findings": [],
         "data_news_comparison": [],
@@ -131,6 +132,8 @@ def build_analysis_packets(
                 "mandate": role.mandate, "section_keys": role.section_keys,
                 "news_keywords": role.news_keywords,
                 "required_checks": role.required_checks,
+                "report_requirements": role.report_requirements,
+                "minimum_key_metrics": role.minimum_key_metrics,
             }
             for role in product.analysis_roles
         ],
@@ -164,6 +167,8 @@ def build_analysis_packets(
             "relevant_news": news,
             "knowledge_sources": knowledge_sources,
             "required_checks": list(role.required_checks),
+            "report_requirements": list(role.report_requirements),
+            "minimum_key_metrics": role.minimum_key_metrics,
             "analysis_contract": {
                 "sequence": [
                     "assess data quality and disclose limitations",
@@ -172,12 +177,34 @@ def build_analysis_packets(
                     "compare agreement, contradiction, or missing linkage",
                     "form a forward view with confirmations and invalidations",
                 ],
+                "numeric_rule": (
+                    "Lead with exact current values and changes. Return at least "
+                    f"{role.minimum_key_metrics} key_metrics, following report_requirements. "
+                    "Each value must contain a number and unit; comparison must state the date, "
+                    "prior value, percentile, or named benchmark when available."
+                ),
+                "history_rule": (
+                    "Use measured history_context when mature. When local history is young, compare "
+                    "with applicable knowledge-pack or external-proxy benchmarks, label the source "
+                    "and non-equivalence, and mention the young history once rather than repeating it."
+                ),
+                "language_rule": (
+                    "Use short plain-English sentences. Define any unavoidable market term on first use. "
+                    "Do not replace numbers with abstract labels or unsupported opinions."
+                ),
                 "citation_rule": "Every factual or numerical claim must cite an evidence_id from this packet.",
                 "epistemic_rule": "Label verified observations, interpretations, and open questions separately.",
                 "finding_schema": {
                     "data_findings": {"claim": "text", "evidence_ids": ["feature:..."]},
                     "news_findings": {"claim": "text", "evidence_ids": ["news:..."]},
                     "data_news_comparison": {"claim": "text", "evidence_ids": ["feature:...", "news:..."]},
+                },
+                "key_metric_schema": {
+                    "label": "short market measure",
+                    "value": "number with unit",
+                    "comparison": "dated prior value or explicitly named benchmark",
+                    "plain_english_meaning": "one short sentence",
+                    "evidence_ids": ["feature:..."],
                 },
                 "required_check_schema": {
                     "instruction": "Return one item per required_checks entry, preserving the exact text and order.",
@@ -217,6 +244,15 @@ def build_analysis_packets(
             "wait_for_all_roles": True,
             "required_sections": [role.key for role in product.analysis_roles],
             "focus": "Forward-looking risks, cross-section agreements, tensions, confirmations, and invalidations.",
+            "reporting": {
+                "market_snapshot_items": "6 to 10 exact values drawn from specialist key_metrics",
+                "plain_english": (
+                    "Write for an informed reader who is not an options specialist. Use short sentences, "
+                    "define risk reversal and butterfly if used, and avoid desk jargon such as internals, "
+                    "macro prior, carry headwind, or conviction unless immediately explained."
+                ),
+                "limitations": "Consolidate duplicate limitations; keep the delivery-facing list to the material items.",
+            },
             "do_not": [
                 "invent missing evidence", "present settlement analytics as executable prices",
                 "turn an invalid diagnostic into a probability",
@@ -228,6 +264,8 @@ def build_analysis_packets(
         "status": "complete|limited|blocked",
         "headline": "",
         "executive_summary": "",
+        "plain_english_summary": "",
+        "market_snapshot": [],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],
         "cross_role_tensions": [],

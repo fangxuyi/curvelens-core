@@ -23,6 +23,15 @@ def _quality(futures_count=12, options_count=100, futures_status="PASS", options
     }
 
 
+def _metrics(evidence_id, count=5):
+    return [
+        {"label": f"Metric {index}", "value": f"{index}.0%", "comparison": "prior 0.5%",
+         "plain_english_meaning": "This is a concrete test measure.",
+         "evidence_ids": [evidence_id]}
+        for index in range(1, count + 1)
+    ]
+
+
 def test_quality_retries_only_missing_market_inputs():
     missing = assess_quality(_quality(futures_count=0, futures_status="INSUFFICIENT_DATA"), 1, 2)
     assert missing["should_retry"] is True
@@ -46,7 +55,11 @@ def test_profiles_define_three_independent_roles(product_key):
     roles = load_product(product_key).analysis_roles
     assert len(roles) == 3
     assert len({role.key for role in roles}) == 3
-    assert all(role.mandate and role.section_keys and role.required_checks for role in roles)
+    assert all(
+        role.mandate and role.section_keys and role.required_checks
+        and role.report_requirements and role.minimum_key_metrics >= 4
+        for role in roles
+    )
 
 
 def _packets(tmp_path: Path):
@@ -142,6 +155,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
         packet = json.loads(Path(manifest["role_packets"][role]).read_text())
         evidence_id = next(iter(packet["computed_sections"].values()))["evidence_id"]
         response["evidence_ids"] = [evidence_id]
+        response["key_metrics"] = _metrics(evidence_id)
         response["data_findings"] = [{"claim": "A limited test finding.", "evidence_ids": [evidence_id]}]
         response["forward_view"].update({
             "horizon": "1m", "bias": "neutral", "thesis": "The evidence remains limited."
@@ -158,12 +172,16 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
         Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text()
     )["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Test", "executive_summary": "Test",
+                      "plain_english_summary": "The test signals are mixed.",
+                      "market_snapshot": _metrics(used_id, 6),
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": [used_id]})
     synthesis_path.write_text(json.dumps(synthesis))
     with pytest.raises(AnalysisValidationError, match="forward view requires horizon"):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "incomplete")
     synthesis.update({"status": "limited", "headline": "Test", "executive_summary": "Test",
+                      "plain_english_summary": "The test signals are mixed.",
+                      "market_snapshot": _metrics(used_id, 6),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Mixed."},
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": [used_id]})
@@ -190,6 +208,7 @@ def _write_valid_role(manifest, role):
     evidence_id = next(iter(packet["computed_sections"].values()))["evidence_id"]
     template.update({
         "status": "limited", "data_quality_assessment": "Reviewed with limitations.",
+        "key_metrics": _metrics(evidence_id),
         "data_findings": [{"claim": "Observed evidence.", "evidence_ids": [evidence_id]}],
         "forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Evidence is mixed.",
                          "confirmations": [], "invalidations": []},
@@ -227,6 +246,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",
                       "executive_summary": "Specialists identify a mixed setup.",
+                      "plain_english_summary": "The market signals are mixed today.",
+                      "market_snapshot": _metrics(used, 6),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Signals are mixed."},
                       "data_limitations": ["Synthetic evidence is limited."],
                       "evidence_ids": [used]})

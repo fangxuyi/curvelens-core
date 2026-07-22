@@ -141,3 +141,49 @@ def test_daily_delivery_requires_completed_agent_orchestration(tmp_path, monkeyp
     assert exc.value.code == 1
     result = json.loads(capsys.readouterr().out)
     assert result["phase"] == "SPECIALISTS_REQUIRED"
+
+
+def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_language(
+    tmp_path, monkeypatch,
+):
+    monkeypatch.setattr(notify, "DATA_DIR", tmp_path)
+    analysis_dir = tmp_path / "analysis" / "trade_date=2026-07-20"
+    analysis_dir.mkdir(parents=True)
+    metric = lambda label, value, meaning: {
+        "label": label, "value": value, "comparison": "prior day",
+        "plain_english_meaning": meaning, "evidence_ids": ["feature:test"],
+    }
+    analysis = {
+        "product": "gold",
+        "synthesis": {
+            "headline": "Gold was little changed while options favored downside protection",
+            "plain_english_summary": "Gold slipped slightly. The options market paid more for downside protection.",
+            "confirmations": ["Settlement falls below $4,015.90/oz."],
+            "invalidations": ["Settlement recovers above $4,018.80/oz."],
+            "data_limitations": ["Only two local GC settlement dates are available."],
+        },
+        "specialist_analyses": {
+            "futures_curve": {"key_metrics": [
+                metric("Front settlement", "$4,015.90/oz", "Gold fell $2.90 on the day."),
+                metric("M1-M3 spread", "-$27.30/oz", "The curve is in contango."),
+            ], "news_findings": []},
+            "vol_surface": {"key_metrics": [
+                metric("Front ATM IV", "19.94%", "This is the market's annualized volatility estimate."),
+                metric("25-delta risk reversal", "-3.26 vol points", "Puts cost more volatility than calls."),
+                metric("25-delta butterfly", "+0.45 vol points", "The wings are richer than the center."),
+            ], "news_findings": []},
+            "macro": {"key_metrics": [
+                metric("10-year real yield", "2.31%", "It fell 4 basis points, which can support gold."),
+            ], "news_findings": [{"claim": "No relevant dated macro catalyst was collected."}]},
+        },
+    }
+    (analysis_dir / "analysis.json").write_text(json.dumps(analysis))
+    text = notify._analysis_synthesis_text("2026-07-20")
+    assert "*Futures and curve*" in text
+    assert "$4,015.90/oz" in text and "-$27.30/oz" in text
+    assert "*Options and volatility*" in text
+    assert "19.94%" in text and "-3.26 vol points" in text and "+0.45 vol points" in text
+    assert "*Macro and news*" in text and "2.31%" in text
+    assert "No relevant dated macro catalyst" in text
+    assert "*Data notes*" in text
+    assert len(text) <= 3900
