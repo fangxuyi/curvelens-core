@@ -79,6 +79,28 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
     }
 
 
+def _top_view_template(rank: int) -> dict[str, Any]:
+    """Return the complete synthesis shape instead of an ambiguous empty list."""
+    return {
+        "rank": rank,
+        "title": "",
+        "plain_english_view": "",
+        "horizon": "",
+        "confidence": "high|medium|low",
+        "evidence_relationship": "cross_supported|conflicting|single_desk",
+        "specialist_roles": [],
+        "key_metrics": [],
+        "supporting_evidence": [{"claim": "", "evidence_ids": []}],
+        "conflicting_evidence": [],
+        "driver_analysis": {
+            "status": "supported|partially_supported|conflicting|unexplained",
+            "explanation": "",
+            "evidence_ids": [],
+        },
+        "what_to_watch": [],
+    }
+
+
 def build_analysis_packets(
     *, product: Product, trade_date: str, report: dict[str, Any],
     quality: dict[str, Any], articles: list[dict[str, Any]], output_dir: Path,
@@ -297,7 +319,7 @@ def build_analysis_packets(
         "headline": "",
         "executive_summary": "",
         "plain_english_summary": "",
-        "top_views": [],
+        "top_views": [_top_view_template(rank) for rank in (1, 2, 3)],
         "market_snapshot": [],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],

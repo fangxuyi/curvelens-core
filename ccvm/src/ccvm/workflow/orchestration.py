@@ -49,7 +49,7 @@ def _file_hash(path: Path) -> str:
 
 def initialize_state(
     *, manifest_path: Path, quality: dict[str, Any], quality_attempts: list[dict],
-    repo_root: Path, max_qc_reviews: int = 2, max_agent_corrections: int = 1,
+    repo_root: Path, max_qc_reviews: int = 2, max_agent_corrections: int = 2,
 ) -> tuple[Path, dict[str, Any]]:
     manifest = load_manifest(manifest_path)
     run_dir = manifest_path.parent
@@ -193,7 +193,12 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         f"- {role}: `{manifest['role_response_paths'][role]}`" for role in manifest["roles"]
     )
     correction = state["synthesis"].get("last_error", "")
-    correction_text = f"\nCorrect this validation error from the prior response: {correction}\n" if correction else ""
+    correction_text = (
+        "\nThe prior response failed validation. Rebuild the complete response from the immutable "
+        "template instead of patching only one field. Preserve every template key and use no legacy "
+        f"or substitute field names. Validation errors: {correction}\n"
+        if correction else ""
+    )
     task_path.write_text(
         "# CurveLens cross-specialist synthesis\n\n"
         "You are the product-neutral synthesis editor. Do not spawn other agents.\n"
@@ -203,7 +208,9 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         f"`{manifest['synthesis_response_template']}`. Write the completed JSON only to "
         f"`{manifest['synthesis_response_path']}`. Reconcile agreement and tension, preserve blocked/limited "
         "sections, and produce a forward-looking view. Cite only evidence IDs used by validated specialists. "
-        "Rank exactly three top_views by decision relevance. Show whether each is cross-supported, conflicting, "
+        "Copy the complete object shape from all three top_views in the template; do not rename or omit fields. "
+        "Keep their rank fields exactly 1, 2, and 3 in list order, ranked by decision relevance. Show whether "
+        "each is cross-supported, conflicting, "
         "or a single-desk observation; include exact copied metrics, supporting reasons, conflicting evidence, "
         "horizon, and confidence, and cover every specialist role across the three. For each view, connect the "
         "numbers to the best-supported fundamental, macro, positioning, or news driver. Use supported, partially "
