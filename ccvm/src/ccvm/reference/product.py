@@ -31,6 +31,12 @@ import yaml
 _CONFIG_DIR = Path(__file__).resolve().parents[3] / "config" / "markets"
 
 
+def available_products() -> tuple[str, ...]:
+    """Return configured product keys in stable display-name order."""
+    keys = [path.stem for path in _CONFIG_DIR.glob("*.yaml")]
+    return tuple(sorted(keys, key=lambda key: load_product(key).display_name.lower()))
+
+
 @dataclass(frozen=True)
 class BulletinSpec:
     product_header_call: str

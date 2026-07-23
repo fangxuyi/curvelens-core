@@ -45,6 +45,11 @@ def _check_findings(response: dict[str, Any], allowed: set[str], role: str) -> N
                     f"{role}.{field}[{index}] must contain a claim"
                 )
             _check_ids(finding.get("evidence_ids"), allowed, f"{role}.{field}[{index}]")
+            if field == "news_findings" and finding.get("relevance") is not None \
+                    and finding.get("relevance") not in {"relevant", "context_only", "rejected"}:
+                raise AnalysisValidationError(
+                    f"{role}.{field}[{index}].relevance must be relevant, context_only, or rejected"
+                )
 
 
 def _check_key_metrics(

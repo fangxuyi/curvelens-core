@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ccvm.reference import gold_calendar
-from ccvm.reference.product import get_product, load_product
+from ccvm.reference.product import available_products, get_product, load_product
 from ccvm.runtime import data_dir
 from ccvm.knowledge.loader import knowledge_path, load_calendar
 
@@ -80,6 +80,23 @@ def test_runtime_data_dir_defaults_to_product_namespace(monkeypatch):
     monkeypatch.setenv("CCVM_PRODUCT", "gold")
     assert data_dir().parts[-4:] == ("ccvm", "data", "products", "gold")
     assert data_dir() != Path(__file__).resolve().parents[1] / "data" / "gold"
+
+
+def test_dashboard_can_resolve_each_configured_product_namespace(monkeypatch):
+    monkeypatch.delenv("CCVM_DATA_DIR", raising=False)
+
+    assert {"corn", "gold", "wti"} <= set(available_products())
+    assert data_dir("gold").parts[-2:] == ("products", "gold")
+    assert data_dir("wti").parts[-2:] == ("products", "wti")
+    assert data_dir("corn").parts[-2:] == ("products", "corn")
+
+
+def test_single_product_override_rejects_cross_product_dashboard(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCVM_PRODUCT", "gold")
+    monkeypatch.setenv("CCVM_DATA_DIR", str(tmp_path / "gold-data"))
+
+    with pytest.raises(ValueError, match="single-product override"):
+        data_dir("wti")
 
 
 def test_runtime_data_dir_rejects_unsafe_product(monkeypatch):

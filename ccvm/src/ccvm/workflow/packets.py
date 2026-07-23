@@ -174,6 +174,7 @@ def build_analysis_packets(
                     "assess data quality and disclose limitations",
                     "state what computed market data says",
                     "state what relevant news says and assess source/date relevance",
+                    "classify every news finding as relevant, context_only, or rejected",
                     "compare agreement, contradiction, or missing linkage",
                     "form a forward view with confirmations and invalidations",
                 ],
@@ -196,7 +197,11 @@ def build_analysis_packets(
                 "epistemic_rule": "Label verified observations, interpretations, and open questions separately.",
                 "finding_schema": {
                     "data_findings": {"claim": "text", "evidence_ids": ["feature:..."]},
-                    "news_findings": {"claim": "text", "evidence_ids": ["news:..."]},
+                    "news_findings": {
+                        "claim": "text",
+                        "relevance": "relevant|context_only|rejected",
+                        "evidence_ids": ["news:..."],
+                    },
                     "data_news_comparison": {"claim": "text", "evidence_ids": ["feature:...", "news:..."]},
                 },
                 "key_metric_schema": {

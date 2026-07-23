@@ -118,15 +118,15 @@ never touches the outbox or triggers delivery.
 
 ## Dashboard
 
-Gold uses the shared Streamlit dashboard with an explicit product and port so it
-does not collide with the WTI dashboard:
+Gold is available in the shared multi-product Streamlit dashboard:
 
 ```bash
-deployments/gold/run_dashboard.sh
+deployments/run_dashboard.sh
 ```
 
-The launcher runs from `ccvm/`, sets `CCVM_PRODUCT=gold`, and binds Streamlit to
-`127.0.0.1:8502`. Do not run Gold on WTI's dashboard port.
+The single server binds to `127.0.0.1:8501`. Select Gold in the sidebar. It
+reads only `ccvm/data/products/gold/`; selecting another product switches to
+that product's isolated directory without starting another server.
 
 ## Safety
 
