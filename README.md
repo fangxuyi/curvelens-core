@@ -1,28 +1,127 @@
 # CurveLens Core
 
-CurveLens Core is a shared futures-and-options analysis framework. WTI, Gold,
-and Corn are product configurations in one repository: they share code and a Python
-environment, while market data, workflow state, schedules, and delivery state
-remain isolated by product.
+CurveLens Core is a shared futures-and-options analysis framework. One checkout
+can operate multiple commodity products while keeping each product's data,
+workflow state, schedules, and delivery state isolated.
 
-The supported daily workflow is agent-orchestrated. Deterministic Python code
-collects and checks data, computes market features, prepares evidence packets,
-persists workflow state, and validates the final report. A Codex operating
-agent creates temporary native sub-agents for data-quality review, each
-profile-configured specialist desk, and final synthesis. Repository code does
-not call a model API, model SDK, or vendor-model CLI.
+The included product profiles are:
+
+| Product | Specialist perspectives |
+|---|---|
+| WTI | Futures curve, volatility surface, physical fundamentals |
+| Gold | Futures curve, volatility surface, macro |
+| Corn | Futures curve, volatility surface, crop fundamentals |
+
+The deterministic engine and native-agent workflow are shared. Product facts,
+required analyses, knowledge, calendars, and data providers come from the
+selected product profile. Repository code does not call a model API, model SDK,
+or vendor-model CLI; analytical work is delegated through the operating
+Codex/OpenClaw environment.
+
+## Workflow
+
+`agent/analysis_orchestrator.py` is the durable controller. It emits the next
+allowed native-agent action, validates each returned response, records monitor
+events, and resumes from `run.json` after an interruption.
+
+```mermaid
+flowchart TD
+    A[Select product and trade date] --> B[Collect market, options, news, and product data]
+    B --> C[Normalize data and run deterministic quality checks]
+    C -->|Recoverable input gap| B
+    C -->|Usable data with limitations retained| D[Compute features and prepare cited evidence packets]
+
+    D --> Q[Native Codex data-quality reviewer]
+    Q --> F[Futures and curve specialist]
+    Q --> V[Volatility-surface specialist]
+    Q --> P[Macro or fundamentals specialist]
+
+    F --> S[Native Codex cross-market synthesizer]
+    V --> S
+    P --> S
+
+    S --> G[Deterministic schema, citation, and evidence validation]
+    G -->|Bounded correction| S
+    G --> R[Integrated daily report]
+
+    R --> O1[analysis.md and analysis.json]
+    R --> O2[statistics.md]
+    R --> O3[workflow monitor files]
+    R -. Separate explicit approval .-> O4[Delivery outbox]
+```
+
+At a high level:
+
+1. Deterministic code collects, normalizes, checks, and calculates. Missing or
+   recoverable inputs can be retried; unresolved limitations are retained rather
+   than hidden or replaced with fabricated data.
+2. A native Codex quality reviewer decides whether the prepared evidence is
+   usable, usable with limitations, retryable through an allowlisted remedy, or
+   blocked.
+3. Product-configured specialists independently analyze the futures curve,
+   volatility surface, and macro or fundamental evidence. Each specialist must
+   cite its packet and provide exact values, comparisons, plain-English meaning,
+   news alignment or conflict, and a bounded forward view.
+4. A synthesizer ranks the three most important market views. Each view connects
+   validated numbers with supporting and conflicting evidence, assesses whether
+   the apparent driver is supported or unexplained, and states what to watch
+   next.
+5. Deterministic validation checks every role, citation, required field, and
+   copied metric before rendering the report. Analysis completion never
+   authorizes delivery by itself.
+
+The controller persists every phase, so an interrupted run can resume without
+repeating completed work. Temporary specialists exist only for the run; their
+tasks, evidence boundaries, responses, and validation results remain available
+for inspection.
+
+## Outputs
+
+Runtime output is isolated by product and trade date:
+
+```text
+ccvm/data/products/<product>/
+├── analysis/trade_date=<date>/
+│   ├── analysis.md
+│   ├── analysis.json
+│   └── statistics.md
+└── analysis_workflow/trade_date=<date>/
+    ├── run.json
+    ├── workflow_monitor.md
+    ├── workflow_monitor.json
+    └── workflow_events.jsonl
+```
+
+| Output | Purpose |
+|---|---|
+| `analysis.md` | Primary human-readable report. It combines the top three views, exact supporting statistics, news or driver assessment, conflicts, specialist detail, and forward watch items. |
+| `analysis.json` | Validated structured form of the same analysis for downstream tools and delivery formatting. |
+| `statistics.md` | Numerical audit supplement containing the market snapshot, desk-level measures, comparisons, evidence coverage, and retained limitations. It is not a separate forecast. |
+| `workflow_monitor.md` | User-facing debugging view of each agent's assigned task, allowed input files, submitted response, validation status, and correction history. |
+| `workflow_monitor.json` | Machine-readable monitor snapshot with artifact paths and hashes. |
+| `workflow_events.jsonl` | Append-only timeline of dispatch, validation, correction, phase-change, and finalization events. |
+| `run.json` | Durable orchestration state used to resume an interrupted run. |
+
+Monitoring is automatic for new runs. It updates at workflow milestones rather
+than streaming private reasoning or token-by-token output. The monitor exposes
+controller-visible instructions, evidence, responses, and decisions; it does
+not expose hidden chain-of-thought. Rejected responses are archived before a
+correction attempt so debugging evidence is preserved.
 
 ## Install
 
-Prerequisites:
+### Prerequisites
 
-- Python 3.12 or newer;
-- Poppler/`pdftotext` for CME bulletin parsing (`brew install poppler` on macOS);
-- a Codex/OpenClaw environment that supports repository skills and native
-  sub-agents;
-- headed-browser access for protected CME bulletins;
-- `EIA_API_KEY` for WTI fundamentals, `FRED_API_KEY` for macro data, or
-  `USDA_NASS_API_KEY` for Corn crop observations.
+- Python 3.12 or newer.
+- Poppler/`pdftotext` for CME bulletin parsing. On macOS: `brew install poppler`.
+- A Codex/OpenClaw environment with repository skills and native sub-agents.
+- Headed-browser access for protected CME bulletin downloads.
+- Product data credentials as applicable:
+  - WTI: `EIA_API_KEY`.
+  - Gold macro data: `FRED_API_KEY`.
+  - Corn crop data: `USDA_NASS_API_KEY`.
+
+### Set up the repository
 
 ```bash
 git clone https://github.com/fangxuyi/curvelens-core.git
@@ -33,160 +132,29 @@ cp ccvm/.env.example ccvm/.env
 cd ccvm && PYTHONPATH=src .venv/bin/python -m pytest tests/ -q
 ```
 
-Put provider keys in `ccvm/.env`. Do not put model credentials, Telegram
-tokens, chat IDs, or other delivery secrets in the repository. The native
-sub-agents use the operating Codex environment, so this project needs no model
-API key.
+Put product-provider credentials in `ccvm/.env`. Never commit `.env`, delivery
+tokens, chat IDs, API keys, runtime data, or outbox state. No separate model API
+key is required by this repository because native sub-agents use the operating
+Codex/OpenClaw environment.
 
-## Onboard one operating agent
+### Activate a product
 
-Set the repository root as the agent's working directory and register it with
-one sentence:
+Point one operating agent at the repository root and give it one sentence:
 
 - **Operate the CurveLens WTI deployment.**
 - **Operate the CurveLens Gold deployment.**
 - **Operate the CurveLens Corn deployment.**
 
-That sentence is intentionally sufficient. On first activation, `AGENTS.md`
-requires the agent to select the product, read exactly one product runbook,
-verify the environment without printing secrets, run the tests, and use the
-checked-in daily-analysis skill. Use one operating-agent registration per
-product; all product agents may share the clone and virtual environment.
+The agent reads the shared framework instructions
+and the selected product runbook, verifies the environment, and keeps runtime
+commands explicitly scoped with `CCVM_PRODUCT=<product>`.
 
-The operating agent needs:
-
-- read/write access to this checkout and its selected product data directory;
-- permission to run the repository Python environment and native sub-agents;
-- access to the product's provider keys through the local environment;
-- the product-approved CME bulletin acquisition method;
-- an explicit date or permission to determine the latest bulletin trade date.
-
-It does not need a separately installed orchestration framework or a direct
-OpenAI/Anthropic API credential.
-
-## Run the daily analysis
-
-Give the registered product agent one sentence:
-
-- **Use `$curvelens-daily-analysis` to run WTI for today.**
-- **Use `$curvelens-daily-analysis` to run Gold for today.**
-- **Use `$curvelens-daily-analysis` to run Corn for today.**
-
-`$curvelens-daily-analysis` is a repository skill invocation, not a shell
-variable. For bulletin-backed runs, use the date printed inside the approved
-bulletin when it differs from the calendar date.
-
-The execution flow is:
+To request the first analysis:
 
 ```text
-deterministic collection and calculations
-                  ↓
-       Codex data-quality reviewer
-                  ↓
- profile-configured specialists in parallel
-                  ↓
-           Codex synthesizer
-                  ↓
- deterministic validation and daily report
+Use $curvelens-daily-analysis to run <product> for YYYY-MM-DD.
 ```
 
-WTI configures futures-curve, volatility-surface, and physical-fundamentals
-desks. Gold configures futures-curve, volatility-surface, and macro desks. The
-Corn profile configures futures-curve, volatility-surface, and crop-fundamentals
-desks. The specialists are temporary native Codex sub-agents created for the run; their
-validated responses and the controller's `run.json` remain on disk so an
-interrupted run can resume. The controller also maintains `workflow_monitor.md`,
-`workflow_monitor.json`, and `workflow_events.jsonl`. These show each worker's
-exact assigned task, immutable packet/schema paths and hashes, submitted
-response, validation results, correction history, and current phase. They
-expose controller-visible work products, not private chain-of-thought.
-
-Every completed run writes three report outputs in the product-isolated analysis
-directory: `analysis.json` (validated structured result), `analysis.md`
-(the primary integrated forward analysis), and `statistics.md` (a numerical audit supplement
-with the market snapshot, desk-level measures, comparisons, coverage, and
-retained data limitations). The statistics report adds no model call and does
-not make a separate forecast. Material numbers are also embedded directly in
-each ranked view and desk section of `analysis.md`, so the main report stands
-on its own.
-
-Each specialist response is mechanically required to include profile-defined
-key metrics with an exact value, unit, dated or historical comparison, plain-
-English meaning, and evidence IDs. The final report leads with exactly three
-ranked market views. Each view shows whether the desks cross-support or conflict,
-2-3 exact supporting numbers, the driver/news assessment, contrary evidence,
-concrete items to watch next, horizon, and confidence. Drivers are explicitly
-labeled supported, partially supported, conflicting, or unexplained so the
-report does not confuse correlation with causation. A
-six-to-ten item numerical market snapshot and the futures, options, and
-macro/fundamentals desk detail follow. Product profiles decide
-which measures are mandatory. Young local history is disclosed once; it does
-not excuse omitting current market numbers, and a proxy benchmark must always
-be labeled as a proxy.
-
-`agent/analysis_orchestrator.py` is the only supported daily-analysis
-controller. The former script-only `agent/run_pipeline.py` entry point has been
-removed. The controller still invokes deterministic scripts internally to
-prepare reproducible evidence; those scripts are not an alternate analysis
-workflow.
-
-To inspect a run without advancing it:
-
-```bash
-CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py inspect --date YYYY-MM-DD
-```
-
-The returned monitor paths are product-isolated debugging artifacts. Rejected
-responses are archived before correction so the reason for a retry remains
-reviewable.
-
-## Set up a daily schedule
-
-Schedule an isolated turn of the registered product agent—never a bare Python
-command. Start from `deployments/<product>/cron.example`, replace its checkout
-path and agent name, and keep it disabled until its product runbook's data and
-delivery gates have passed and a human explicitly approves enabling it.
-
-The scheduled message must tell the agent to:
-
-1. work from this repository and read the root plus selected product runbook;
-2. set `CCVM_PRODUCT` on every runtime command;
-3. acquire and verify the exact product bulletin and its internal trade date;
-4. invoke `$curvelens-daily-analysis` for that date;
-5. resume persisted state instead of restarting an existing run;
-6. report completion or the exact blocker; and
-7. avoid delivery unless that deployment has separate explicit approval.
-
-The WTI template includes a disabled retry-window schedule. Gold remains
-validation-only, so its template is deliberately non-executable. Creating or
-enabling either schedule changes external state and is never performed merely
-because an agent was onboarded.
-
-## Runtime isolation
-
-Every runtime command selects the product explicitly:
-
-```text
-CCVM_PRODUCT=wti  -> ccvm/data/products/wti/
-CCVM_PRODUCT=gold -> ccvm/data/products/gold/
-CCVM_PRODUCT=corn -> ccvm/data/products/corn/
-```
-
-`CCVM_DATA_DIR` is an advanced override for migrations or external storage.
-Never configure two products with the same override.
-
-| Product | Specialist desks | Status |
-|---|---|---|
-| WTI | Futures curve, volatility surface, physical fundamentals | Agent-orchestrated daily analysis supported; automatic delivery separately controlled |
-| Gold | Futures curve, volatility surface, macro | Validation-only; schedules and delivery disabled |
-| Corn | Futures curve, volatility surface, crop fundamentals | Validation-only; schedules and delivery disabled |
-
-## Documentation
-
-- [Framework setup and extension guide](SETUP.md)
-- [Agent registration and deployment status](deployments/README.md)
-- [WTI operating runbook](deployments/wti/AGENTS.md)
-- [WTI history migration](deployments/wti/MIGRATION.md)
-- [Gold operating runbook](deployments/gold/AGENTS.md)
-- [Corn operating runbook](deployments/corn/AGENTS.md)
-- [Orchestration design and state machine](docs/ANALYSIS_WORKFLOW.md)
+For bulletin-backed products, the workflow uses the trade date printed inside
+the approved bulletin. Notification preparation, schedules, and live delivery
+remain separate actions that require explicit approval.
