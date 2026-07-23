@@ -14,7 +14,7 @@ class TestWTIProfile:
         assert p.futures_prefix == "CL" and p.options_prefix == "LO"
         assert p.yfinance_contract_suffix == ".NYM"
         assert p.bulletin.strike_scale == 100
-        assert p.bulletin.underlying_month_offset == 1
+        assert p.bulletin.underlying_month_offset == 0
         assert p.bulletin.expiry_basis == "underlying_month"
         assert p.fundamentals_provider == "eia_weekly_petroleum"
         assert p.cot_contract_market_code == "067651"
@@ -38,12 +38,33 @@ class TestWTIProfile:
         assert p.parse_contract_code("NGQ26") is None      # wrong prefix
         assert p.parse_contract_code("CLA26") is None      # bad month letter
 
-    def test_option_contract_info_uses_wti_offset(self):
+    def test_option_contract_info_uses_same_month_wti_underlying(self):
         from datetime import date
-        expiry, contract, delivery_month = get_product("wti").option_contract_info(2026, 8)
+        expiry, contract, delivery_month = get_product("wti").option_contract_info(2026, 9)
         assert expiry == date(2026, 8, 17)
         assert contract == "CLU26"
         assert delivery_month == "2026-09"
+
+    def test_july_21_bulletin_parity_identifies_same_month_underlying(self):
+        """SEP26 LO settlements imply CLU26, not the following CLV26."""
+        from datetime import date
+        import math
+
+        option_expiry, contract, _ = get_product("wti").option_contract_info(2026, 9)
+        tte = (option_expiry - date(2026, 7, 21)).days / 365
+        discount = math.exp(-get_product("wti").risk_free_rate * tte)
+        # CME Section 63 settlement marks at strikes $80, $82, and $84.
+        parity_forwards = [
+            strike + (call - put) / discount
+            for strike, call, put in (
+                (80.0, 7.72, 3.39),
+                (82.0, 6.68, 4.35),
+                (84.0, 5.77, 5.43),
+            )
+        ]
+
+        assert contract == "CLU26"
+        assert parity_forwards == pytest.approx([84.35, 84.34, 84.34], abs=0.02)
 
     def test_unknown_product_raises(self):
         with pytest.raises(FileNotFoundError):

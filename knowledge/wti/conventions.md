@@ -32,8 +32,11 @@ was restated when this was corrected (front-expiry IVs rose ~1 vol pt).
 
 ## CME daily bulletin (Section 63) quirks — learned the hard way
 
-- **Labels**: bulletin expiry labels are the *option expiry month* ("AUG26");
-  the underlying is the **next** calendar month's CL ("AUG26" → CLU26).
+- **Labels**: monthly LO bulletin labels identify the underlying CL delivery
+  month ("SEP26" → CLU26). The option expires earlier under the LO rule;
+  for example, SEP26 expires on 2026-08-17. Do not advance the bulletin label
+  by another month. This mapping is also mechanically checked against
+  call-put-parity-implied forwards.
 - **Strikes are in cents**: `6850` = $68.50.
 - **Put deltas are printed as absolute values** — the collector negates them
   to the signed convention.
