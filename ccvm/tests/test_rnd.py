@@ -11,7 +11,12 @@ import pyarrow as pa
 import pytest
 
 from ccvm.analytics.black76 import black76_price
-from ccvm.analytics.rnd import _prob_above, compute, compute_expiry
+from ccvm.analytics.rnd import (
+    _expiries_in_horizon,
+    _prob_above,
+    compute,
+    compute_expiry,
+)
 
 
 def _synthetic_rows(F=70.0, T=0.15, r=0.05, vol=0.25, lo=40, hi=110, step=0.5):
@@ -85,8 +90,55 @@ class TestLognormalRecovery:
         assert result["exercise_adjusted_rows"] == len(rows)
         assert result["method"].startswith("otm_european_equivalent")
 
+    def test_product_compute_keeps_sparse_expiry_as_explicit_invalid_result(self):
+        dense = _synthetic_rows(self.F, self.T, self.R, self.VOL)
+        sparse = _synthetic_rows(
+            self.F, self.T, self.R, self.VOL, lo=60, hi=80, step=10,
+        )
+        table = pa.Table.from_pylist([
+            {
+                "option_expiry": expiry,
+                "strike": row["strike"],
+                "call_put": row["cp"],
+                "settlement": row["settlement"],
+                "forward_price": self.F,
+                "time_to_expiry_years": self.T,
+                "baw_iv": self.VOL,
+            }
+            for expiry, rows in (
+                ("2026-08-17", dense),
+                ("2026-09-17", sparse),
+            )
+            for row in rows
+        ])
+
+        result = compute(table, "2026-07-20", rate=self.R, n_expiries=2)
+
+        assert [item["expiry"] for item in result["expiries"]] == [
+            "2026-08-17", "2026-09-17",
+        ]
+        assert result["expiries"][0]["status"] == "available"
+        assert result["expiries"][1]["status"] == "invalid_surface"
+        assert result["expiries"][1]["prob_ladder"] == {}
+        assert "insufficient usable OTM strike coverage" in (
+            result["expiries"][1]["validation_errors"][0]
+        )
+
 
 class TestGuards:
+    def test_default_horizon_uses_calendar_months_and_excludes_expired_dates(self):
+        assert _expiries_in_horizon([
+            "2026-07-20",
+            "2026-08-20",
+            "2027-07-20",
+            "2027-07-21",
+            "2027-08-20",
+            "not-a-date",
+        ], "2026-07-20", 12) == [
+            "2026-08-20",
+            "2027-07-20",
+        ]
+
     def test_too_few_strikes_none(self):
         rows = _synthetic_rows(step=10.0)  # only ~8 strikes
         assert compute_expiry(rows, 70.0, 0.15, 0.05) is None
@@ -195,3 +247,12 @@ class TestGuards:
         assert result["status"] == "invalid_surface"
         assert result["fit_max_residual_ticks"] > 2.0
         assert result["prob_ladder"] == {}
+
+
+def test_all_products_default_to_twelve_month_rnd_horizon():
+    from ccvm.reference.product import available_products, load_product
+
+    assert all(
+        load_product(key).options_expiry_horizon_months == 12
+        for key in available_products()
+    )

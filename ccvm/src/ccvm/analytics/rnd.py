@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import math
 from collections import Counter
+from datetime import date
 from typing import Optional
 
 import pyarrow as pa
@@ -435,13 +436,45 @@ def compute_expiry(
     }
 
 
+def _add_months(day: date, months: int) -> date:
+    """Advance by calendar months, clamping to the destination month end."""
+    total = day.year * 12 + day.month - 1 + months
+    year, month_zero = divmod(total, 12)
+    month = month_zero + 1
+    if month == 12:
+        next_month = date(year + 1, 1, 1)
+    else:
+        next_month = date(year, month + 1, 1)
+    month_end = (next_month - date.resolution).day
+    return date(year, month, min(day.day, month_end))
+
+
+def _expiries_in_horizon(
+    expiries: list[str], as_of_str: str, horizon_months: int,
+) -> list[str]:
+    """Chronological, unexpired expiries through the calendar-month horizon."""
+    as_of = date.fromisoformat(as_of_str)
+    cutoff = _add_months(as_of, horizon_months)
+    eligible: list[str] = []
+    for value in sorted(set(expiries)):
+        try:
+            expiry = date.fromisoformat(value)
+        except (TypeError, ValueError):
+            continue
+        if as_of < expiry <= cutoff:
+            eligible.append(value)
+    return eligible
+
+
 def compute(gold_options: pa.Table, as_of_str: str, rate: float | None = None,
-            n_expiries: int = 2) -> dict:
-    """RND summaries for the front n expiries from a gold option_features table."""
+            n_expiries: int | None = None) -> dict:
+    """RND summaries for expiries inside the product's configured horizon."""
     from ..reference.product import get_product
     product = get_product()
     if rate is None:
         rate = product.risk_free_rate
+    if n_expiries is not None and n_expiries < 1:
+        raise ValueError("n_expiries must be positive")
     d = gold_options.to_pydict()
     by_expiry: dict[str, dict] = {}
     for i in range(len(d["option_expiry"])):
@@ -464,29 +497,76 @@ def compute(gold_options: pa.Table, as_of_str: str, rate: float | None = None,
             e["fwd"] = d["forward_price"][i]
             e["tte"] = d["time_to_expiry_years"][i]
 
-    out = {"trade_date": as_of_str, "expiries": []}
-    for exp in sorted(by_expiry)[:n_expiries]:
+    selected_expiries = (
+        sorted(by_expiry)[:n_expiries]
+        if n_expiries is not None
+        else _expiries_in_horizon(
+            list(by_expiry), as_of_str, product.options_expiry_horizon_months,
+        )
+    )
+    out = {
+        "trade_date": as_of_str,
+        "expiry_horizon_months": product.options_expiry_horizon_months,
+        "expiries": [],
+    }
+    for exp in selected_expiries:
         e = by_expiry[exp]
         if e["fwd"] is None or e["tte"] is None or e["tte"] <= 0:
+            out["expiries"].append({
+                "expiry": exp,
+                "status": "invalid_surface",
+                "forward": e.get("fwd"),
+                "time_to_expiry_years": e.get("tte"),
+                "n_strikes": 0,
+                "prob_ladder": {},
+                "quantiles": {},
+                "probability_buckets": [],
+                "density_points": [],
+                "validation_errors": [
+                    "missing forward price or positive time to expiry"
+                ],
+            })
             continue
         r = compute_expiry(
             e["rows"], e["fwd"], e["tte"], rate,
             price_tick=product.option_premium_tick_size,
             max_projection_ticks=product.rnd_max_fit_residual_ticks,
         )
-        if r is not None:
-            adjusted_rows = e.get("exercise_adjusted_rows", 0)
-            r["method"] = (
-                "otm_european_equivalent_constrained_state_price_calibration"
-                if adjusted_rows else "otm_settlement_constrained_state_price_calibration"
+        if r is None:
+            out["expiries"].append({
+                "expiry": exp,
+                "status": "invalid_surface",
+                "forward": e["fwd"],
+                "time_to_expiry_years": e["tte"],
+                "n_strikes": len(
+                    _call_curve(
+                        e["rows"],
+                        e["fwd"],
+                        math.exp(-rate * e["tte"]),
+                    )
+                ),
+                "prob_ladder": {},
+                "quantiles": {},
+                "probability_buckets": [],
+                "density_points": [],
+                "validation_errors": [
+                    "insufficient usable OTM strike coverage for RND calibration"
+                ],
+            })
+            continue
+
+        adjusted_rows = e.get("exercise_adjusted_rows", 0)
+        r["method"] = (
+            "otm_european_equivalent_constrained_state_price_calibration"
+            if adjusted_rows else "otm_settlement_constrained_state_price_calibration"
+        )
+        r["exercise_style"] = product.exercise_style
+        r["exercise_adjustment"] = (
+            "baw_iv_to_black76" if adjusted_rows else (
+                "unavailable" if product.exercise_style.lower() == "american"
+                else "not_required"
             )
-            r["exercise_style"] = product.exercise_style
-            r["exercise_adjustment"] = (
-                "baw_iv_to_black76" if adjusted_rows else (
-                    "unavailable" if product.exercise_style.lower() == "american"
-                    else "not_required"
-                )
-            )
-            r["exercise_adjusted_rows"] = adjusted_rows
-            out["expiries"].append({"expiry": exp, **r})
+        )
+        r["exercise_adjusted_rows"] = adjusted_rows
+        out["expiries"].append({"expiry": exp, **r})
     return out

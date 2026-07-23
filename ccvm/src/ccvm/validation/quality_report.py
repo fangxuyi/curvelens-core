@@ -300,13 +300,25 @@ def add_rnd_diagnostics(report_path: Path, rnd_output: dict,
     report = json.loads(report_path.read_text())
     expiries = rnd_output.get("expiries", [])
     invalid = [e for e in expiries if e.get("status") != "available"]
+    valid = [e for e in expiries if e.get("status") == "available"]
     if not expiries:
         section = {"status": "INSUFFICIENT_DATA", "expiries": [],
                    "notes": ["no RND expiries computed"]}
+    elif invalid and valid:
+        section = {
+            "status": "WARN", "expiries": expiries,
+            "notes": [
+                f"{len(valid)} expiry surface(s) have validated probabilities; "
+                f"{len(invalid)} failed surface(s) are shown without probabilities"
+            ],
+        }
     elif invalid:
         section = {
             "status": "FAIL" if required else "WARN", "expiries": expiries,
-            "notes": [f"{len(invalid)} expiry surface(s) failed RND validity checks"],
+            "notes": [
+                f"all {len(invalid)} expiry surface(s) failed RND validity checks; "
+                "no probabilities are available"
+            ],
         }
     else:
         section = {"status": "PASS", "expiries": expiries, "notes": []}

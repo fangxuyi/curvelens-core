@@ -76,7 +76,10 @@ Before production:
 4. Verify the bulletin's strike scale, $0.001 option premium tick, deltas,
    expiries, and option-to-SI underlying-month mappings.
 5. Validate constrained-fit residuals, fitted mass, forward, tail coverage,
-   units, and curve ordering across consecutive days.
+   units, and curve ordering across every expiry within the framework's
+   rolling twelve-calendar-month horizon and across consecutive days. Valid
+   expiries retain their probabilities independently; failed expiries remain
+   visible with exact diagnostics and no probability claims.
 6. Confirm every macro/industrial value carries an observation date and
    cadence. Never treat monthly/quarterly proxies or annual forecasts as
    same-day demand.
