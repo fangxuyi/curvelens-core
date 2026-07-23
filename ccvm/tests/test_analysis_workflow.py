@@ -10,6 +10,7 @@ import pytest
 
 from ccvm.reference.product import AnalysisRoleSpec, load_product
 from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
+from ccvm.workflow.monitoring import build_monitor
 from ccvm.workflow.orchestration import advance_state, initialize_state, next_actions
 from ccvm.workflow.packets import build_analysis_packets
 from ccvm.workflow.quality import assess_quality
@@ -46,6 +47,12 @@ def _top_views(manifest):
             "supporting_evidence": [{"claim": "The desk evidence supports this view.",
                                      "evidence_ids": [evidence_id]}],
             "conflicting_evidence": [],
+            "driver_analysis": {
+                "status": "partially_supported",
+                "explanation": "The validated desk evidence is consistent with the move.",
+                "evidence_ids": [evidence_id],
+            },
+            "what_to_watch": ["Watch the next validated settlement and options update."],
         })
     return views
 
@@ -222,15 +229,18 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert json_path.exists() and md_path.exists() and statistics_path.exists()
     output = json.loads(json_path.read_text())
     assert output["workflow_mode"] == "agent_orchestrated"
+    assert output["statistics_integrated"] is True
     assert output["delivery_approved"] is False
     markdown = md_path.read_text()
     assert "Overall forward view" in markdown and "Data limitations" in markdown
+    assert "Driver and news validation" in markdown
+    assert "Validated statistics" in markdown
     statistics = statistics_path.read_text()
     assert "# GOLD Daily Statistics — 2026-07-20" in statistics
     assert "## Market snapshot" in statistics
     assert "## Futures Curve statistics" in statistics
     assert "## Evidence coverage" in statistics
-    assert "Numerical supplement" in statistics
+    assert "Numerical audit supplement" in statistics
 
     bad_path = Path(manifest["role_response_paths"][manifest["roles"][0]])
     bad = json.loads(bad_path.read_text())
@@ -293,6 +303,32 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     Path(manifest["synthesis_response_path"]).write_text(json.dumps(synthesis))
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "READY_TO_FINALIZE"
+    monitor = build_monitor(state_path)
+    assert monitor["phase"] == "READY_TO_FINALIZE"
+    assert {item["name"] for item in monitor["agents"]} >= {
+        "data_quality", "futures_curve", "vol_surface", "macro", "synthesis",
+    }
+    assert any(item["event"] == "agent_dispatched" for item in monitor["events"])
+    monitor_md = state_path.with_name("workflow_monitor.md").read_text()
+    assert "Exact assigned task" in monitor_md
+    assert "Exact submitted response" in monitor_md
+
+
+def test_monitor_preserves_rejected_agent_response(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    state_path, state = initialize_state(
+        manifest_path=tmp_path / "run" / "manifest.json", quality=_quality(),
+        quality_attempts=[], repo_root=Path(__file__).resolve().parents[2],
+    )
+    response_path = Path(state["qc"]["response_path"])
+    response_path.write_text('{"invalid": true}')
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    assert state["phase"] == "QC_REVIEW_REQUIRED"
+    archives = list(response_path.parent.glob("qc.attempt-1.response.invalid-attempt-1.json"))
+    assert len(archives) == 1
+    monitor = build_monitor(state_path)
+    rejected = [item for item in monitor["events"] if item["event"] == "validation_rejected"]
+    assert rejected and rejected[0]["response_path"] == str(archives[0])
 
 
 def test_synthesis_does_not_exist_before_specialists_validate(tmp_path):
@@ -442,6 +478,19 @@ def test_orchestrator_cli_reports_persisted_next_action(tmp_path):
     output = json.loads(proc.stdout)
     assert output["phase"] == "QC_REVIEW_REQUIRED"
     assert output["actions"][0]["agent_type"] == "curvelens_data_qc"
+    assert Path(output["monitor_md"]).exists()
+    assert Path(output["monitor_json"]).exists()
+    assert Path(output["monitor_events"]).exists()
+
+    inspect = subprocess.run(
+        [sys.executable, str(root / "agent" / "analysis_orchestrator.py"),
+         "inspect", "--date", "2026-07-20"],
+        capture_output=True, text=True, env=env,
+    )
+    assert inspect.returncode == 0
+    inspected = json.loads(inspect.stdout)
+    assert inspected["phase"] == "QC_REVIEW_REQUIRED"
+    assert inspected["monitor_md"] == output["monitor_md"]
 
 
 def test_agent_workflow_has_no_direct_model_client_calls():
@@ -451,6 +500,7 @@ def test_agent_workflow_has_no_direct_model_client_calls():
         root / "agent" / "finalize_analysis.py",
         root / "ccvm" / "src" / "ccvm" / "workflow" / "packets.py",
         root / "ccvm" / "src" / "ccvm" / "workflow" / "orchestration.py",
+        root / "ccvm" / "src" / "ccvm" / "workflow" / "monitoring.py",
         root / "agent" / "analysis_orchestrator.py",
     ]
     prohibited = ("import openai", "import anthropic", "extract_catalysts", '"claude"')

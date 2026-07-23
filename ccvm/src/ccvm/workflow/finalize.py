@@ -105,6 +105,8 @@ def _check_top_views(
             raise AnalysisValidationError(f"{label} requires at least two specialist roles")
         covered_roles.update(roles)
         metrics = _check_key_metrics(view.get("key_metrics"), allowed, label, 2)
+        if len(metrics) > 3:
+            raise AnalysisValidationError(f"{label}.key_metrics must contain no more than 3 items")
         view_ids: set[str] = set()
         for metric in metrics:
             identity = (
@@ -132,6 +134,28 @@ def _check_top_views(
                 if not ids:
                     raise AnalysisValidationError(f"{claim_label} must cite evidence")
                 view_ids.update(ids)
+        driver = view.get("driver_analysis")
+        if not isinstance(driver, dict):
+            raise AnalysisValidationError(f"{label}.driver_analysis must be an object")
+        driver_status = driver.get("status")
+        if driver_status not in {
+            "supported", "partially_supported", "conflicting", "unexplained",
+        }:
+            raise AnalysisValidationError(f"{label}.driver_analysis.status is invalid")
+        if not str(driver.get("explanation", "")).strip():
+            raise AnalysisValidationError(f"{label}.driver_analysis.explanation is required")
+        driver_ids = _check_ids(
+            driver.get("evidence_ids"), allowed, f"{label}.driver_analysis",
+        )
+        if driver_status != "unexplained" and not driver_ids:
+            raise AnalysisValidationError(
+                f"{label}.driver_analysis requires evidence unless the driver is unexplained"
+            )
+        view_ids.update(driver_ids)
+        watch = view.get("what_to_watch")
+        if not isinstance(watch, list) or not watch \
+                or not all(isinstance(item, str) and item.strip() for item in watch):
+            raise AnalysisValidationError(f"{label}.what_to_watch requires concrete items")
         roles_from_evidence = set().union(*(evidence_roles.get(item, set()) for item in view_ids))
         if not set(roles).issubset(roles_from_evidence):
             raise AnalysisValidationError(f"{label}.specialist_roles are not supported by cited evidence")
@@ -144,7 +168,11 @@ def _check_top_views(
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
     manifest = _read(manifest_path)
     if manifest.get("schema_version") != PACKET_SCHEMA_VERSION:
-        raise AnalysisValidationError("unsupported analysis packet schema")
+        raise AnalysisValidationError(
+            "unsupported analysis packet schema: "
+            f"found {manifest.get('schema_version')}, expected {PACKET_SCHEMA_VERSION}; "
+            "an unfinished run must be explicitly restarted to regenerate its packets"
+        )
     roles = manifest.get("roles")
     if not isinstance(roles, list) or not roles \
             or not all(isinstance(role, str) and role for role in roles) \
@@ -319,6 +347,7 @@ def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Pa
         "synthesis": synthesis,
         "status": synthesis["status"],
         "workflow_mode": "agent_orchestrated",
+        "statistics_integrated": True,
         "delivery_approved": False,
     }
     json_path = output_dir / "analysis.json"
@@ -359,8 +388,8 @@ def _render_statistics_markdown(result: dict[str, Any]) -> str:
     responses = result["specialist_analyses"]
     lines = [
         f"# {result['product'].upper()} Daily Statistics — {result['trade_date']}", "",
-        "> Numerical supplement generated from validated daily-analysis outputs. "
-        "It is descriptive and does not replace the forward analysis.", "",
+        "> Numerical audit supplement generated from validated daily-analysis outputs. "
+        "All material statistics are also integrated into analysis.md.", "",
         "## Run coverage", "",
         f"- Overall status: **{_markdown_cell(result.get('status'))}**",
         f"- Specialist desks: **{len(responses)}**",
@@ -418,7 +447,8 @@ def _render_markdown(result: dict[str, Any]) -> str:
     synthesis = result["synthesis"]
     lines = [
         f"# {result['product'].upper()} Forward Analysis — {result['trade_date']}",
-        "", "> Agent-orchestrated daily analysis — automatic delivery is not enabled.", "",
+        "", "> Agent-orchestrated daily analysis with validated statistics integrated into "
+        "each market view — automatic delivery is not enabled.", "",
         f"## {synthesis.get('headline') or 'Executive Summary'}", "",
         synthesis.get("plain_english_summary") or synthesis.get("executive_summary", ""), "",
         "## Top three market views", "",
@@ -431,14 +461,17 @@ def _render_markdown(result: dict[str, Any]) -> str:
             f"- Confidence: {view.get('confidence', '')}",
             f"- Horizon: {view.get('horizon', '')}",
             f"- View: {view.get('plain_english_view', '')}",
-            "- Key numbers:",
+            "", "#### What the numbers say", "",
         ])
-        for metric in view.get("key_metrics", []):
-            lines.append(
-                f"  - {metric.get('label', '')}: {metric.get('value', '')} "
-                f"({metric.get('comparison', '')})"
-            )
-        lines.append("- Supporting evidence:")
+        lines.extend(_render_metric_table(view.get("key_metrics", [])))
+        driver = view.get("driver_analysis", {})
+        lines.extend([
+            "", "#### Driver and news validation", "",
+            f"- Assessment: {str(driver.get('status', '')).replace('_', ' ')}",
+            f"- Explanation: {driver.get('explanation', '')}",
+            "", "#### Supporting and conflicting evidence", "",
+            "- Supporting evidence:",
+        ])
         lines.extend(
             f"  - {item.get('claim', '')}" for item in view.get("supporting_evidence", [])
         )
@@ -447,6 +480,8 @@ def _render_markdown(result: dict[str, Any]) -> str:
         lines.extend(f"  - {item.get('claim', '')}" for item in conflicts)
         if not conflicts:
             lines.append("  - None identified.")
+        lines.extend(["- What to watch next:"])
+        lines.extend(f"  - {item}" for item in view.get("what_to_watch", []))
         lines.append("")
     lines.extend(["## Market snapshot", ""])
     for item in synthesis.get("market_snapshot", []):
@@ -482,13 +517,8 @@ def _render_markdown(result: dict[str, Any]) -> str:
     for role, response in result["specialist_analyses"].items():
         title = role.replace("_", " ").title()
         lines.extend([f"## {title}", "", f"Status: {response['status']}", ""])
-        lines.extend(["### Key numbers", ""])
-        for item in response.get("key_metrics", []):
-            comparison = f" ({item['comparison']})" if item.get("comparison") else ""
-            lines.append(
-                f"- **{item.get('label', '')}: {item.get('value', '')}**{comparison} — "
-                f"{item.get('plain_english_meaning', '')}"
-            )
+        lines.extend(["### Validated statistics", ""])
+        lines.extend(_render_metric_table(response.get("key_metrics", [])))
         lines.append("")
         for heading, key in (
             ("Data quality", "data_quality_assessment"),

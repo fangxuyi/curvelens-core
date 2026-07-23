@@ -214,3 +214,35 @@ def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_langu
     assert "Conflicts: The dollar strengthened." in text
     assert "*Data notes*" in text
     assert len(text) <= 3900
+
+
+def test_agent_synthesis_message_integrates_numbers_drivers_and_watch_items(tmp_path, monkeypatch):
+    monkeypatch.setattr(notify, "DATA_DIR", tmp_path)
+    analysis_dir = tmp_path / "analysis" / "trade_date=2026-07-20"
+    analysis_dir.mkdir(parents=True)
+    (analysis_dir / "analysis.md").write_text("# Fallback report\n")
+    (analysis_dir / "analysis.json").write_text(json.dumps({
+        "product": "gold", "trade_date": "2026-07-20",
+        "synthesis": {
+            "headline": "Gold is firm but the driver is only partly confirmed",
+            "plain_english_summary": "Price and volatility moved together, while macro evidence was mixed.",
+            "top_views": [{
+                "rank": 1, "title": "Gold holds a higher range",
+                "plain_english_view": "The settled curve shows buyers maintaining the recent advance.",
+                "key_metrics": [{
+                    "label": "Front settlement", "value": "$4,015.90/oz",
+                    "comparison": "+0.8% day over day",
+                }],
+                "driver_analysis": {
+                    "status": "partially_supported",
+                    "explanation": "Lower real yields are consistent with the move, but dated news is sparse.",
+                },
+                "what_to_watch": ["Watch whether the next settlement holds above $4,000/oz."],
+            }],
+        },
+    }))
+    text = notify._analysis_synthesis_text("2026-07-20")
+    assert "*1. Gold holds a higher range*" in text
+    assert "Front settlement: $4,015.90/oz vs +0.8% day over day" in text
+    assert "Driver (partially supported): Lower real yields" in text
+    assert "Watch: Watch whether the next settlement holds above $4,000/oz." in text

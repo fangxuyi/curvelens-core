@@ -21,7 +21,11 @@ flowchart LR
   E1 --> F[Coordinator synthesis]
   E2 --> F
   E3 --> F
-  F --> G[Validate citations and render analysis plus statistics]
+  F --> G[Validate citations and render integrated analysis plus statistics]
+  E1 -. task response validation .-> M[Workflow monitor]
+  E2 -. task response validation .-> M
+  E3 -. task response validation .-> M
+  F -. task response validation .-> M
   G --> H[Optional separately approved delivery]
 ```
 
@@ -48,6 +52,8 @@ The repository contributes the durable control plane:
 - `.agents/skills/curvelens-daily-analysis/SKILL.md` coordinates the host run;
 - `.codex/agents/` defines generic QC, specialist, and synthesis workers;
 - `agent/analysis_orchestrator.py` persists state and emits allowed next actions;
+- `ccvm.workflow.monitoring` records controller-visible inputs, outputs,
+  corrections, and phase events without making model calls;
 - product profiles define roles and quality policy without product-name branches.
 
 ## Daily contract
@@ -85,9 +91,40 @@ native Codex subagents. Generic custom agent types cover QC, an arbitrary
 packet-defined specialist, and synthesis; product profiles determine the roles.
 The controller rejects missing roles, stale packet IDs, unanswered required
 checks, placeholder statuses, and unknown citations. It writes `analysis.json`,
-the interpretive `analysis.md`, and the descriptive `statistics.md` under
+the integrated interpretive-and-numerical `analysis.md`, and the audit-oriented
+`statistics.md` under
 `data/products/<product>/analysis/trade_date=<date>/`. The statistics renderer
 reuses validated key metrics and does not invoke another model.
+
+Each of the three ranked synthesis views must connect 2-3 validated numbers to
+supporting and conflicting evidence, label the driver assessment as supported,
+partially supported, conflicting, or unexplained, and state what would confirm
+or invalidate the view next. This structure keeps news and fundamentals in the
+analysis without overstating causal attribution.
+
+## Workflow inspection
+
+The controller updates three product- and date-isolated debugging artifacts:
+
+- `workflow_events.jsonl` is the append-only phase, dispatch, validation, and
+  correction timeline;
+- `workflow_monitor.json` is a machine-readable snapshot of every worker's
+  allowed inputs, output, status, hashes, and latest validation result;
+- `workflow_monitor.md` is the user-facing view with exact assigned task text,
+  links to evidence packets and schemas, submitted response JSON, and the event
+  timeline.
+
+Use the read-only command below at any point in a run:
+
+```bash
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py inspect --date YYYY-MM-DD
+```
+
+Rejected response files are archived before their active response slot is
+cleared for correction. The monitor intentionally does not expose hidden
+chain-of-thought or host-runtime tool telemetry; it records the auditable
+instructions, evidence boundaries, structured rationale, outputs, and
+controller decisions.
 
 ## Supported operating path
 

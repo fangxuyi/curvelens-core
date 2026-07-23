@@ -10,7 +10,7 @@ from typing import Any
 from ccvm.reference.product import Product
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 3
+PACKET_SCHEMA_VERSION = 4
 
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
@@ -248,9 +248,10 @@ def build_analysis_packets(
                 "top_views": (
                     "Rank exactly three distinct market views by decision relevance. Each view must state "
                     "the condition, why it matters, 2-3 exact key metrics, supporting evidence, any "
-                    "conflicting evidence, horizon, confidence, and whether it is cross-supported, "
-                    "conflicting, or a single-desk observation. Across the three views, cover every "
-                    "configured specialist role."
+                    "conflicting evidence, the best-supported driver explanation (or explicitly say the "
+                    "driver is unexplained), what to watch next, horizon, confidence, and whether it is "
+                    "cross-supported, conflicting, or a single-desk observation. Across the three views, "
+                    "cover every configured specialist role."
                 ),
                 "top_view_schema": {
                     "rank": "1|2|3",
@@ -263,6 +264,12 @@ def build_analysis_packets(
                     "key_metrics": ["copy 2-3 complete specialist key_metric objects exactly"],
                     "supporting_evidence": [{"claim": "reason", "evidence_ids": ["allowed ID"]}],
                     "conflicting_evidence": [{"claim": "contrary evidence", "evidence_ids": ["allowed ID"]}],
+                    "driver_analysis": {
+                        "status": "supported|partially_supported|conflicting|unexplained",
+                        "explanation": "plain-English causal interpretation without overstating attribution",
+                        "evidence_ids": ["validated specialist evidence ID"],
+                    },
+                    "what_to_watch": ["specific confirmation or invalidation with a level or event"],
                 },
                 "market_snapshot_items": "6 to 10 exact values drawn from specialist key_metrics",
                 "plain_english": (
@@ -275,6 +282,7 @@ def build_analysis_packets(
             "do_not": [
                 "invent missing evidence", "present settlement analytics as executable prices",
                 "turn an invalid diagnostic into a probability",
+                "claim that news caused a move when evidence only shows timing or correlation",
             ],
         },
     }

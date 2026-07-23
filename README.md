@@ -95,20 +95,29 @@ desks. Gold configures futures-curve, volatility-surface, and macro desks. The
 Corn profile configures futures-curve, volatility-surface, and crop-fundamentals
 desks. The specialists are temporary native Codex sub-agents created for the run; their
 validated responses and the controller's `run.json` remain on disk so an
-interrupted run can resume.
+interrupted run can resume. The controller also maintains `workflow_monitor.md`,
+`workflow_monitor.json`, and `workflow_events.jsonl`. These show each worker's
+exact assigned task, immutable packet/schema paths and hashes, submitted
+response, validation results, correction history, and current phase. They
+expose controller-visible work products, not private chain-of-thought.
 
-Every completed run writes three outputs in the product-isolated analysis
+Every completed run writes three report outputs in the product-isolated analysis
 directory: `analysis.json` (validated structured result), `analysis.md`
-(forward analysis), and `statistics.md` (a descriptive numerical supplement
+(the primary integrated forward analysis), and `statistics.md` (a numerical audit supplement
 with the market snapshot, desk-level measures, comparisons, coverage, and
 retained data limitations). The statistics report adds no model call and does
-not make a separate forecast.
+not make a separate forecast. Material numbers are also embedded directly in
+each ranked view and desk section of `analysis.md`, so the main report stands
+on its own.
 
 Each specialist response is mechanically required to include profile-defined
 key metrics with an exact value, unit, dated or historical comparison, plain-
 English meaning, and evidence IDs. The final report leads with exactly three
 ranked market views. Each view shows whether the desks cross-support or conflict,
-the exact supporting numbers, contrary evidence, horizon, and confidence. A
+2-3 exact supporting numbers, the driver/news assessment, contrary evidence,
+concrete items to watch next, horizon, and confidence. Drivers are explicitly
+labeled supported, partially supported, conflicting, or unexplained so the
+report does not confuse correlation with causation. A
 six-to-ten item numerical market snapshot and the futures, options, and
 macro/fundamentals desk detail follow. Product profiles decide
 which measures are mandatory. Young local history is disclosed once; it does
@@ -120,6 +129,16 @@ controller. The former script-only `agent/run_pipeline.py` entry point has been
 removed. The controller still invokes deterministic scripts internally to
 prepare reproducible evidence; those scripts are not an alternate analysis
 workflow.
+
+To inspect a run without advancing it:
+
+```bash
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py inspect --date YYYY-MM-DD
+```
+
+The returned monitor paths are product-isolated debugging artifacts. Rejected
+responses are archived before correction so the reason for a retry remains
+reviewable.
 
 ## Set up a daily schedule
 

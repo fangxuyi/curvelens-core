@@ -185,6 +185,15 @@ def _analysis_synthesis_text(date_str: str) -> str:
         for item in conflicts[:1]:
             claim = item.get("claim", "") if isinstance(item, dict) else item
             out.append(_short(f"- Conflicts: {_clean_analysis_text(claim)}", 250))
+        driver = view.get("driver_analysis") or {}
+        if isinstance(driver, dict) and driver.get("explanation"):
+            status = str(driver.get("status", "")).replace("_", " ")
+            out.append(_short(
+                f"- Driver ({status}): {_clean_analysis_text(driver['explanation'])}", 300,
+            ))
+        watch = view.get("what_to_watch") or []
+        if watch:
+            out.append(_short(f"- Watch: {_clean_analysis_text(watch[0])}", 240))
 
     role_titles = {
         "futures_curve": "Futures and curve",
