@@ -12,6 +12,8 @@ exactly one deployment runbook:
 - `deployments/wti/AGENTS.md`
 - `deployments/gold/AGENTS.md`
 - `deployments/corn/AGENTS.md`
+- `deployments/silver/AGENTS.md`
+- `deployments/corn/AGENTS.md`
 
 The deployment runbook is authoritative for product-specific collection,
 schedules, QC, and delivery. `CCVM_PRODUCT` selects which runbook applies. If a

@@ -1,0 +1,248 @@
+market:
+  name: COMEX Silver
+  display_name: Silver
+  exchange: COMEX
+  product_code: SI
+  currency: USD
+  price_unit: USD/OZT
+  contract_multiplier: 5000
+  tick_size: 0.005
+
+  month_codes:
+    F: 1
+    G: 2
+    H: 3
+    J: 4
+    K: 5
+    M: 6
+    N: 7
+    Q: 8
+    U: 9
+    V: 10
+    X: 11
+    Z: 12
+
+  # CME expanded SI to 26 consecutive monthly contracts in April 2025, plus
+  # July and December in the nearest 60 months.
+  listed_futures_months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+  options:
+    exercise_style: American
+    settlement_style: Futures
+    risk_free_rate: 0.05
+    rnd_quality_gate: true
+    premium_tick_size: 0.001
+    rnd_max_fit_residual_ticks: 2.0
+    expiry_rule: four_business_days_before_prior_month_end
+
+  futures_depth: 12
+  options_expiry_depth: 5
+  warn_strikes_below: 5
+  fail_strikes_below: 2
+  settlement_min: 1
+  settlement_max: 500
+
+  futures_prefix: SI
+  options_prefix: SO
+  yfinance_contract_suffix: .CMX
+  calendar_module: ccvm.reference.silver_calendar
+  knowledge_pack: silver
+
+  bulletin:
+    product_header_call: "SO CALL"
+    product_header_put: "SO PUT"
+    url: https://www.cmegroup.com/daily_bulletin/current/Section64_Metals_Option_Products.pdf
+    # Section 64 prints strikes such as 5900 for $59.00/oz.
+    strike_scale: 100
+    expiry_basis: option_month
+    # COMEX Rule 116101: serial option months exercise into the next standard
+    # March, May, July, September, or December future.
+    underlying_month_map:
+      1: 3
+      2: 3
+      3: 3
+      4: 5
+      5: 5
+      6: 7
+      7: 7
+      8: 9
+      9: 9
+      10: 12
+      11: 12
+      12: 12
+
+  cot:
+    contract_market_code: "084691"
+    contract_label: "SILVER COMEX"
+
+  # Daily monetary variables are combined with slower, explicitly labeled
+  # industrial proxies. Missing FRED_API_KEY causes a clean skip.
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 800
+    series:
+      real_yield_10y:
+        series_id: DFII10
+        label: U.S. 10Y TIPS real yield
+        units: percent
+        role: opportunity_cost
+        flat_price_sign: -1
+      broad_usd:
+        series_id: DTWEXBGS
+        label: Nominal broad U.S. dollar index
+        units: index
+        role: currency
+        flat_price_sign: -1
+      breakeven_10y:
+        series_id: T10YIE
+        label: U.S. 10Y breakeven inflation
+        units: percent
+        role: inflation_compensation
+        flat_price_sign: 1
+      treasury_3m:
+        series_id: DGS3MO
+        label: U.S. 3-month Treasury yield
+        units: percent
+        role: financing_carry
+        flat_price_sign: 0
+      nominal_yield_10y:
+        series_id: DGS10
+        label: U.S. 10Y nominal Treasury yield
+        units: percent
+        role: rate_decomposition
+        flat_price_sign: 0
+      electronics_output_proxy:
+        series_id: IPG3344S
+        label: U.S. semiconductor and electronic-component industrial production
+        units: index
+        role: industrial_electronics_proxy
+        flat_price_sign: 0
+      copper_price_proxy:
+        series_id: PCOPPUSDM
+        label: Global copper price
+        units: USD per metric ton
+        role: industrial_cycle_and_byproduct_proxy
+        flat_price_sign: 0
+      clean_power_output_proxy:
+        series_id: IPN221114T8SQ
+        label: U.S. renewables and other electric-power generation
+        units: index
+        role: broad_clean_power_proxy
+        flat_price_sign: 0
+
+  news:
+    keywords:
+      - silver
+      - bullion
+      - precious metals
+      - comex
+      - solar
+      - photovoltaic
+      - electronics
+      - semiconductor
+      - electrical
+      - industrial demand
+      - mine supply
+      - mining
+      - recycling
+      - scrap
+      - copper
+      - lead
+      - zinc
+      - real yields
+      - treasury yields
+      - federal reserve
+      - fomc
+      - monetary policy
+      - inflation
+      - dollar
+      - u.s. dollar
+      - geopolitical
+    sources:
+      - key: silver_institute
+        url: https://silverinstitute.org/feed/
+        name: Silver Institute
+      - key: energy_department
+        url: https://www.energy.gov/rss/energygov/2193718
+        name: U.S. Department of Energy
+      - key: federal_reserve_monetary_policy
+        url: https://www.federalreserve.gov/feeds/press_monetary.xml
+        name: Federal Reserve Monetary Policy
+      - key: federal_reserve_speeches
+        url: https://www.federalreserve.gov/feeds/speeches.xml
+        name: Federal Reserve Speeches
+      - key: federal_reserve_testimony
+        url: https://www.federalreserve.gov/feeds/testimony.xml
+        name: Federal Reserve Testimony
+      - key: bls_consumer_prices
+        url: https://www.bls.gov/feed/cpi.rss
+        name: BLS Consumer Price Index
+      - key: bls_producer_prices
+        url: https://www.bls.gov/feed/ppi.rss
+        name: BLS Producer Price Index
+      - key: bls_employment
+        url: https://www.bls.gov/feed/empsit.rss
+        name: BLS Employment Situation
+      - key: bea_releases
+        url: https://apps.bea.gov/rss/rss.xml
+        name: BEA News Releases
+      - key: cnbc_top_news
+        url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114
+        name: CNBC Top News
+
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options]
+    max_quality_attempts: 2
+    roles:
+      - key: futures_curve
+        display_name: Futures Curve Analyst
+        mandate: Explain Silver flat price, curve shape, carry, positioning, and forward implications.
+        section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
+        news_keywords: [silver, bullion, precious metals, comex, mine supply, mining, recycling, copper, lead, zinc, dollar, geopolitical]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the front settlement and one-day dollar and percentage change.
+          - Report at least two front-to-deferred curve spreads and annualized roll yield.
+          - Compare with measured SI history and applicable Silver knowledge-pack anchors.
+          - Report managed-money positioning and its historical percentile when available.
+        required_checks:
+          - Distinguish settled-market evidence from executable prices.
+          - Check whether flat-price, curve, and positioning signals agree or diverge.
+      - key: vol_surface
+        display_name: Volatility Surface Analyst
+        mandate: Explain SO implied volatility, skew, term structure, and risk-neutral-density diagnostics.
+        section_keys: [market_risk, rnd, term_structure]
+        news_keywords: [silver, precious metals, volatility, options, comex, fomc, inflation, solar, geopolitical, treasury yields]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report front ATM implied volatility and its dated change when available.
+          - Report 25-delta risk reversal and explain that negative means puts are more expensive than calls.
+          - Report 25-delta butterfly and explain that it measures wing richness.
+          - Report the front-to-second-expiry ATM volatility spread.
+          - Compare SO measures only with measured SO history; do not substitute discontinued ETF-volatility series.
+        required_checks:
+          - Treat failed RND diagnostics as a limitation, never as probabilities.
+          - Compare surface moves with price, positioning, and dated event risk.
+      - key: macro_fundamentals
+        display_name: Macro and Industrial Fundamentals Analyst
+        mandate: Combine monetary/investment drivers with industrial demand, mine and recycling supply, and relevant technology change.
+        section_keys: [macro, cot, what_changed, term_structure]
+        news_keywords: [silver, solar, photovoltaic, electronics, semiconductor, electrical, industrial demand, mine supply, mining, recycling, scrap, copper, lead, zinc, real yields, treasury yields, federal reserve, fomc, inflation, dollar, geopolitical]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report latest real yield, broad dollar, breakeven, and nominal yield with dates and changes.
+          - Report available electronics, copper, and broad clean-power proxies with their actual observation dates and cadence.
+          - Separate investment demand from industrial demand and distinguish primary mine supply, byproduct supply, and recycling.
+          - Name relevant verified macro, physical, or technology news and state plainly when no dated catalyst was collected.
+          - Compare macro and industrial evidence with Silver settlement, curve, positioning, and option skew.
+        required_checks:
+          - Never present a monthly, quarterly, annual, or broad-sector proxy as same-day Silver demand.
+          - Treat solar capacity growth and silver intensity, thrifting, or substitution as separate variables.
+          - Separate observed changes from causal interpretation and call out conflicting evidence.
+
+  caveats:
+    - "Silver has no automated physical-fundamentals provider at bootstrap; slow official and industry sources are handled by the knowledge pack and dated news"
+    - "Industrial FRED series are lagged proxies, not measurements of same-day global Silver consumption or supply"
+    - "The Yahoo individual-contract suffix .CMX is a bootstrap-feed assumption and must be verified during live-data acceptance"

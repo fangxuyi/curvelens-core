@@ -1,0 +1,13 @@
+# CurveLens Silver cron template — intentionally non-executable.
+#
+# Silver is experimental. Do not register or enable schedules from this file.
+# A future reviewed schedule must create an isolated agent turn with:
+#
+#   CCVM_PRODUCT=silver
+#   # data defaults automatically to ccvm/data/products/silver
+#
+# It must read AGENTS.md plus deployments/silver/AGENTS.md, acquire and verify
+# the exact Section 64 bulletin, and invoke `$curvelens-daily-analysis` for its
+# internal trade date. It must resume persisted state, perform no delivery by
+# default, and ship disabled for explicit approval. A bare Python cron is
+# unsupported.
