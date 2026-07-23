@@ -10,6 +10,7 @@ All agents follow this file. A product deployment agent must additionally read
 exactly one deployment runbook:
 
 - `deployments/wti/AGENTS.md`
+- `deployments/brent/AGENTS.md`
 - `deployments/gold/AGENTS.md`
 - `deployments/copper/AGENTS.md`
 - `deployments/corn/AGENTS.md`

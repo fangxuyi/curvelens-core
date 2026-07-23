@@ -9,6 +9,7 @@ The included product profiles are:
 | Product | Specialist perspectives |
 |---|---|
 | WTI | Futures curve, volatility surface, physical fundamentals |
+| Brent | Futures curve, volatility surface, global physical fundamentals |
 | Gold | Futures curve, volatility surface, macro |
 | Copper | Futures curve, volatility surface, macro and physical fundamentals |
 | Corn | Futures curve, volatility surface, crop fundamentals |
@@ -143,6 +144,8 @@ and post-trade-date context is labeled separately.
 - Headed-browser access for protected CME bulletin downloads.
 - Product data credentials as applicable:
   - WTI: `EIA_API_KEY`.
+  - Brent: authorized ICE settlement-data access plus `EIA_API_KEY` and
+    `FRED_API_KEY` for public context.
   - Gold macro data: `FRED_API_KEY`.
   - Silver macro and industrial proxies: `FRED_API_KEY`.
   - Copper macro and industrial proxies: `FRED_API_KEY`.
@@ -169,6 +172,7 @@ Codex/OpenClaw environment.
 Point one operating agent at the repository root and give it one sentence:
 
 - **Operate the CurveLens WTI deployment.**
+- **Operate the CurveLens Brent deployment.**
 - **Operate the CurveLens Gold deployment.**
 - **Operate the CurveLens Copper deployment.**
 - **Operate the CurveLens Corn deployment.**

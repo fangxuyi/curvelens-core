@@ -4,6 +4,7 @@ The repository is shared; each runtime agent selects one product. Set the
 repository root as the agent's working directory and give it one sentence:
 
 - WTI: **Operate the CurveLens WTI deployment.**
+- Brent: **Operate the CurveLens Brent deployment.**
 - Gold: **Operate the CurveLens Gold deployment.**
 - Copper: **Operate the CurveLens Copper deployment.**
 - Corn: **Operate the CurveLens Corn deployment.**
@@ -18,6 +19,7 @@ outboxes, Telegram destinations, and schedules remain separate.
 For the supported daily analysis, the one-sentence instructions are:
 
 - WTI: **Use `$curvelens-daily-analysis` to run WTI for today.**
+- Brent: **Use `$curvelens-daily-analysis` to run Brent for today.**
 - Gold: **Use `$curvelens-daily-analysis` to run Gold for today.**
 - Copper: **Use `$curvelens-daily-analysis` to run Copper for today.**
 - Corn: **Use `$curvelens-daily-analysis` to run Corn for today.**
@@ -33,6 +35,7 @@ has been removed.
 | Product | Status |
 |---|---|
 | WTI | Operational |
+| Brent | Validation-only; authorized ICE data required; schedules and delivery disabled |
 | Gold | Validation-only; schedules and delivery disabled |
 | Copper | Validation-only; schedules and delivery disabled |
 | Corn | Validation-only; schedules and delivery disabled |
