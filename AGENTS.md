@@ -111,3 +111,11 @@ validates. The removed `agent/run_pipeline.py` path must not be recreated or
 used as an alternate daily workflow. Automatic delivery remains a separate
 deployment capability and requires explicit approval; completing analysis does
 not authorize queuing or sending it.
+
+The controller's `inspect` command and product-isolated `workflow_monitor.md`,
+`workflow_monitor.json`, and `workflow_events.jsonl` are the supported debugging
+surface. They record assigned inputs, submitted outputs, validation failures,
+and phase transitions without exposing private chain-of-thought or introducing
+model calls. `analysis.md` is the primary report and must integrate validated
+numbers, driver/news assessment, conflicts, and forward watch items; the
+separate `statistics.md` remains an audit supplement.

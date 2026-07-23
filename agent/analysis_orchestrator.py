@@ -24,6 +24,7 @@ sys.path.insert(0, str(CCVM_DIR / "src"))
 from ccvm.reference.product import get_product
 from ccvm.runtime import data_dir
 from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
+from ccvm.workflow.monitoring import build_monitor, monitor_paths, record_event
 from ccvm.workflow.orchestration import (
     advance_state, initialize_state, load_state, next_actions,
     refresh_after_remediation, save_state,
@@ -69,16 +70,26 @@ def _prepare(as_of: str) -> dict:
 
 
 def _summary(state: dict) -> dict:
+    state_path = Path(state["manifest_path"]).parent / "run.json"
     result = {
         "result": "ORCHESTRATION_COMPLETE" if state["phase"] == "COMPLETE" else (
             "ORCHESTRATION_BLOCKED" if state["phase"] == "BLOCKED" else "ORCHESTRATION_ACTIVE"
         ),
         "run_id": state["run_id"], "product": state["product"],
         "date": state["trade_date"], "phase": state["phase"],
-        "state_path": str(Path(state["manifest_path"]).parent / "run.json"),
+        "state_path": str(state_path),
         "actions": next_actions(state), "workflow_mode": "agent_orchestrated",
         "delivery_queued": False,
     }
+    try:
+        build_monitor(state_path)
+        events_path, monitor_json, monitor_md = monitor_paths(state)
+        result.update({
+            "monitor_json": str(monitor_json), "monitor_md": str(monitor_md),
+            "monitor_events": str(events_path),
+        })
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        result["monitor_error"] = str(exc)
     if state.get("block_reason"):
         result["detail"] = state["block_reason"]
     if state["phase"] == "COMPLETE":
@@ -92,7 +103,7 @@ def _summary(state: dict) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("start", "advance", "status"))
+    parser.add_argument("command", choices=("start", "advance", "status", "inspect"))
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
     parser.add_argument("--restart", action="store_true",
                         help="Discard orchestration state for this date and prepare anew")
@@ -109,7 +120,7 @@ def main() -> None:
     state_path = run_dir / "run.json"
     try:
         with _run_lock(run_dir / "run.lock"):
-            if args.command == "status":
+            if args.command in {"status", "inspect"}:
                 _emit(_summary(load_state(state_path)))
 
             if args.command == "start":
@@ -151,6 +162,7 @@ def main() -> None:
                 state = advance_state(state_path, REPO_ROOT)
 
             if state["phase"] == "READY_TO_FINALIZE":
+                previous_phase = state["phase"]
                 output_dir = data_dir() / "analysis" / f"trade_date={as_of_str}"
                 json_path, md_path, statistics_path = validate_and_render(
                     Path(state["manifest_path"]), output_dir,
@@ -159,6 +171,17 @@ def main() -> None:
                 state["analysis_json"] = str(json_path)
                 state["analysis_md"] = str(md_path)
                 state["statistics_md"] = str(statistics_path)
+                record_event(
+                    state, "phase_changed", actor="controller",
+                    detail=f"{previous_phase} -> {state['phase']}",
+                    from_phase=previous_phase, to_phase=state["phase"],
+                )
+                record_event(
+                    state, "run_finalized", actor="controller",
+                    detail="Validated and rendered integrated analysis and statistics outputs.",
+                    analysis_json=str(json_path), analysis_md=str(md_path),
+                    statistics_md=str(statistics_path),
+                )
                 save_state(state_path, state)
             _emit(_summary(state), state["phase"] != "BLOCKED")
     except (AnalysisValidationError, FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
