@@ -1,0 +1,8 @@
+# CurveLens Copper cron template — intentionally non-executable.
+#
+# Copper is experimental. Do not register or enable schedules from this file.
+# A reviewed future schedule must create an isolated agent turn with
+# CCVM_PRODUCT=copper, read AGENTS.md plus deployments/copper/AGENTS.md,
+# acquire and verify the exact Section 64 bulletin, and invoke
+# `$curvelens-daily-analysis`. It must resume persisted state, default to no
+# delivery, and ship disabled for explicit approval.

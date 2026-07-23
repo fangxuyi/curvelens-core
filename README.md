@@ -10,6 +10,7 @@ The included product profiles are:
 |---|---|
 | WTI | Futures curve, volatility surface, physical fundamentals |
 | Gold | Futures curve, volatility surface, macro |
+| Copper | Futures curve, volatility surface, macro and physical fundamentals |
 | Corn | Futures curve, volatility surface, crop fundamentals |
 | Silver | Futures curve, volatility surface, macro and industrial fundamentals |
 
@@ -124,7 +125,7 @@ each product's isolated runtime directory. Start it from the repository root:
 deployments/run_dashboard.sh
 ```
 
-Open `http://127.0.0.1:8501`, select Gold, WTI, Corn, or Silver in the sidebar, and
+Open `http://127.0.0.1:8501`, select a configured product in the sidebar, and
 then select a trade date. Adding another `ccvm/config/markets/<product>.yaml`
 profile automatically adds it to the selector. The dashboard never combines
 analysis and specialist packets from different workflow runs; news remains
@@ -144,6 +145,7 @@ and post-trade-date context is labeled separately.
   - WTI: `EIA_API_KEY`.
   - Gold macro data: `FRED_API_KEY`.
   - Silver macro and industrial proxies: `FRED_API_KEY`.
+  - Copper macro and industrial proxies: `FRED_API_KEY`.
   - Corn crop data: `USDA_NASS_API_KEY`.
 
 ### Set up the repository
@@ -168,6 +170,7 @@ Point one operating agent at the repository root and give it one sentence:
 
 - **Operate the CurveLens WTI deployment.**
 - **Operate the CurveLens Gold deployment.**
+- **Operate the CurveLens Copper deployment.**
 - **Operate the CurveLens Corn deployment.**
 - **Operate the CurveLens Silver deployment.**
 

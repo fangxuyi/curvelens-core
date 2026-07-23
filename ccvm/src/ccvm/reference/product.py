@@ -416,7 +416,7 @@ def load_product(key: str) -> Product:
     )
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=None)
 def get_product(key: Optional[str] = None) -> Product:
     """The deployment's product profile (CCVM_PRODUCT env var, default wti)."""
     return load_product(key or os.environ.get("CCVM_PRODUCT", "wti"))
