@@ -18,9 +18,9 @@ Data row column order (left→right):
   | OC_VOLUME | GLOBEX_VOLUME | PNT_VOLUME | OPEN_INTEREST | [OI_SIGN | UNCH] | OI_CHG
 
 Expiry convention (per product profile + calendar module):
-  "AUG26" → option expiry from the product calendar (WTI: futures LTD − 3
-  business days → 2026-08-17). The product profile maps the option month to
-  its underlying (a constant offset for WTI; a serial-month map for Gold).
+  "SEP26" → option expiry from the product calendar (WTI: futures LTD − 3
+  business days → 2026-08-17). The product profile maps the bulletin month
+  to its underlying (same-month for WTI; a serial-month map for Gold).
 """
 from __future__ import annotations
 
@@ -55,6 +55,7 @@ _PRODUCT_HEADER_RE = re.compile(
 )
 _DECIMAL_RE = re.compile(r'^\d*\.\d+$')
 _INT_RE = re.compile(r'^\d+$')
+_QUOTE_MARK_RE = re.compile(r'^[#*]?(.+?)[AB]?$')
 
 
 def _expiry_code_to_option_info(code: str) -> tuple[date, str, str]:
@@ -192,6 +193,104 @@ def _parse_data_row(tokens: list[str]) -> Optional[dict]:
     }
 
 
+def _clean_quote_token(token: str) -> str:
+    match = _QUOTE_MARK_RE.match(token)
+    return match.group(1) if match else token
+
+
+def _optional_int(token: str) -> Optional[int]:
+    token = _clean_quote_token(token)
+    if token in ("----", "-"):
+        return None
+    return int(token) if _INT_RE.match(token) else None
+
+
+def _optional_delta(token: str) -> Optional[float]:
+    if token in ("----", "-"):
+        return None
+    return float(token) if _DECIMAL_RE.match(token) else None
+
+
+def _parse_cbot_grain_data_row(tokens: list[str]) -> Optional[dict]:
+    """
+    Parse CBOT grain option rows from Section 56.
+
+    These rows differ from the WTI-style table above: after delta they carry
+    EXERCISES, one TRADES CLEARED column, OPEN INTEREST/change, and trailing
+    contract high/low quote columns.
+    """
+    if len(tokens) < 12:
+        return None
+    if not re.match(r'^\d{3,5}$', tokens[0]):
+        return None
+
+    settlement_token = _clean_quote_token(tokens[5])
+    if not re.match(r'^\d+\.?\d*$', settlement_token):
+        return None
+    settlement = float(settlement_token)
+
+    i = 6
+    if i < len(tokens) and tokens[i] == "UNCH":
+        pt_change = 0.0
+        i += 1
+    elif i + 1 < len(tokens) and tokens[i] in ("+", "-") and re.match(
+        r'^\d+\.?\d*$', _clean_quote_token(tokens[i + 1])
+    ):
+        mag = float(_clean_quote_token(tokens[i + 1]))
+        pt_change = mag if tokens[i] == "+" else -mag
+        i += 2
+    else:
+        # Blank point-change cells disappear in pdftotext tokenization.
+        pt_change = 0.0
+
+    if i >= len(tokens):
+        return None
+    delta = _optional_delta(tokens[i])
+    if delta is None and tokens[i] not in ("----", "-"):
+        return None
+    i += 1
+
+    if i >= len(tokens):
+        return None
+    i += 1  # exercises
+
+    if i >= len(tokens):
+        return None
+    cleared_volume = _optional_int(tokens[i])
+    i += 1
+
+    if i >= len(tokens):
+        return None
+    oi = _optional_int(tokens[i])
+    if oi is None:
+        return None
+    i += 1
+
+    if i >= len(tokens):
+        return None
+    if tokens[i] == "UNCH":
+        oi_change = 0
+    elif i + 1 < len(tokens) and tokens[i] in ("+", "-"):
+        mag = _optional_int(tokens[i + 1])
+        if mag is None:
+            return None
+        oi_change = mag if tokens[i] == "+" else -mag
+    else:
+        return None
+
+    return {
+        'strike_cents': int(tokens[0]),
+        'settlement': settlement,
+        'pt_change': pt_change,
+        'delta': delta,
+        'oc_vol': None,
+        'globex_vol': cleared_volume,
+        'pnt_vol': None,
+        'oi': oi,
+        'oi_change': oi_change,
+    }
+
+
 def _premium_value(raw: float, premium_format: str) -> float:
     """Convert a bulletin premium into the same price unit as the underlying."""
     if premium_format == "decimal":
@@ -236,9 +335,15 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
             lo_call = bool(re.match(rf"^{hdr_call}(?:\s+\S|$)", stripped, re.IGNORECASE))
             lo_put = bool(re.match(rf"^{hdr_put}(?:\s+\S|$)", stripped, re.IGNORECASE))
             if lo_call:
+                keep_expiry = in_lo_call and current_expiry_code is not None
                 in_lo_call, in_lo_put = True, False
+                if keep_expiry:
+                    continue
             elif lo_put:
+                keep_expiry = in_lo_put and current_expiry_code is not None
                 in_lo_call, in_lo_put = False, True
+                if keep_expiry:
+                    continue
             else:
                 in_lo_call, in_lo_put = False, False
             current_expiry_code = None
@@ -274,6 +379,8 @@ def parse(pdf_path: Path, trade_date: date) -> list[dict]:
 
         # ── Try to parse as a data row ──
         row = _parse_data_row(tokens)
+        if row is None:
+            row = _parse_cbot_grain_data_row(tokens)
         if row is None:
             continue
 

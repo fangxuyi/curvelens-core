@@ -104,6 +104,42 @@ def test_corn_bulletin_sections_and_grain_eighths(monkeypatch, tmp_path):
     assert {row["option_expiry"] for row in records} == {"2026-07-24"}
 
 
+def test_corn_bulletin_repeated_subheader_keeps_expiry(monkeypatch, tmp_path):
+    text = "\n".join([
+        "CORN CALL", "AUG26", "CORN CALL", _bulletin_row(450, "495"), "TOTAL",
+        "CORN PUT", "AUG26", "CORN PUT", _bulletin_row(450, "123"), "TOTAL",
+    ])
+    monkeypatch.setattr(cme_bulletin_pdf, "_pdftotext", lambda _path: text)
+    monkeypatch.setattr(cme_bulletin_pdf, "get_product", lambda: get_product("corn"))
+    records = cme_bulletin_pdf.parse(tmp_path / "unused.pdf", date(2026, 7, 20))
+    assert [(row["call_put"], row["strike"], row["settlement"]) for row in records] == [
+        ("C", 4.5, pytest.approx(0.49625)),
+        ("P", 4.5, pytest.approx(0.12375)),
+    ]
+
+
+def test_corn_bulletin_cbot_row_layout(monkeypatch, tmp_path):
+    text = "\n".join([
+        "CORN CALL",
+        "AUG26     CORN CALL",
+        "335 ---- 1111B 1124A ---- 1177 + 32 1.000 ---- ---- 6 UNCH 1163B 716A",
+        "440 322 360B 297A ---- 353 + 22 1.000 ---- 23 7494 - 955 687B 76A",
+        "TOTAL",
+    ])
+    monkeypatch.setattr(cme_bulletin_pdf, "_pdftotext", lambda _path: text)
+    monkeypatch.setattr(cme_bulletin_pdf, "get_product", lambda: get_product("corn"))
+    records = cme_bulletin_pdf.parse(tmp_path / "unused.pdf", date(2026, 7, 20))
+    assert [row["strike"] for row in records] == [3.35, 4.40]
+    assert [row["settlement"] for row in records] == [
+        pytest.approx(1.17875),
+        pytest.approx(0.35375),
+    ]
+    assert records[0]["volume"] is None
+    assert records[1]["volume"] == 23
+    assert records[1]["open_interest"] == 7494
+    assert records[1]["delta"] == 1.0
+
+
 def test_yfinance_uses_listed_months_and_normalizes_cents(monkeypatch):
     product = get_product("corn")
     monkeypatch.setattr(yfinance_futures, "get_product", lambda: product)
