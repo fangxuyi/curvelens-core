@@ -63,7 +63,8 @@ market:
     product_header_put: "LO PUT"
     url: "https://www.cmegroup.com/daily_bulletin/current/Section63_Energy_Options_Products.pdf"
     strike_scale: 100                    # strikes printed in cents: 6850 = $68.50
-    underlying_month_offset: 1           # AUG26 label → CLU26 (next month) underlying
+    # LO bulletin labels identify the underlying CL delivery month: SEP26 → CLU26.
+    underlying_month_offset: 0
 
   benchmark:
     name: "Brent"

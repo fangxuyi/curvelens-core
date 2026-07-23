@@ -131,6 +131,7 @@ def _infer_correct_underlying(option_expiry_str: str) -> tuple[str, str] | None:
         return None
     # Expiration normally falls in the option month or the immediately
     # preceding month. Include one extra month for holiday-shifted conventions.
+    nearby_candidates: list[tuple[int, str, str | None]] = []
     for offset in range(3):
         total = expiry.month + offset - 1
         option_month = total % 12 + 1
@@ -144,6 +145,20 @@ def _infer_correct_underlying(option_expiry_str: str) -> tuple[str, str] | None:
         if candidate_expiry == expiry:
             dm_month = int(delivery_month[5:7])
             return delivery_month, product.month_letters.get(dm_month)
+        dm_month = int(delivery_month[5:7])
+        nearby_candidates.append((
+            abs((candidate_expiry - expiry).days),
+            delivery_month,
+            product.month_letters.get(dm_month),
+        ))
+    # Legacy fixtures can differ from the holiday-aware calendar by one
+    # business day. Select a very-near calendar match before falling back to a
+    # month-label heuristic; this remains correct when an option expires in the
+    # month preceding its same-named WTI underlying.
+    if nearby_candidates:
+        days, delivery_month, letter = min(nearby_candidates)
+        if days <= 7:
+            return delivery_month, letter
     # Compatibility for legacy fixtures whose expiry date predates the
     # corrected calendar but whose expiry month still encodes the option label.
     dm_year, dm_month = product.bulletin.underlying_month(expiry.year, expiry.month)
