@@ -271,14 +271,15 @@ with tab_vol:
         cols[3].metric("R.N. Std. Dev.", f"{result['rn_std']:.2f}"
                        if result.get("rn_std") is not None else "—")
         mass_cols = st.columns(4)
-        mass_cols[0].metric("Projected Mass", f"{result['projected_mass']:.4f}"
+        mass_cols[0].metric("Fitted Mass", f"{result['projected_mass']:.4f}"
                             if result.get("projected_mass") is not None else "—")
         mass_cols[1].metric("Raw Positive Mass", f"{result['positive_mass']:.4f}"
                             if result.get("positive_mass") is not None else "—")
         mass_cols[2].metric("Raw Negative Mass", f"{result['negative_mass']:.4f}"
                             if result.get("negative_mass") is not None else "—")
-        mass_cols[3].metric("Repair Size", f"{result['projection_max_adjustment_ticks']:.2f} ticks"
-                            if result.get("projection_max_adjustment_ticks") is not None else "—")
+        fit_ticks = result.get("fit_max_residual_ticks", result.get("projection_max_adjustment_ticks"))
+        mass_cols[3].metric("Max Fit Residual", f"{fit_ticks:.2f} ticks"
+                            if fit_ticks is not None else "—")
 
         ladder = result.get("prob_ladder") or {}
         if valid:
@@ -297,16 +298,42 @@ with tab_vol:
                 ))
                 st.plotly_chart(fig, width="stretch")
             st.dataframe(probability, hide_index=True, width="stretch")
+
+            quantiles = result.get("quantiles") or {}
+            if quantiles:
+                st.caption("Implied terminal-price percentiles")
+                st.dataframe(pd.DataFrame({
+                    "Percentile": [key.upper() for key in quantiles],
+                    "Settlement": list(quantiles.values()),
+                }), hide_index=True, width="stretch")
+
+            density_points = result.get("density_points") or []
+            if density_points and _PLOTLY:
+                density_df = pd.DataFrame(density_points)
+                fig = go.Figure(go.Scatter(
+                    x=density_df["strike"], y=density_df["density"],
+                    mode="lines", fill="tozeroy", line={"color": C["blue"]},
+                ))
+                fig.update_layout(**_plot_layout(
+                    title=f"Risk-neutral terminal-price density — {expiry}",
+                    xaxis={"title": "Settlement price"},
+                    yaxis={"title": "Probability density"},
+                ))
+                st.plotly_chart(fig, width="stretch")
         else:
             st.warning("Probabilities are withheld because this expiry did not pass validation.")
 
-        with st.expander("Density construction and repair details", expanded=bool(result.get("validation_warnings"))):
+        with st.expander("Density calibration details", expanded=bool(result.get("validation_warnings"))):
             st.write(f"Method: `{result.get('method', '—')}`")
             st.write(f"Exercise adjustment: `{result.get('exercise_adjustment', '—')}`")
             st.write(
                 f"Convexity violations: **{result.get('convexity_violations', '—')}** · "
                 f"Monotonicity violations: **{result.get('monotonicity_violations', '—')}** · "
-                f"Projection limit: **{result.get('projection_limit_ticks', '—')} ticks**"
+                f"Fit-residual limit: **{result.get('fit_residual_limit_ticks', result.get('projection_limit_ticks', '—'))} ticks**"
+            )
+            st.write(
+                f"Fitted forward: **{result.get('fitted_forward', '—')}** · "
+                f"Tail-boundary mass: **{result.get('tail_boundary_mass', '—')}**"
             )
             for warning in result.get("validation_warnings", []):
                 st.warning(warning)

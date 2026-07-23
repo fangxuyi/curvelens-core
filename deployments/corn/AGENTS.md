@@ -71,7 +71,7 @@ must identify those gaps and must not imply those inputs were checked.
 5. Validate USDA observation labels, units, dates, revisions, and growing-season
    gaps against Quick Stats output.
 6. Review RND diagnostics over consecutive days; probabilities remain invalid
-   when repair exceeds the profile's tick-bounded limit.
+   when the constrained-fit residual exceeds the profile's tick-bounded limit.
 7. Add and review a Section 56 downloader, delivery destination, and disabled
    schedule before proposing production status.
 

@@ -548,22 +548,29 @@ def _render_markdown(report: dict) -> str:
         )
         lines += [
             f"**Market-Implied Distribution — {ex.get('expiry')}** "
-            f"*(tick-bounded convex projection of the settlement curve)*",
+            f"*(non-negative state-price fit to the settlement curve)*",
             f"- Expected move to expiry: **{em_str}** (straddle)  |  "
             f"RN σ: ${ex.get('rn_std'):.2f}  |  RN skew: {ex.get('rn_skew'):+.2f}",
         ]
         if ladder_str:
             lines.append(f"- {ladder_str}")
         projection_note = (
-            f", convex repair max {ex.get('projection_max_adjustment_ticks'):.2f} premium ticks"
+            f", maximum fit residual {ex.get('fit_max_residual_ticks', ex.get('projection_max_adjustment_ticks')):.2f} premium ticks"
             if ex.get("projection_applied") and
-            ex.get("projection_max_adjustment_ticks") is not None else ""
+            ex.get("fit_max_residual_ticks", ex.get("projection_max_adjustment_ticks")) is not None else ""
         )
         displayed_mass = ex.get("projected_mass", ex.get("signed_mass"))
-        lines.append(f"- *diagnostics: {ex.get('n_strikes')} strikes, "
+        quantiles = ex.get("quantiles") or {}
+        if quantiles:
+            lines.append(
+                "- Implied settle percentiles: "
+                + " · ".join(f"{key.upper()}: {_fmt_usd(value)}" for key, value in quantiles.items())
+            )
+        lines.append(f"- *diagnostics: {ex.get('n_strikes')} observed strikes, "
                      f"raw signed mass {ex.get('signed_mass'):.2f}, raw negative mass "
-                     f"{ex.get('negative_mass'):.3f}, projected mass "
-                     f"{displayed_mass:.2f}{projection_note}*")
+                     f"{ex.get('negative_mass'):.3f}, fitted mass "
+                     f"{displayed_mass:.2f}{projection_note}, tail-boundary mass "
+                     f"{ex.get('tail_boundary_mass', 0):.3f}*")
         if ex.get("exercise_adjustment") == "baw_iv_to_black76":
             lines.append(
                 "- *Method caveat: American settlements are converted to "

@@ -28,9 +28,9 @@ market:
     risk_free_rate: 0.05
     rnd_quality_gate: true
     premium_tick_size: 0.10
-    # Permit convex projection only when every fitted premium stays within two
-    # exchange ticks of the bulletin settlement. Raw diagnostics are retained.
-    rnd_max_projection_ticks: 2.0
+    # Accept probabilities only when every constrained-fit premium remains
+    # within two exchange ticks of the bulletin settlement.
+    rnd_max_fit_residual_ticks: 2.0
     expiry_rule: four_business_days_before_prior_month_end
 
   futures_depth: 12

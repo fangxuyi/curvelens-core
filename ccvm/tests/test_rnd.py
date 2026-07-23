@@ -135,6 +135,35 @@ class TestGuards:
         assert result["rn_mean"] == pytest.approx(4000.0, abs=10.0)
         assert result["validation_warnings"]
 
+    def test_fitted_distribution_is_nonnegative_normalized_and_forward_consistent(self):
+        rows = _synthetic_rows()
+        result = compute_expiry(
+            rows, 70.0, 0.15, 0.05,
+            price_tick=0.01, max_projection_ticks=2.0,
+        )
+
+        assert result["status"] == "available"
+        points = result["density_points"]
+        assert all(point["density"] >= 0 for point in points)
+        assert sum(point["probability_mass"] for point in points) == pytest.approx(1.0, abs=1e-6)
+        assert result["fitted_forward"] == pytest.approx(70.0, abs=0.01)
+        assert result["tail_boundary_mass"] < 0.025
+
+    def test_probability_outputs_scale_with_distribution_not_fixed_dollars(self):
+        rows = _synthetic_rows(
+            F=4000.0, T=0.25, vol=0.20, lo=2000, hi=6500, step=10.0,
+        )
+        result = compute_expiry(
+            rows, 4000.0, 0.25, 0.05,
+            price_tick=0.10, max_projection_ticks=2.0,
+        )
+
+        thresholds = sorted(float(key.removeprefix("p_above_")) for key in result["prob_ladder"])
+        assert thresholds[-1] - thresholds[0] > 1000.0
+        assert sum(bucket["probability"] for bucket in result["probability_buckets"]) \
+            == pytest.approx(1.0, abs=1e-3)
+        assert list(result["quantiles"].values()) == sorted(result["quantiles"].values())
+
     def test_tick_aware_projection_still_rejects_material_price_corruption(self):
         rows = _synthetic_rows()
         for row in rows:
@@ -148,4 +177,21 @@ class TestGuards:
 
         assert result["status"] == "invalid_surface"
         assert result["projection_max_adjustment_ticks"] > 2.0
+        assert result["prob_ladder"] == {}
+
+    def test_call_put_regime_mismatch_cannot_be_smoothed_into_probabilities(self):
+        rows = _synthetic_rows()
+        for row in rows:
+            if row["cp"] == "C":
+                row["settlement"] = black76_price(
+                    70.0, row["strike"], 0.15, 0.05, 0.45, "C"
+                )
+
+        result = compute_expiry(
+            rows, 70.0, 0.15, 0.05,
+            price_tick=0.01, max_projection_ticks=2.0,
+        )
+
+        assert result["status"] == "invalid_surface"
+        assert result["fit_max_residual_ticks"] > 2.0
         assert result["prob_ladder"] == {}
