@@ -5,22 +5,23 @@ import math
 from typing import Any
 
 
-def dense_probability_above_curve(
+def fitted_probability_above_curve(
     density_points: list[dict[str, Any]],
-    lower: float,
-    upper: float,
     *,
-    point_count: int = 121,
+    lower: float | None = None,
+    upper: float | None = None,
 ) -> list[dict[str, float]]:
-    """Interpolate a dense survival curve from fitted state-price masses.
+    """Return the direct reverse cumulative mass on the fitted strike grid.
 
-    This follows the same within-cell convention used by the RND engine: mass
-    at the left strike is allocated linearly across the interval to the next
-    strike. It is a display interpolation, not additional market information.
+    Each point is ``P(S_T >= strike)`` on an actual fitted state-price node.
+    Bounds only filter the displayed nodes after the full cumulative sum; they
+    do not create or interpolate additional strikes.
     """
-    if point_count < 2 or not math.isfinite(lower) or not math.isfinite(upper):
+    if lower is not None and not math.isfinite(lower):
         return []
-    if lower >= upper:
+    if upper is not None and not math.isfinite(upper):
+        return []
+    if lower is not None and upper is not None and lower >= upper:
         return []
 
     by_strike: dict[float, float] = {}
@@ -35,36 +36,17 @@ def dense_probability_above_curve(
 
     states = sorted(by_strike.items())
     total_mass = sum(mass for _, mass in states)
-    if len(states) < 2 or total_mass <= 0:
+    if not states or total_mass <= 0:
         return []
 
-    strikes = [strike for strike, _ in states]
-    masses = [mass / total_mass for _, mass in states]
-    suffix_mass = [0.0] * (len(masses) + 1)
-    for index in range(len(masses) - 1, -1, -1):
-        suffix_mass[index] = suffix_mass[index + 1] + masses[index]
-
-    def probability_above(threshold: float) -> float:
-        if threshold < strikes[0]:
-            return 1.0
-        if threshold >= strikes[-1]:
-            return 0.0
-
-        right_index = next(
-            index for index, strike in enumerate(strikes) if strike > threshold
-        )
-        left_index = right_index - 1
-        left, right = strikes[left_index], strikes[right_index]
-        partial_left_mass = masses[left_index] * (
-            (right - threshold) / (right - left)
-        )
-        return min(1.0, max(0.0, suffix_mass[right_index] + partial_left_mass))
-
-    step = (upper - lower) / (point_count - 1)
-    return [
-        {
-            "strike": lower + index * step,
-            "probability_above": probability_above(lower + index * step),
-        }
-        for index in range(point_count)
-    ]
+    remaining = 1.0
+    curve: list[dict[str, float]] = []
+    for strike, mass in states:
+        if ((lower is None or strike >= lower)
+                and (upper is None or strike <= upper)):
+            curve.append({
+                "strike": strike,
+                "probability_at_or_above": min(1.0, max(0.0, remaining)),
+            })
+        remaining -= mass / total_mass
+    return curve

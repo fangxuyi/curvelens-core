@@ -29,7 +29,7 @@ except ImportError:
 
 from ccvm.reference.product import available_products, get_product
 from ccvm.reporting.dashboard_news import build_validated_news, news_artifacts_ready
-from ccvm.reporting.probability_chart import dense_probability_above_curve
+from ccvm.reporting.probability_chart import fitted_probability_above_curve
 from ccvm.runtime import data_dir
 from ccvm.storage.parquet_store import ParquetStore
 
@@ -307,26 +307,27 @@ with tab_vol:
                 numeric_thresholds = pd.to_numeric(
                     probability["Threshold"], errors="coerce"
                 ).dropna()
-                dense_curve = (
-                    dense_probability_above_curve(
+                fitted_curve = (
+                    fitted_probability_above_curve(
                         density_points,
-                        float(numeric_thresholds.min()),
-                        float(numeric_thresholds.max()),
+                        lower=float(numeric_thresholds.min()),
+                        upper=float(numeric_thresholds.max()),
                     )
                     if len(numeric_thresholds) >= 2 else []
                 )
                 fig = go.Figure()
-                if dense_curve:
-                    dense_df = pd.DataFrame(dense_curve)
+                if fitted_curve:
+                    fitted_df = pd.DataFrame(fitted_curve)
                     fig.add_trace(go.Scatter(
-                        x=dense_df["strike"],
-                        y=dense_df["probability_above"] * 100,
-                        mode="lines",
-                        name="Interpolated curve",
-                        line={"color": C["blue"], "width": 2},
+                        x=fitted_df["strike"],
+                        y=fitted_df["probability_at_or_above"] * 100,
+                        mode="lines+markers",
+                        name="Fitted-grid cumulative",
+                        line={"color": C["blue"], "width": 2, "shape": "hv"},
+                        marker={"size": 3},
                         hovertemplate=(
                             "Strike %{x:.2f}<br>"
-                            "Probability above %{y:.2f}%<extra></extra>"
+                            "Probability at or above %{y:.2f}%<extra></extra>"
                         ),
                     ))
                 fig.add_trace(go.Scatter(
@@ -346,11 +347,11 @@ with tab_vol:
                     yaxis={"title": "Probability (%)", "range": [0, 100]},
                 ))
                 st.plotly_chart(fig, width="stretch")
-                if dense_curve:
+                if fitted_curve:
                     st.caption(
-                        "The line interpolates the validated fitted state-price "
-                        "distribution across 121 display strikes. It adds visual "
-                        "granularity, not new option observations."
+                        "The step line is the direct reverse cumulative sum of "
+                        "probability mass at the fitted strike nodes shown. No "
+                        "additional strikes or probabilities are interpolated."
                     )
             st.dataframe(probability, hide_index=True, width="stretch")
 
