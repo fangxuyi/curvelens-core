@@ -124,18 +124,53 @@ market:
       - comex
       - real yields
       - treasury yields
+      - interest rate
+      - rate cut
+      - rate hike
       - federal reserve
       - fomc
+      - monetary policy
+      - economic outlook
+      - discount rate
       - inflation
+      - consumer price
+      - producer price
+      - personal income and outlays
+      - gross domestic product
       - central bank
       - dollar
+      - u.s. dollar
+      - us dollar
       - geopolitical
       - sanctions
       - mining
     sources:
-      - key: federal_reserve_press
-        url: https://www.federalreserve.gov/feeds/press_all.xml
-        name: Federal Reserve Press Releases
+      # Use topic-specific official feeds rather than the Fed's combined press
+      # feed, which is dominated by bank regulation and enforcement notices.
+      - key: federal_reserve_monetary_policy
+        url: https://www.federalreserve.gov/feeds/press_monetary.xml
+        name: Federal Reserve Monetary Policy
+      - key: federal_reserve_speeches
+        url: https://www.federalreserve.gov/feeds/speeches.xml
+        name: Federal Reserve Speeches
+      - key: federal_reserve_testimony
+        url: https://www.federalreserve.gov/feeds/testimony.xml
+        name: Federal Reserve Testimony
+      - key: bls_consumer_prices
+        url: https://www.bls.gov/feed/cpi.rss
+        name: BLS Consumer Price Index
+      - key: bls_producer_prices
+        url: https://www.bls.gov/feed/ppi.rss
+        name: BLS Producer Price Index
+      - key: bls_employment
+        url: https://www.bls.gov/feed/empsit.rss
+        name: BLS Employment Situation
+      - key: bea_releases
+        url: https://apps.bea.gov/rss/rss.xml
+        name: BEA News Releases
+      - key: cnbc_top_news
+        url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114
+        name: CNBC Top News
 
   analysis:
     blocking_sections: [futures]
@@ -146,7 +181,7 @@ market:
         display_name: Futures Curve Analyst
         mandate: Explain flat price, curve shape, carry, positioning, and the forward implications.
         section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
-        news_keywords: [gold, bullion, comex, central bank, mining, sanctions, geopolitical]
+        news_keywords: [gold, bullion, precious metals, comex, central bank, mining, sanctions, geopolitical, dollar]
         minimum_key_metrics: 4
         report_requirements:
           - Report the front settlement and one-day dollar and percentage change.
@@ -160,7 +195,7 @@ market:
         display_name: Volatility Surface Analyst
         mandate: Explain implied volatility, skew, term structure, and risk-neutral-density diagnostics.
         section_keys: [market_risk, rnd, term_structure]
-        news_keywords: [gold, volatility, options, comex, fomc, inflation, geopolitical]
+        news_keywords: [gold, precious metals, volatility, options, comex, fomc, inflation, geopolitical, treasury yields, interest rate]
         minimum_key_metrics: 5
         report_requirements:
           - Report front ATM implied volatility and its dated change when available.
@@ -175,7 +210,7 @@ market:
         display_name: Macro Analyst
         mandate: Relate rates, real yields, the dollar, inflation, and policy risk to gold.
         section_keys: [macro, cot, what_changed]
-        news_keywords: [real yields, treasury yields, federal reserve, fomc, inflation, dollar, central bank, sanctions, geopolitical]
+        news_keywords: [gold, real yields, treasury yields, interest rate, rate cut, rate hike, federal reserve, fomc, monetary policy, economic outlook, discount rate, inflation, consumer price, producer price, personal income and outlays, gross domestic product, dollar, central bank, sanctions, geopolitical]
         minimum_key_metrics: 4
         report_requirements:
           - Report the latest real yield, broad dollar, breakeven, and nominal yield with dates and changes.

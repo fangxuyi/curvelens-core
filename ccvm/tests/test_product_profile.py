@@ -74,6 +74,24 @@ class TestNonWTIProfile:
         assert p.option_premium_tick_size == pytest.approx(0.10)
         assert p.rnd_max_projection_ticks == pytest.approx(2.0)
 
+    def test_gold_news_uses_targeted_macro_and_market_sources(self):
+        p = get_product("gold")
+        source_keys = {source[0] for source in p.news.sources}
+
+        assert "federal_reserve_press" not in source_keys
+        assert {
+            "federal_reserve_monetary_policy",
+            "federal_reserve_speeches",
+            "federal_reserve_testimony",
+            "bls_consumer_prices",
+            "bls_producer_prices",
+            "bls_employment",
+            "bea_releases",
+            "cnbc_top_news",
+        } <= source_keys
+        assert "monetary policy" in p.news.keywords
+        assert "consumer price" in p.news.keywords
+
     def test_rejects_unsafe_analysis_role_key(self, monkeypatch):
         import ccvm.reference.product as product_module
 

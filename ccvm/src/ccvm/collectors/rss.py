@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 # Lookback window: include articles published within this many days of as_of
 _LOOKBACK_DAYS = 7
 
-_USER_AGENT = "CurveLensBot/1.0 (https://github.com/fangxuyi/curveLens)"
+# Several official statistical feeds reject URL-shaped bot identifiers even
+# though they serve the same request with a short, explicit application name.
+_USER_AGENT = "CurveLensBot/1.0"
 
 class RSSNewsCollector:
     """Fetches energy news from free RSS feeds for a given trade date.
