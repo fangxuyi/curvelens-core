@@ -168,3 +168,27 @@ def test_rnd_invalid_surface_updates_overall_quality(tmp_path):
     assert report["overall_status"] == "FAIL"
     assert report["rnd"]["status"] == "FAIL"
     assert "Risk-Neutral Density" in (tmp_path / "2026-06-24.md").read_text()
+
+
+def test_rnd_mixed_expiries_keep_valid_probabilities_with_warning(tmp_path):
+    generate(AS_OF, _silver_futures_table(), _silver_options_table(), None, tmp_path)
+    report = add_rnd_diagnostics(tmp_path / "2026-06-24.json", {"expiries": [
+        {
+            "expiry": "2026-07-18", "status": "available",
+            "prob_ladder": {"p_above_70": 0.5},
+            "signed_mass": 1.0, "negative_mass": 0.0,
+            "convexity_violations": 0,
+        },
+        {
+            "expiry": "2026-08-18", "status": "invalid_surface",
+            "prob_ladder": {},
+            "signed_mass": 1.0, "negative_mass": 0.9,
+            "convexity_violations": 12,
+            "validation_errors": ["fit residual exceeded the limit"],
+        },
+    ]}, required=True)
+
+    assert report["overall_status"] == "WARN"
+    assert report["rnd"]["status"] == "WARN"
+    assert report["rnd"]["expiries"][0]["prob_ladder"] == {"p_above_70": 0.5}
+    assert "shown without probabilities" in report["rnd"]["notes"][0]

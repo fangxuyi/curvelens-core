@@ -57,6 +57,9 @@ At a high level:
 1. Deterministic code collects, normalizes, checks, and calculates. Missing or
    recoverable inputs can be retried; unresolved limitations are retained rather
    than hidden or replaced with fabricated data.
+   Risk-neutral distributions are attempted independently for every option
+   expiry within a rolling twelve-calendar-month horizon. Valid tenors retain
+   their probabilities; failed tenors remain visible with their diagnostics.
 2. A native Codex quality reviewer decides whether the prepared evidence is
    usable, usable with limitations, retryable through an allowlisted remedy, or
    blocked.

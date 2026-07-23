@@ -273,9 +273,33 @@ with tab_vol:
     if not rnd_expiries:
         st.info("No risk-neutral density output for this date.")
     else:
-        labels = [str(item.get("expiry", "unknown")) for item in rnd_expiries]
+        expiry_coverage = pd.DataFrame([{
+            "Expiry": item.get("expiry", "unknown"),
+            "Status": (
+                "VALID" if item.get("status") == "available" else "INVALID"
+            ),
+            "Probabilities": (
+                "Available"
+                if item.get("status") == "available" and item.get("prob_ladder")
+                else "Unavailable"
+            ),
+            "Max fit residual (ticks)": item.get(
+                "fit_max_residual_ticks",
+                item.get("projection_max_adjustment_ticks"),
+            ),
+            "Reason": "; ".join(item.get("validation_errors") or []),
+        } for item in rnd_expiries])
+        st.caption("Expiry coverage")
+        st.dataframe(expiry_coverage, hide_index=True, width="stretch")
+
+        labels = [
+            f"{item.get('expiry', 'unknown')} — "
+            f"{'VALID' if item.get('status') == 'available' else 'INVALID'}"
+            for item in rnd_expiries
+        ]
         expiry = st.selectbox("Probability expiry", labels, key="rnd-expiry")
         result = rnd_expiries[labels.index(expiry)]
+        expiry_date = str(result.get("expiry", "unknown"))
         valid = result.get("status") == "available" and bool(result.get("prob_ladder"))
 
         cols = st.columns(4)
@@ -342,7 +366,7 @@ with tab_vol:
                     ),
                 ))
                 fig.update_layout(**_plot_layout(
-                    title=f"Implied probability ladder — {expiry}",
+                    title=f"Implied probability ladder — {expiry_date}",
                     xaxis={"title": "Settlement threshold"},
                     yaxis={"title": "Probability (%)", "range": [0, 100]},
                 ))
@@ -371,13 +395,19 @@ with tab_vol:
                     mode="lines", fill="tozeroy", line={"color": C["blue"]},
                 ))
                 fig.update_layout(**_plot_layout(
-                    title=f"Risk-neutral terminal-price density — {expiry}",
+                    title=f"Risk-neutral terminal-price density — {expiry_date}",
                     xaxis={"title": "Settlement price"},
                     yaxis={"title": "Probability density"},
                 ))
                 st.plotly_chart(fig, width="stretch")
         else:
-            st.warning("Probabilities are withheld because this expiry did not pass validation.")
+            st.error(
+                "This expiry is shown explicitly, but its fitted surface failed "
+                "validation. Reporting its fitted values as probabilities would "
+                "be misleading."
+            )
+            for error in result.get("validation_errors", []):
+                st.warning(error)
 
         with st.expander("Density calibration details", expanded=bool(result.get("validation_warnings"))):
             st.write(f"Method: `{result.get('method', '—')}`")

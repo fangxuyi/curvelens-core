@@ -132,6 +132,7 @@ class Product:
     fundamentals_provider: Optional[str]
     futures_depth: int
     options_expiry_depth: int
+    options_expiry_horizon_months: int = 12
     listed_futures_months: tuple[int, ...] = tuple(range(1, 13))
     futures_price_scale: float = 1.0
     fail_strikes_below: int = 2
@@ -265,6 +266,14 @@ def load_product(key: str) -> Product:
     futures_price_scale = float(m.get("futures_price_scale", 1.0))
     if futures_price_scale <= 0:
         raise ValueError(f"Product profile {key!r} futures_price_scale must be positive")
+    options_expiry_horizon_months = int(
+        m.get("options_expiry_horizon_months", 12)
+    )
+    if not 1 <= options_expiry_horizon_months <= 120:
+        raise ValueError(
+            f"Product profile {key!r} options_expiry_horizon_months "
+            "must be between 1 and 120"
+        )
     analysis_roles = tuple(
         AnalysisRoleSpec(
             key=str(role["key"]),
@@ -343,6 +352,7 @@ def load_product(key: str) -> Product:
         fundamentals_provider=m.get("fundamentals_provider"),
         futures_depth=int(m.get("futures_depth", 12)),
         options_expiry_depth=int(m.get("options_expiry_depth", 5)),
+        options_expiry_horizon_months=options_expiry_horizon_months,
         listed_futures_months=listed_futures_months,
         futures_price_scale=futures_price_scale,
         fail_strikes_below=int(m.get("fail_strikes_below", 2)),
