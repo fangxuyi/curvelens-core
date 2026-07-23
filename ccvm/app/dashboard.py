@@ -29,6 +29,7 @@ except ImportError:
 
 from ccvm.reference.product import available_products, get_product
 from ccvm.reporting.dashboard_news import build_validated_news, news_artifacts_ready
+from ccvm.reporting.probability_chart import dense_probability_above_curve
 from ccvm.runtime import data_dir
 from ccvm.storage.parquet_store import ParquetStore
 
@@ -302,15 +303,55 @@ with tab_vol:
                 "Probability Above (%)": [value * 100 for value in ladder.values()],
             })
             if _PLOTLY:
-                fig = go.Figure(go.Bar(
-                    x=probability["Threshold"], y=probability["Probability Above (%)"],
-                    marker_color=C["blue"],
+                density_points = result.get("density_points") or []
+                numeric_thresholds = pd.to_numeric(
+                    probability["Threshold"], errors="coerce"
+                ).dropna()
+                dense_curve = (
+                    dense_probability_above_curve(
+                        density_points,
+                        float(numeric_thresholds.min()),
+                        float(numeric_thresholds.max()),
+                    )
+                    if len(numeric_thresholds) >= 2 else []
+                )
+                fig = go.Figure()
+                if dense_curve:
+                    dense_df = pd.DataFrame(dense_curve)
+                    fig.add_trace(go.Scatter(
+                        x=dense_df["strike"],
+                        y=dense_df["probability_above"] * 100,
+                        mode="lines",
+                        name="Interpolated curve",
+                        line={"color": C["blue"], "width": 2},
+                        hovertemplate=(
+                            "Strike %{x:.2f}<br>"
+                            "Probability above %{y:.2f}%<extra></extra>"
+                        ),
+                    ))
+                fig.add_trace(go.Scatter(
+                    x=numeric_thresholds,
+                    y=probability.loc[numeric_thresholds.index, "Probability Above (%)"],
+                    mode="markers",
+                    name="Published ladder",
+                    marker={"color": C["amber"], "size": 8},
+                    hovertemplate=(
+                        "Strike %{x:.2f}<br>"
+                        "Probability above %{y:.2f}%<extra></extra>"
+                    ),
                 ))
                 fig.update_layout(**_plot_layout(
                     title=f"Implied probability ladder — {expiry}",
+                    xaxis={"title": "Settlement threshold"},
                     yaxis={"title": "Probability (%)", "range": [0, 100]},
                 ))
                 st.plotly_chart(fig, width="stretch")
+                if dense_curve:
+                    st.caption(
+                        "The line interpolates the validated fitted state-price "
+                        "distribution across 121 display strikes. It adds visual "
+                        "granularity, not new option observations."
+                    )
             st.dataframe(probability, hide_index=True, width="stretch")
 
             quantiles = result.get("quantiles") or {}
