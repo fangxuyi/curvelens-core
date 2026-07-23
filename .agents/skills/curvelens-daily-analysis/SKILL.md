@@ -40,12 +40,15 @@ or a vendor model CLI.
    and provide the controller's validation error; otherwise spawn the named
    generic agent again with the updated task file. Correction and QC cycles are
    bounded by the controller.
-7. Report the final `analysis_json`, `analysis_md`, and `statistics_md` paths,
+7. Report the final `analysis_json`, `analysis_md`, `statistics_md`, and
+   `mobile_md` paths,
    plus `monitor_md`, `monitor_json`, `monitor_events`, and material retained
    limitations. `analysis_md` is the primary integrated report: its views must
    connect validated numbers, driver/news assessment, conflicts, and forward
-   watch items. `statistics_md` remains the numerical audit supplement; it is
-   not a second forecast. Use the controller's `inspect` command when a user
+   watch items. `mobile_md` is the deterministic phone-first brief used by
+   notification preparation; it does not replace the full synthesis.
+   `statistics_md` remains the numerical audit supplement; it is not a second
+   forecast. Use the controller's `inspect` command when a user
    asks what agents received, returned, or failed validation.
    Do not call `notify.py`, touch an outbox, enable a schedule, or deliver the
    report. Promotion is a separate explicitly approved change.

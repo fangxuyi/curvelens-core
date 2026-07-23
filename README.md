@@ -46,8 +46,9 @@ flowchart TD
 
     R --> O1[analysis.md and analysis.json]
     R --> O2[statistics.md]
-    R --> O3[workflow monitor files]
-    R -. Separate explicit approval .-> O4[Delivery outbox]
+    R --> O3[mobile.md]
+    R --> O4[workflow monitor files]
+    O3 -. Separate explicit approval .-> O5[Delivery outbox]
 ```
 
 At a high level:
@@ -84,6 +85,7 @@ ccvm/data/products/<product>/
 ├── analysis/trade_date=<date>/
 │   ├── analysis.md
 │   ├── analysis.json
+│   ├── mobile.md
 │   └── statistics.md
 └── analysis_workflow/trade_date=<date>/
     ├── run.json
@@ -96,6 +98,7 @@ ccvm/data/products/<product>/
 |---|---|
 | `analysis.md` | Primary human-readable report. It combines the top three views, exact supporting statistics, news or driver assessment, conflicts, specialist detail, and forward watch items. |
 | `analysis.json` | Validated structured form of the same analysis for downstream tools and delivery formatting. |
+| `mobile.md` | Phone-first brief containing the bottom line, three ranked views, two key numbers per view, driver, conflict, watch item, and one material data note. Notification preparation uses this exact format. |
 | `statistics.md` | Numerical audit supplement containing the market snapshot, desk-level measures, comparisons, evidence coverage, and retained limitations. It is not a separate forecast. |
 | `workflow_monitor.md` | User-facing debugging view of each agent's assigned task, allowed input files, submitted response, validation status, and correction history. |
 | `workflow_monitor.json` | Machine-readable monitor snapshot with artifact paths and hashes. |
@@ -174,4 +177,6 @@ Use $curvelens-daily-analysis to run <product> for YYYY-MM-DD.
 
 For bulletin-backed products, the workflow uses the trade date printed inside
 the approved bulletin. Notification preparation, schedules, and live delivery
-remain separate actions that require explicit approval.
+remain separate actions that require explicit approval. Once delivery is
+approved, `agent/notify.py --prepare` queues the exact phone-first rendering
+saved as `mobile.md`; it does not ask another model to summarize the report.

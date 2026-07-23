@@ -235,10 +235,12 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
     synthesis_path.write_text(json.dumps(synthesis))
-    json_path, md_path, statistics_path = validate_and_render(
+    json_path, md_path, statistics_path, mobile_path = validate_and_render(
         tmp_path / "packets" / "manifest.json", tmp_path / "out",
     )
-    assert json_path.exists() and md_path.exists() and statistics_path.exists()
+    assert all(path.exists() for path in (
+        json_path, md_path, statistics_path, mobile_path,
+    ))
     output = json.loads(json_path.read_text())
     assert output["workflow_mode"] == "agent_orchestrated"
     assert output["statistics_integrated"] is True
@@ -253,6 +255,11 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert "## Futures Curve statistics" in statistics
     assert "## Evidence coverage" in statistics
     assert "Numerical audit supplement" in statistics
+    mobile = mobile_path.read_text()
+    assert "*GOLD Daily Brief — 2026-07-20*" in mobile
+    assert "*1. View from futures_curve*" in mobile
+    assert "Numbers: Metric 1: 1.0%" in mobile
+    assert len(mobile) <= 2800
 
     bad_path = Path(manifest["role_response_paths"][manifest["roles"][0]])
     bad = json.loads(bad_path.read_text())

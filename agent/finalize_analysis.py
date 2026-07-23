@@ -21,7 +21,7 @@ def main() -> None:
     args = parser.parse_args()
     root = data_dir() / "analysis_workflow" / f"trade_date={args.date}"
     try:
-        json_path, md_path, statistics_path = validate_and_render(
+        json_path, md_path, statistics_path, mobile_path = validate_and_render(
             root / "manifest.json",
             data_dir() / "analysis" / f"trade_date={args.date}",
         )
@@ -32,6 +32,7 @@ def main() -> None:
         "result": "SHADOW_ANALYSIS_READY", "date": args.date,
         "analysis_json": str(json_path), "analysis_md": str(md_path),
         "statistics_md": str(statistics_path),
+        "mobile_md": str(mobile_path),
         "delivery_queued": False,
     }))
 
