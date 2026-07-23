@@ -13,7 +13,8 @@ Legacy report message types:
                     agreement, or an EIA bull/bear-confirmed scenario)
 
 Agent-orchestrated product deployments produce one report-derived message:
-    DAILY_SYNTHESIS a plain-English synthesis that preserves specialist numbers
+    DAILY_SYNTHESIS the phone-first mobile.md rendering, preserving the most
+                    important specialist numbers, driver, conflict, and watch
 
 Message ids are deterministic ("<date>:<type>"), so a given date can queue each
 type at most once — re-running --prepare is idempotent and will not re-queue a
@@ -30,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,6 +40,7 @@ from pathlib import Path
 # CCVM_DATA_DIR.
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
+from ccvm.reporting.mobile import render_mobile_brief
 from ccvm.runtime import data_dir
 
 DATA_DIR = data_dir()
@@ -135,96 +136,18 @@ def _short(text, limit=96):
     return text if len(text) <= limit else text[:limit - 1].rstrip() + "…"
 
 
-def _clean_analysis_text(text: str) -> str:
-    text = re.sub(r"\s*\[(?:feature|knowledge|news):[^\]]+\]", "", str(text or ""))
-    text = text.replace("**", "").replace("__", "")
-    return " ".join(text.split()).strip()
-
-
-def _metric_line(item: dict) -> str:
-    label = _clean_analysis_text(item.get("label", "Metric"))
-    value = _clean_analysis_text(item.get("value", ""))
-    comparison = _clean_analysis_text(item.get("comparison", ""))
-    meaning = _clean_analysis_text(item.get("plain_english_meaning", ""))
-    context = f" vs {comparison}" if comparison else ""
-    explanation = f" — {meaning}" if meaning else ""
-    return _short(f"- {label}: {value}{context}{explanation}", 230)
-
-
 def _analysis_synthesis_text(date_str: str) -> str:
-    path = DATA_DIR / "analysis" / f"trade_date={date_str}" / "analysis.json"
+    analysis_dir = DATA_DIR / "analysis" / f"trade_date={date_str}"
+    path = analysis_dir / "analysis.json"
     if not path.exists():
         raise FileNotFoundError(f"{path} not found after completed analysis")
     analysis = json.loads(path.read_text())
-    synthesis = analysis.get("synthesis", {})
-    specialists = analysis.get("specialist_analyses", {})
-    product = str(analysis.get("product") or _product().display_name).upper()
-    summary = synthesis.get("plain_english_summary") or synthesis.get("executive_summary", "")
-    out = [f"*{product} Daily Analysis — {date_str}*"]
-    headline = _clean_analysis_text(synthesis.get("headline", ""))
-    if headline:
-        out.extend(["", f"*{headline}*"])
-    if summary:
-        out.extend(["", "*Bottom line*", _short(_clean_analysis_text(summary), 650)])
-
-    top_views = synthesis.get("top_views") or []
-    for view in top_views[:3]:
-        relationship = str(view.get("evidence_relationship", "")).replace("_", " ")
-        confidence = view.get("confidence", "")
-        out.extend([
-            "", f"*{view.get('rank')}. {_clean_analysis_text(view.get('title', ''))}*",
-            _short(_clean_analysis_text(view.get("plain_english_view", "")), 330),
-            f"_{relationship}; {confidence} confidence; {_clean_analysis_text(view.get('horizon', ''))}_",
-        ])
-        out.extend(_metric_line(item) for item in (view.get("key_metrics") or [])[:3])
-        support = view.get("supporting_evidence") or []
-        conflicts = view.get("conflicting_evidence") or []
-        for item in support[:2]:
-            claim = item.get("claim", "") if isinstance(item, dict) else item
-            out.append(_short(f"- Supports: {_clean_analysis_text(claim)}", 250))
-        for item in conflicts[:1]:
-            claim = item.get("claim", "") if isinstance(item, dict) else item
-            out.append(_short(f"- Conflicts: {_clean_analysis_text(claim)}", 250))
-        driver = view.get("driver_analysis") or {}
-        if isinstance(driver, dict) and driver.get("explanation"):
-            status = str(driver.get("status", "")).replace("_", " ")
-            out.append(_short(
-                f"- Driver ({status}): {_clean_analysis_text(driver['explanation'])}", 300,
-            ))
-        watch = view.get("what_to_watch") or []
-        if watch:
-            out.append(_short(f"- Watch: {_clean_analysis_text(watch[0])}", 240))
-
-    role_titles = {
-        "futures_curve": "Futures and curve",
-        "vol_surface": "Options and volatility",
-        "macro": "Macro and news",
-        "fundamentals": "Physical fundamentals and news",
-    }
-    for role, response in specialists.items() if not top_views else []:
-        metrics = response.get("key_metrics") or []
-        news = response.get("news_findings") or []
-        if not metrics and not news:
-            continue
-        out.extend(["", f"*{role_titles.get(role, role.replace('_', ' ').title())}*"])
-        out.extend(_metric_line(item) for item in metrics[:5])
-        if news:
-            claim = news[0].get("claim", "") if isinstance(news[0], dict) else news[0]
-            out.append(_short(f"- News: {_clean_analysis_text(claim)}", 280))
-
-    confirmations = synthesis.get("confirmations") or []
-    invalidations = synthesis.get("invalidations") or []
-    if confirmations or invalidations:
-        out.extend(["", "*What to watch next*"])
-        out.extend(f"- Confirms: {_short(_clean_analysis_text(item), 210)}" for item in confirmations[:2])
-        out.extend(f"- Changes the view: {_short(_clean_analysis_text(item), 210)}" for item in invalidations[:2])
-
-    limitations = synthesis.get("data_limitations") or []
-    if limitations:
-        out.extend(["", "*Data notes*"])
-        out.extend(f"- {_short(_clean_analysis_text(item), 220)}" for item in limitations[:2])
-    message = "\n".join(out)
-    return message if len(message) <= 3900 else message[:3899].rstrip() + "…"
+    analysis.setdefault("trade_date", date_str)
+    generated = render_mobile_brief(analysis)
+    mobile_path = analysis_dir / "mobile.md"
+    if mobile_path.exists() and mobile_path.read_text() == generated:
+        return mobile_path.read_text()
+    return generated
 
 
 def _daily_message_type() -> str:

@@ -209,11 +209,12 @@ def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_langu
     assert "*1. Curve carry is a headwind*" in text
     assert "$4,015.90/oz" in text and "-$27.30/oz" in text
     assert "*2. Options favor downside protection*" in text
-    assert "19.94%" in text and "-3.26 vol points" in text and "+0.45 vol points" in text
+    assert "19.94%" in text and "-3.26 vol points" in text
+    assert "+0.45 vol points" not in text
     assert "*3. Macro evidence is mixed*" in text and "2.31%" in text
-    assert "Conflicts: The dollar strengthened." in text
-    assert "*Data notes*" in text
-    assert len(text) <= 3900
+    assert "Conflict: The dollar strengthened." in text
+    assert "_Data note:" in text
+    assert len(text) <= 2800
 
 
 def test_agent_synthesis_message_integrates_numbers_drivers_and_watch_items(tmp_path, monkeypatch):
@@ -243,6 +244,6 @@ def test_agent_synthesis_message_integrates_numbers_drivers_and_watch_items(tmp_
     }))
     text = notify._analysis_synthesis_text("2026-07-20")
     assert "*1. Gold holds a higher range*" in text
-    assert "Front settlement: $4,015.90/oz vs +0.8% day over day" in text
+    assert "Front settlement: $4,015.90/oz" in text
     assert "Driver (partially supported): Lower real yields" in text
     assert "Watch: Watch whether the next settlement holds above $4,000/oz." in text

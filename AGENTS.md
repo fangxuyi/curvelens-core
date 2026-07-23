@@ -118,4 +118,7 @@ surface. They record assigned inputs, submitted outputs, validation failures,
 and phase transitions without exposing private chain-of-thought or introducing
 model calls. `analysis.md` is the primary report and must integrate validated
 numbers, driver/news assessment, conflicts, and forward watch items; the
-separate `statistics.md` remains an audit supplement.
+separate `statistics.md` remains an audit supplement. `mobile.md` is a
+deterministic phone-first rendering of the same validated synthesis. When
+delivery has been separately approved, notification preparation must use this
+mobile rendering rather than inventing or re-summarizing the report.

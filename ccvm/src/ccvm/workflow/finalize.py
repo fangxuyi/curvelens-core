@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from ccvm.reporting.mobile import render_mobile_brief
+
 from .packets import PACKET_SCHEMA_VERSION
 
 _STATUSES = {"complete", "limited", "blocked"}
@@ -334,7 +336,9 @@ def validate_synthesis_response(
     return synthesis
 
 
-def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Path, Path]:
+def validate_and_render(
+    manifest_path: Path, output_dir: Path,
+) -> tuple[Path, Path, Path, Path]:
     manifest = load_manifest(manifest_path)
     packet_id = manifest.get("packet_id")
     responses = {
@@ -358,10 +362,12 @@ def validate_and_render(manifest_path: Path, output_dir: Path) -> tuple[Path, Pa
     json_path = output_dir / "analysis.json"
     md_path = output_dir / "analysis.md"
     statistics_path = output_dir / "statistics.md"
+    mobile_path = output_dir / "mobile.md"
     json_path.write_text(json.dumps(result, indent=2))
     md_path.write_text(_render_markdown(result))
     statistics_path.write_text(_render_statistics_markdown(result))
-    return json_path, md_path, statistics_path
+    mobile_path.write_text(render_mobile_brief(result))
+    return json_path, md_path, statistics_path, mobile_path
 
 
 def _markdown_cell(value: Any) -> str:
