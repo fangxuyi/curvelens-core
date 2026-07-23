@@ -85,10 +85,11 @@ def test_runtime_data_dir_defaults_to_product_namespace(monkeypatch):
 def test_dashboard_can_resolve_each_configured_product_namespace(monkeypatch):
     monkeypatch.delenv("CCVM_DATA_DIR", raising=False)
 
-    assert {"corn", "gold", "wti"} <= set(available_products())
+    assert {"corn", "gold", "silver", "wti"} <= set(available_products())
     assert data_dir("gold").parts[-2:] == ("products", "gold")
     assert data_dir("wti").parts[-2:] == ("products", "wti")
     assert data_dir("corn").parts[-2:] == ("products", "corn")
+    assert data_dir("silver").parts[-2:] == ("products", "silver")
 
 
 def test_single_product_override_rejects_cross_product_dashboard(monkeypatch, tmp_path):

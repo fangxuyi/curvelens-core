@@ -1,0 +1,8 @@
+# Silver scheduled-event seed. Dated macro and industry events require a
+# sourced publication time and must be removed after they pass.
+recurring:
+  - name: CFTC Commitments of Traders update
+    day: FRI
+    time_et: "15:30"
+    kind: positioning
+dated: []

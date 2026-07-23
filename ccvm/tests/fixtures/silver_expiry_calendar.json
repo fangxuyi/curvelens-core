@@ -1,0 +1,21 @@
+{
+  "_comment": "Dates derived from COMEX Rules 112102.E and 116101.E and checked against the monthly SO rows in a Section 64 bulletin, reviewed 2026-07-23. Extend with CME Product and Expiration Browser exports before production enablement.",
+  "futures_ltd": {
+    "2026-08": "2026-08-27",
+    "2026-09": "2026-09-28",
+    "2026-10": "2026-10-28",
+    "2026-11": "2026-11-25",
+    "2026-12": "2026-12-29"
+  },
+  "option_expiry": {
+    "2026-08": "2026-07-28",
+    "2026-09": "2026-08-26",
+    "2026-10": "2026-09-24",
+    "2026-11": "2026-10-27",
+    "2026-12": "2026-11-24",
+    "2027-01": "2026-12-28"
+  },
+  "_sources": {
+    "rules": "https://www.cmegroup.com/content/dam/cmegroup/rulebook/COMEX/1a/112.pdf and https://www.cmegroup.com/content/dam/cmegroup/rulebook/COMEX/1a/116.pdf"
+  }
+}
