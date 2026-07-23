@@ -75,8 +75,27 @@ def _check_top_views(
 ) -> set[str]:
     if not isinstance(views, list) or len(views) != 3:
         raise AnalysisValidationError("synthesis must contain exactly three top_views")
-    if [item.get("rank") if isinstance(item, dict) else None for item in views] != [1, 2, 3]:
-        raise AnalysisValidationError("synthesis top_views must be ranked 1, 2, 3")
+    required_fields = {
+        "rank", "title", "plain_english_view", "horizon", "confidence",
+        "evidence_relationship", "specialist_roles", "key_metrics",
+        "supporting_evidence", "conflicting_evidence", "driver_analysis",
+        "what_to_watch",
+    }
+    shape_errors = []
+    ranks = [item.get("rank") if isinstance(item, dict) else None for item in views]
+    if ranks != [1, 2, 3]:
+        shape_errors.append(f"ranks must be [1, 2, 3], found {ranks}")
+    for index, item in enumerate(views):
+        if not isinstance(item, dict):
+            shape_errors.append(f"top_views[{index}] must be an object")
+            continue
+        missing = sorted(required_fields - set(item))
+        if missing:
+            shape_errors.append(f"top_views[{index}] missing fields {missing}")
+    if shape_errors:
+        raise AnalysisValidationError(
+            "synthesis top_views schema errors: " + "; ".join(shape_errors)
+        )
     valid_roles = set(responses)
     covered_roles: set[str] = set()
     cited_ids: set[str] = set()

@@ -124,6 +124,18 @@ def test_packets_are_role_scoped_and_news_is_deduplicated(tmp_path):
     assert macro["relevant_news"][0]["article_id"].startswith("news:")
 
 
+def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
+    manifest = _packets(tmp_path)
+    template = json.loads(Path(manifest["synthesis_response_template"]).read_text())
+    assert [view["rank"] for view in template["top_views"]] == [1, 2, 3]
+    assert all({
+        "title", "plain_english_view", "horizon", "confidence",
+        "evidence_relationship", "specialist_roles", "key_metrics",
+        "supporting_evidence", "conflicting_evidence", "driver_analysis",
+        "what_to_watch",
+    }.issubset(view) for view in template["top_views"])
+
+
 def test_wti_packets_use_the_same_workflow_with_fundamentals_desk(tmp_path):
     product = load_product("wti")
     section_keys = {
@@ -346,6 +358,7 @@ def test_only_invalid_specialist_is_retried(tmp_path):
     state_path, state = initialize_state(
         manifest_path=tmp_path / "run" / "manifest.json", quality=_quality(),
         quality_attempts=[], repo_root=Path(__file__).resolve().parents[2],
+        max_agent_corrections=1,
     )
     qc = json.loads(Path(state["qc"]["template_path"]).read_text())
     qc.update({"disposition": "accept", "rationale": "Usable."})

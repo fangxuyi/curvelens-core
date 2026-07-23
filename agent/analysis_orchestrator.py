@@ -107,7 +107,7 @@ def main() -> None:
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
     parser.add_argument("--restart", action="store_true",
                         help="Discard orchestration state for this date and prepare anew")
-    parser.add_argument("--max-agent-corrections", type=int, default=1)
+    parser.add_argument("--max-agent-corrections", type=int, default=2)
     args = parser.parse_args()
     try:
         as_of = date.fromisoformat(args.date) if args.date else datetime.now(
