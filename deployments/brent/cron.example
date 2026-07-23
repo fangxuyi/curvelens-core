@@ -1,0 +1,7 @@
+# CurveLens ICE Brent cron template — intentionally non-executable.
+#
+# Brent is experimental. Do not register or enable schedules from this file.
+# A future reviewed schedule must use CCVM_PRODUCT=brent, read AGENTS.md plus
+# deployments/brent/AGENTS.md, verify both authorized ICE settlement exports,
+# and invoke `$curvelens-daily-analysis`. It must resume persisted state,
+# default to no delivery, and ship disabled for explicit approval.

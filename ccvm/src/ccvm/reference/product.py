@@ -69,6 +69,21 @@ class BenchmarkSpec:
 
 
 @dataclass(frozen=True)
+class MarketDataSpec:
+    """Profile-selected authoritative market-data handoff."""
+
+    provider: str
+    input_subdir: str
+    futures_filename: str
+    options_filename: str
+    credentials_env: tuple[str, ...] = ()
+
+    def required_paths(self, root: Path, trade_date: str) -> tuple[Path, Path]:
+        base = root / self.input_subdir / f"trade_date={trade_date}"
+        return base / self.futures_filename, base / self.options_filename
+
+
+@dataclass(frozen=True)
 class NewsSpec:
     """Product-scoped RSS sources and relevance terms."""
 
@@ -145,6 +160,7 @@ class Product:
     rnd_quality_gate: bool = False
     option_premium_tick_size: float = 0.01
     rnd_max_fit_residual_ticks: float = 2.0
+    market_data: Optional[MarketDataSpec] = None
 
     @property
     def rnd_max_projection_ticks(self) -> float:
@@ -239,6 +255,7 @@ def load_product(key: str) -> Product:
     if missing_profile:
         raise ValueError(f"Product profile {key!r} missing: {missing_profile}")
     b = m.get("bulletin", {}) or {}
+    market_data = m.get("market_data", {}) or {}
     benchmark = m.get("benchmark", {}) or {}
     news = m.get("news", {}) or {}
     options = m.get("options", {}) or {}
@@ -333,6 +350,33 @@ def load_product(key: str) -> Product:
             expiry_basis=expiry_basis,
             premium_format=str(b.get("premium_format", "decimal")),
         )
+    market_data_spec = None
+    if market_data:
+        provider = str(market_data.get("provider", ""))
+        if provider != "authorized_files":
+            raise ValueError(
+                f"Product profile {key!r} has unsupported market_data provider "
+                f"{provider!r}"
+            )
+        required_market_data = (
+            "input_subdir", "futures_filename", "options_filename",
+        )
+        missing = [
+            name for name in required_market_data if not market_data.get(name)
+        ]
+        if missing:
+            raise ValueError(
+                f"Product profile {key!r} market_data missing: {missing}"
+            )
+        market_data_spec = MarketDataSpec(
+            provider=provider,
+            input_subdir=str(market_data["input_subdir"]),
+            futures_filename=str(market_data["futures_filename"]),
+            options_filename=str(market_data["options_filename"]),
+            credentials_env=tuple(
+                str(value) for value in market_data.get("credentials_env", [])
+            ),
+        )
     return Product(
         key=key,
         name=m.get("name", key.upper()),
@@ -367,6 +411,7 @@ def load_product(key: str) -> Product:
         rnd_quality_gate=bool(options.get("rnd_quality_gate", False)),
         option_premium_tick_size=option_premium_tick_size,
         rnd_max_fit_residual_ticks=rnd_max_fit_residual_ticks,
+        market_data=market_data_spec,
         bulletin=bulletin,
         benchmark=(BenchmarkSpec(
             name=benchmark["name"],

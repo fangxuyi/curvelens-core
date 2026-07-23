@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
+from ccvm.collectors.authorized_market_data import AuthorizedMarketDataCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
 from ccvm.collectors.fred_macro import FREDMacroCollector
 from ccvm.fundamentals import get_provider
@@ -54,7 +55,8 @@ FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
 _SOURCES = ["yfinance_futures", "yfinance_benchmark", "yfinance_brent", "cftc_cot",
             "cme_bulletin_pdf", "fundamentals", "eia", "macro", "fred_macro",
-            "rss_news", "news", "market", "csv_futures", "all"]
+            "authorized_market_data", "rss_news", "news", "market",
+            "csv_futures", "all"]
 
 
 def main() -> None:
@@ -78,12 +80,35 @@ def main() -> None:
     raw_store = RawStore(DATA_DIR)
     manifest_db = ManifestDB(MANIFEST_DB_PATH)
     results = {}
+    product = get_product()
+    uses_authorized_files = (
+        product.market_data is not None
+        and product.market_data.provider == "authorized_files"
+    )
+
+    if args.source in ("authorized_market_data", "market", "all"):
+        if not uses_authorized_files:
+            if args.source == "authorized_market_data":
+                print("[authorized_market_data] skipped — not configured")
+        else:
+            collector = AuthorizedMarketDataCollector(
+                DATA_DIR, raw_store, manifest_db,
+            )
+            result = collector.collect(as_of)
+            results["authorized_market_data"] = result
+            print(f"[authorized_market_data] {result}")
 
     if args.source in ("yfinance_futures", "market", "all"):
-        collector = YFinanceFuturesCollector(raw_store, manifest_db)
-        result = collector.collect(as_of)
-        results["yfinance_futures"] = result
-        print(f"[yfinance_futures]  {result}")
+        if uses_authorized_files:
+            print(
+                "[yfinance_futures]  skipped — authoritative files are required "
+                "by the active product"
+            )
+        else:
+            collector = YFinanceFuturesCollector(raw_store, manifest_db)
+            result = collector.collect(as_of)
+            results["yfinance_futures"] = result
+            print(f"[yfinance_futures]  {result}")
 
     if args.source in ("yfinance_benchmark", "yfinance_brent", "market", "all"):
         collector = YFinanceBenchmarkCollector(raw_store, manifest_db)
@@ -98,7 +123,12 @@ def main() -> None:
         print(f"[cftc_cot]          {result}")
 
     if args.source in ("cme_bulletin_pdf", "market", "all"):
-        if get_product().bulletin is None:
+        if uses_authorized_files:
+            print(
+                "[cme_bulletin_pdf]  skipped — authoritative files are required "
+                "by the active product"
+            )
+        elif get_product().bulletin is None:
             print("[cme_bulletin_pdf]  skipped — product has no bulletin configuration")
         else:
             collector = CMEBulletinPDFCollector(DATA_DIR, raw_store, manifest_db)

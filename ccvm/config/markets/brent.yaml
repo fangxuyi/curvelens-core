@@ -1,0 +1,201 @@
+market:
+  name: ICE Brent Crude
+  display_name: Brent
+  exchange: ICE Futures Europe
+  product_code: B
+  currency: USD
+  price_unit: USD/BBL
+  contract_multiplier: 1000
+  tick_size: 0.01
+
+  month_codes:
+    F: 1
+    G: 2
+    H: 3
+    J: 4
+    K: 5
+    M: 6
+    N: 7
+    Q: 8
+    U: 9
+    V: 10
+    X: 11
+    Z: 12
+  listed_futures_months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+  options:
+    exercise_style: American
+    settlement_style: Futures
+    risk_free_rate: 0.05
+    rnd_quality_gate: true
+    premium_tick_size: 0.01
+    rnd_max_fit_residual_ticks: 2.0
+    expiry_rule: three_ice_business_days_before_futures_ltd
+
+  futures_depth: 12
+  options_expiry_depth: 12
+  options_expiry_horizon_months: 12
+  warn_strikes_below: 5
+  fail_strikes_below: 2
+  settlement_min: 1
+  settlement_max: 500
+
+  futures_prefix: B
+  options_prefix: B
+  yfinance_contract_suffix: ""
+  calendar_module: ccvm.reference.brent_calendar
+  knowledge_pack: brent
+  fundamentals_provider: eia_weekly_petroleum
+
+  market_data:
+    provider: authorized_files
+    input_subdir: authorized_market_data
+    futures_filename: futures.json
+    options_filename: options.json
+    credentials_env: []
+
+  benchmark:
+    name: WTI
+    ticker: CL=F
+    source_id: yfinance_wti_front
+    filename_prefix: wti_front
+
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 800
+    series:
+      brent_spot:
+        series_id: DCOILBRENTEU
+        label: Europe Brent spot price
+        units: USD per barrel
+        role: spot_cross_check
+        flat_price_sign: 1
+      wti_spot:
+        series_id: DCOILWTICO
+        label: Cushing WTI spot price
+        units: USD per barrel
+        role: regional_spread_context
+        flat_price_sign: 0
+      broad_usd:
+        series_id: DTWEXBGS
+        label: Nominal broad U.S. dollar index
+        units: index
+        role: currency
+        flat_price_sign: -1
+      industrial_production:
+        series_id: INDPRO
+        label: U.S. industrial production
+        units: index
+        role: demand_proxy
+        flat_price_sign: 1
+      treasury_3m:
+        series_id: DGS3MO
+        label: U.S. 3-month Treasury yield
+        units: percent
+        role: financing_carry
+        flat_price_sign: 0
+
+  news:
+    keywords:
+      - brent
+      - crude
+      - oil
+      - north sea
+      - bfoet
+      - dated brent
+      - opec
+      - iea
+      - tanker
+      - freight
+      - sanctions
+      - refinery
+      - refining
+      - gasoline
+      - diesel
+      - middle east
+      - saudi
+      - russia
+      - nigeria
+      - libya
+      - norway
+      - pipeline
+      - inventory
+      - stockpile
+      - demand
+      - supply
+    sources:
+      - key: eia_today_in_energy
+        url: https://www.eia.gov/rss/todayinenergy.xml
+        name: EIA Today in Energy
+      - key: iea_news
+        url: https://www.iea.org/rss/news.xml
+        name: International Energy Agency
+      - key: oilprice_com
+        url: https://oilprice.com/rss/main
+        name: OilPrice.com
+      - key: cnbc_energy
+        url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664
+        name: CNBC Energy
+      - key: rigzone
+        url: https://www.rigzone.com/news/rss/rigzone_latest.aspx
+        name: Rigzone
+      - key: offshore_technology
+        url: https://www.offshore-technology.com/feed/
+        name: Offshore Technology
+
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options]
+    max_quality_attempts: 2
+    roles:
+      - key: futures_curve
+        display_name: Futures Curve Analyst
+        mandate: Explain Brent flat price, curve structure, carry, WTI spread context, and forward implications.
+        section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
+        news_keywords: [brent, crude, oil, north sea, bfoet, dated brent, opec, tanker, sanctions, refinery]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the front ICE Brent settlement and one-day dollar and percentage change.
+          - Report at least two front-to-deferred spreads and annualized roll yield.
+          - Report the approximate Brent-WTI context spread and label the benchmark source and timing.
+          - Compare with measured Brent history and applicable knowledge-pack anchors.
+        required_checks:
+          - Distinguish authoritative ICE settlements from approximate context prices and executable quotes.
+          - Check whether flat price, curve, regional spread, and physical news agree or conflict.
+      - key: vol_surface
+        display_name: Volatility Surface Analyst
+        mandate: Explain ICE Brent American-option implied volatility, skew, term structure, and RND diagnostics.
+        section_keys: [market_risk, rnd, term_structure]
+        news_keywords: [brent, crude, oil, volatility, options, opec, tanker, sanctions, geopolitical]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report front ATM implied volatility and its dated change when available.
+          - Report 25-delta risk reversal and explain that negative means puts are more expensive than calls.
+          - Report 25-delta butterfly and explain that it measures wing richness.
+          - Report the front-to-second-expiry ATM volatility spread.
+          - Compare only with measured ICE Brent option history.
+        required_checks:
+          - Treat failed RND diagnostics as limitations, never as probabilities.
+          - Verify futures-style premium units and compare surface moves with dated event risk.
+      - key: fundamentals
+        display_name: Global Physical Fundamentals Analyst
+        mandate: Explain Atlantic Basin and global supply, demand, refining, inventories, freight, and geopolitical risks.
+        section_keys: [fundamentals, eia_seasonal, agreement, macro, scenarios]
+        news_keywords: [brent, north sea, bfoet, opec, iea, tanker, freight, sanctions, refinery, inventory, demand, supply, saudi, russia, nigeria, libya, norway]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report the latest EIA U.S. crude change, refinery utilization, and release date as Atlantic-context evidence, not a direct Brent balance.
+          - Separate North Sea supply, OPEC+ policy, Atlantic Basin flows, freight, refining, and global demand.
+          - Name the most relevant verified physical news, its date, geography, and why it matters.
+          - Compare physical evidence with the Brent curve, Brent-WTI context, and price response.
+        required_checks:
+          - Do not treat Cushing stocks or U.S. weekly balances as a complete Brent fundamental model.
+          - Distinguish loadings, production, exports, floating storage, and destination changes.
+          - Identify stale or missing releases before drawing a conclusion.
+
+  caveats:
+    - "Authoritative ICE futures and options settlement exports require licensed ICE data access and are supplied through a reviewed file handoff"
+    - "No CFTC or ICE positioning collector is configured for the primary ICE Brent contract at bootstrap"
+    - "EIA weekly petroleum data are U.S./Atlantic context, not a direct measurement of the global Brent balance"
+    - "The WTI benchmark is delayed public context and must not be represented as synchronized executable spread data"

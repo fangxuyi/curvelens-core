@@ -55,6 +55,20 @@ def main() -> None:
     product = get_product()
     max_attempts = max(1, args.max_quality_attempts or product.analysis_max_quality_attempts)
     root = data_dir()
+    if (
+        product.market_data is not None
+        and product.market_data.provider == "authorized_files"
+    ):
+        required = product.market_data.required_paths(root, as_of_str)
+        missing = [str(path) for path in required if not path.exists()]
+        if missing:
+            _emit({
+                "result": "NEED_AUTHORIZED_MARKET_DATA",
+                "date": as_of_str,
+                "provider": product.market_data.provider,
+                "missing_paths": missing,
+                "credentials_env": list(product.market_data.credentials_env),
+            })
     pdf_path = root / "cme_bulletin" / f"{as_of_str}.pdf"
     if product.bulletin and not pdf_path.exists() and not args.force_pdf:
         _emit({

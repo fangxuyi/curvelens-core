@@ -14,6 +14,7 @@ def test_root_agent_instructions_are_framework_scoped():
     root = _read("AGENTS.md")
     assert "CurveLens Core Framework" in root
     assert "deployments/wti/AGENTS.md" in root
+    assert "deployments/brent/AGENTS.md" in root
     assert "deployments/gold/AGENTS.md" in root
     assert "deployments/copper/AGENTS.md" in root
     assert "deployments/corn/AGENTS.md" in root
@@ -28,6 +29,7 @@ def test_readme_exposes_one_sentence_product_deployment():
     deployments = _read("deployments/README.md")
     for sentence in (
         "Operate the CurveLens WTI deployment.",
+        "Operate the CurveLens Brent deployment.",
         "Operate the CurveLens Gold deployment.",
         "Operate the CurveLens Copper deployment.",
         "Operate the CurveLens Corn deployment.",
@@ -40,7 +42,7 @@ def test_readme_exposes_one_sentence_product_deployment():
 
 
 def test_each_product_has_a_minimal_deployment_instruction_set():
-    for product in ("wti", "gold", "copper", "corn", "silver"):
+    for product in ("wti", "brent", "gold", "copper", "corn", "silver"):
         base = ROOT / "deployments" / product
         for filename in ("AGENTS.md", "cron.example"):
             assert (base / filename).exists(), f"missing deployments/{product}/{filename}"
@@ -109,6 +111,20 @@ def test_copper_runbook_is_experimental_and_product_scoped():
     assert "experimental — validation only" in runbook
     assert "FRED_API_KEY" in runbook
     assert "HX CALL" in runbook
+    assert "openclaw cron add" not in cron
+    assert "Do not register or enable schedules" in cron
+
+
+def test_brent_runbook_requires_authorized_ice_data():
+    runbook = _read("deployments/brent/AGENTS.md")
+    cron = _read("deployments/brent/cron.example")
+    assert "export CCVM_PRODUCT=brent" in runbook
+    assert "ccvm/data/products/brent" in runbook
+    assert "authorized_market_data" in runbook
+    assert "NEED_AUTHORIZED_MARKET_DATA" in runbook
+    assert "experimental — validation only" in runbook
+    assert "EIA_API_KEY" in runbook
+    assert "FRED_API_KEY" in runbook
     assert "openclaw cron add" not in cron
     assert "Do not register or enable schedules" in cron
 
