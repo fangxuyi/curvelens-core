@@ -7,6 +7,7 @@ Run from ``ccvm/`` with an explicit product::
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -26,19 +27,11 @@ try:
 except ImportError:
     _PLOTLY = False
 
-from ccvm.reference.product import get_product
-from ccvm.reporting.dashboard_news import build_validated_news
+from ccvm.reference.product import available_products, get_product
+from ccvm.reporting.dashboard_news import build_validated_news, news_artifacts_ready
 from ccvm.runtime import data_dir
 from ccvm.storage.parquet_store import ParquetStore
 
-
-PRODUCT = get_product()
-DATA_DIR = data_dir()
-FEATURE_DIR = DATA_DIR / "gold"
-ANALYSIS_DIR = DATA_DIR / "analysis"
-WORKFLOW_DIR = DATA_DIR / "analysis_workflow"
-QUALITY_DIR = DATA_DIR / "quality_reports"
-pq = ParquetStore(DATA_DIR)
 
 C = {
     "bg": "#0b0b0d", "surface": "#101013", "border": "#24242d",
@@ -114,9 +107,29 @@ def _status_color(status: str) -> str:
 
 
 st.set_page_config(
-    page_title=f"CurveLens — {PRODUCT.display_name}", page_icon="📈",
+    page_title="CurveLens Markets", page_icon="📈",
     layout="wide", initial_sidebar_state="expanded",
 )
+
+product_profiles = {key: get_product(key) for key in available_products()}
+default_product = os.environ.get("CCVM_PRODUCT", "wti")
+if default_product not in product_profiles:
+    default_product = next(iter(product_profiles))
+selected_product = st.sidebar.selectbox(
+    "Product",
+    list(product_profiles),
+    index=list(product_profiles).index(default_product),
+    format_func=lambda key: product_profiles[key].display_name,
+    key="active-product",
+)
+PRODUCT = product_profiles[selected_product]
+DATA_DIR = data_dir(selected_product)
+FEATURE_DIR = DATA_DIR / "gold"
+ANALYSIS_DIR = DATA_DIR / "analysis"
+WORKFLOW_DIR = DATA_DIR / "analysis_workflow"
+QUALITY_DIR = DATA_DIR / "quality_reports"
+pq = ParquetStore(DATA_DIR)
+
 st.markdown(
     f"""<style>
     .stApp {{background:{C['bg']}; color:{C['text']}}}
@@ -144,18 +157,19 @@ if not dates:
     st.warning("No computed features or daily analysis outputs are available for this product.")
     st.stop()
 
-selected_date = st.sidebar.selectbox("Trade date", dates)
+selected_date = st.sidebar.selectbox("Trade date", dates, key=f"trade-date-{selected_product}")
 if st.sidebar.button("Refresh files", width="stretch"):
     st.rerun()
 
 analysis_run_dir = _dated_dir(ANALYSIS_DIR, selected_date)
 workflow_run_dir = _dated_dir(WORKFLOW_DIR, selected_date)
 analysis_json = _json(analysis_run_dir / "analysis.json")
+run_state = _json(workflow_run_dir / "run.json")
 monitor_json = _json(workflow_run_dir / "workflow_monitor.json")
 quality = _json(QUALITY_DIR / f"{selected_date}.json")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("ACTIVE PRODUCT")
+st.sidebar.caption("ACTIVE PRODUCT DATA")
 st.sidebar.markdown(f"**{PRODUCT.display_name}** (`{PRODUCT.name}`)")
 st.sidebar.caption("WORKFLOW")
 phase = str(monitor_json.get("phase", "not run"))
@@ -340,13 +354,23 @@ with tab_vol:
 
 
 with tab_news:
-    news = build_validated_news(analysis_json, _role_packets(workflow_run_dir))
+    role_packets = _role_packets(workflow_run_dir)
+    news_ready, news_status = news_artifacts_ready(analysis_json, run_state, role_packets)
+    news = (
+        build_validated_news(
+            analysis_json, role_packets,
+            expected_packet_id=str(analysis_json.get("packet_id") or ""),
+        )
+        if news_ready else []
+    )
     st.subheader(f"What matters for {PRODUCT.display_name} — {selected_date}")
     st.caption(
         "Only stories cited in validated specialist findings are shown. "
         "Articles routed by keywords but not used by an analyst are excluded."
     )
-    if not news:
+    if not news_ready:
+        st.info(news_status)
+    elif not news:
         st.info(
             "The agents did not validate a product-relevant news catalyst for this trade date. "
             "The daily view therefore rests on market and fundamental data rather than a headline explanation."
@@ -361,7 +385,7 @@ with tab_news:
             top_marker = " · TOP-VIEW EVIDENCE" if story.get("top_view_titles") else ""
             timing = (
                 " · POST-TRADE-DATE CONTEXT"
-                if published != "date unavailable" and published > selected_date else ""
+                if story.get("timing") == "post_trade_date" else ""
             )
             st.markdown(f"### {rank}. {title}")
             st.caption(

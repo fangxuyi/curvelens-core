@@ -146,6 +146,9 @@ message. Scheduled analysis and scheduled delivery are separate approvals.
 - Event utilities (`agent/event_run.py`) and `agent/notify.py` are not the daily
   analysis controller. Never use them to bypass the skill or infer permission
   to deliver.
+- Dashboard: run `deployments/run_dashboard.sh`, open
+  `http://127.0.0.1:8501`, and select WTI in the sidebar. The shared server
+  preserves product-isolated runtime paths.
 
 ## Safety
 

@@ -108,6 +108,23 @@ controller-visible instructions, evidence, responses, and decisions; it does
 not expose hidden chain-of-thought. Rejected responses are archived before a
 correction attempt so debugging evidence is preserved.
 
+### Unified market dashboard
+
+One Streamlit server presents every configured product while continuing to read
+each product's isolated runtime directory. Start it from the repository root:
+
+```bash
+deployments/run_dashboard.sh
+```
+
+Open `http://127.0.0.1:8501`, select Gold, WTI, or Corn in the sidebar, and
+then select a trade date. Adding another `ccvm/config/markets/<product>.yaml`
+profile automatically adds it to the selector. The dashboard never combines
+analysis and specialist packets from different workflow runs; news remains
+hidden while a selected run is in progress or its packet identities disagree.
+Articles classified by specialists as rejected are not promoted as highlights,
+and post-trade-date context is labeled separately.
+
 ## Install
 
 ### Prerequisites
