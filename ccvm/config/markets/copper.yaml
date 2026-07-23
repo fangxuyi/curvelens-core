@@ -1,0 +1,218 @@
+market:
+  name: COMEX Copper
+  display_name: Copper
+  exchange: COMEX
+  product_code: HG
+  currency: USD
+  price_unit: USD/LB
+  contract_multiplier: 25000
+  tick_size: 0.0005
+
+  month_codes:
+    F: 1
+    G: 2
+    H: 3
+    J: 4
+    K: 5
+    M: 6
+    N: 7
+    Q: 8
+    U: 9
+    V: 10
+    X: 11
+    Z: 12
+
+  listed_futures_months: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+
+  options:
+    exercise_style: American
+    settlement_style: Futures
+    risk_free_rate: 0.05
+    rnd_quality_gate: true
+    premium_tick_size: 0.0005
+    rnd_max_fit_residual_ticks: 2.0
+    expiry_rule: four_business_days_before_prior_month_end
+
+  futures_depth: 12
+  options_expiry_depth: 12
+  options_expiry_horizon_months: 12
+  warn_strikes_below: 5
+  fail_strikes_below: 2
+  settlement_min: 0.25
+  settlement_max: 25
+
+  futures_prefix: HG
+  options_prefix: HX
+  yfinance_contract_suffix: .CMX
+  calendar_module: ccvm.reference.copper_calendar
+  knowledge_pack: copper
+
+  bulletin:
+    product_header_call: "HX CALL"
+    product_header_put: "HX PUT"
+    url: https://www.cmegroup.com/daily_bulletin/current/Section64_Metals_Option_Products.pdf
+    strike_scale: 100
+    expiry_basis: option_month
+    underlying_month_map:
+      1: 3
+      2: 3
+      3: 3
+      4: 5
+      5: 5
+      6: 7
+      7: 7
+      8: 9
+      9: 9
+      10: 12
+      11: 12
+      12: 12
+
+  cot:
+    contract_market_code: "085692"
+    contract_label: "COPPER- #1 COMEX"
+
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 800
+    series:
+      broad_usd:
+        series_id: DTWEXBGS
+        label: Nominal broad U.S. dollar index
+        units: index
+        role: currency
+        flat_price_sign: -1
+      global_copper_price:
+        series_id: PCOPPUSDM
+        label: Global copper price
+        units: USD per metric ton
+        role: global_price_cross_check
+        flat_price_sign: 1
+      industrial_production:
+        series_id: INDPRO
+        label: U.S. industrial production
+        units: index
+        role: industrial_cycle_proxy
+        flat_price_sign: 1
+      manufacturing_output:
+        series_id: IPMAN
+        label: U.S. manufacturing industrial production
+        units: index
+        role: manufacturing_demand_proxy
+        flat_price_sign: 1
+      housing_starts:
+        series_id: HOUST
+        label: U.S. housing starts
+        units: thousands annual rate
+        role: construction_demand_proxy
+        flat_price_sign: 1
+      durable_goods_orders:
+        series_id: DGORDER
+        label: U.S. manufacturers new orders for durable goods
+        units: millions USD
+        role: durable_goods_demand_proxy
+        flat_price_sign: 1
+
+  news:
+    keywords:
+      - copper
+      - comex
+      - base metals
+      - mine supply
+      - mining
+      - smelter
+      - concentrate
+      - treatment charges
+      - refined copper
+      - cathode
+      - scrap
+      - recycling
+      - warehouse stocks
+      - china
+      - manufacturing
+      - housing
+      - construction
+      - power grid
+      - electrification
+      - electric vehicle
+      - data center
+      - tariff
+      - dollar
+    sources:
+      - key: usgs_news
+        url: https://www.usgs.gov/news/all/feed
+        name: U.S. Geological Survey News
+      - key: energy_department
+        url: https://www.energy.gov/rss/energygov/2193718
+        name: U.S. Department of Energy
+      - key: federal_reserve_speeches
+        url: https://www.federalreserve.gov/feeds/speeches.xml
+        name: Federal Reserve Speeches
+      - key: bls_producer_prices
+        url: https://www.bls.gov/feed/ppi.rss
+        name: BLS Producer Price Index
+      - key: bea_releases
+        url: https://apps.bea.gov/rss/rss.xml
+        name: BEA News Releases
+      - key: mining_com
+        url: https://www.mining.com/feed/
+        name: MINING.COM
+      - key: cnbc_top_news
+        url: https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114
+        name: CNBC Top News
+
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options]
+    max_quality_attempts: 2
+    roles:
+      - key: futures_curve
+        display_name: Futures Curve Analyst
+        mandate: Explain Copper flat price, curve shape, carry, positioning, and implications for the industrial cycle.
+        section_keys: [what_changed, history_context, monitor, oi, cot, term_structure]
+        news_keywords: [copper, comex, mine supply, smelter, concentrate, warehouse stocks, china, tariff, dollar]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the front settlement and one-day dollar and percentage change.
+          - Report at least two front-to-deferred spreads and annualized roll yield.
+          - Compare with measured HG history and applicable Copper knowledge-pack anchors.
+          - Report managed-money positioning and its historical percentile when available.
+        required_checks:
+          - Distinguish settled-market evidence from executable prices.
+          - Check whether flat-price, curve, positioning, and inventory-related news agree or conflict.
+      - key: vol_surface
+        display_name: Volatility Surface Analyst
+        mandate: Explain HX implied volatility, skew, term structure, and risk-neutral-density diagnostics.
+        section_keys: [market_risk, rnd, term_structure]
+        news_keywords: [copper, volatility, options, comex, china, mine, smelter, tariff, geopolitical]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report front ATM implied volatility and its dated change when available.
+          - Report 25-delta risk reversal and explain that negative means puts are more expensive than calls.
+          - Report 25-delta butterfly and explain that it measures wing richness.
+          - Report the front-to-second-expiry ATM volatility spread.
+          - Compare HX measures only with measured HX history.
+        required_checks:
+          - Treat failed RND diagnostics as limitations, never as probabilities.
+          - Compare surface moves with price, curve, positioning, and dated event risk.
+      - key: macro_fundamentals
+        display_name: Macro and Physical Fundamentals Analyst
+        mandate: Combine industrial demand, mine and refined supply, inventories, China, currency, and technology-driven demand.
+        section_keys: [macro, cot, what_changed, term_structure]
+        news_keywords: [copper, china, manufacturing, housing, construction, mine supply, smelter, concentrate, treatment charges, cathode, scrap, recycling, warehouse stocks, power grid, electric vehicle, data center, dollar]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report the latest broad dollar and industrial proxies with observation dates and cadence.
+          - Separate mine, concentrate, smelter, refined-metal, scrap, and exchange-inventory evidence.
+          - Separate China-specific evidence from U.S. or global proxies.
+          - Name relevant verified physical, policy, or technology news and state plainly when none was collected.
+          - Compare fundamental evidence with Copper settlement, curve, positioning, and option skew.
+        required_checks:
+          - Never present monthly proxies or annual forecasts as same-day physical demand.
+          - Treat electrification, grid, EV, and data-center activity separately from copper intensity and project timing.
+          - Separate observed changes from causal interpretation and call out conflicting evidence.
+
+  caveats:
+    - "Copper has no automated physical-balance provider at bootstrap; USGS, ICSG, exchange inventories, and company data require dated review"
+    - "FRED industrial series are lagged U.S. proxies and do not measure same-day Chinese or global copper demand"
+    - "Yahoo HG individual-contract symbols are a bootstrap source and require live-data acceptance against official CME settlements"

@@ -15,6 +15,7 @@ def test_root_agent_instructions_are_framework_scoped():
     assert "CurveLens Core Framework" in root
     assert "deployments/wti/AGENTS.md" in root
     assert "deployments/gold/AGENTS.md" in root
+    assert "deployments/copper/AGENTS.md" in root
     assert "deployments/corn/AGENTS.md" in root
     assert "deployments/silver/AGENTS.md" in root
     assert "CCVM_PRODUCT=wti" not in root
@@ -28,6 +29,7 @@ def test_readme_exposes_one_sentence_product_deployment():
     for sentence in (
         "Operate the CurveLens WTI deployment.",
         "Operate the CurveLens Gold deployment.",
+        "Operate the CurveLens Copper deployment.",
         "Operate the CurveLens Corn deployment.",
         "Operate the CurveLens Silver deployment.",
     ):
@@ -38,7 +40,7 @@ def test_readme_exposes_one_sentence_product_deployment():
 
 
 def test_each_product_has_a_minimal_deployment_instruction_set():
-    for product in ("wti", "gold", "corn", "silver"):
+    for product in ("wti", "gold", "copper", "corn", "silver"):
         base = ROOT / "deployments" / product
         for filename in ("AGENTS.md", "cron.example"):
             assert (base / filename).exists(), f"missing deployments/{product}/{filename}"
@@ -94,6 +96,19 @@ def test_silver_runbook_is_experimental_and_product_scoped():
     assert "experimental — validation only" in runbook
     assert "FRED_API_KEY" in runbook
     assert "SO1" in runbook
+    assert "openclaw cron add" not in cron
+    assert "Do not register or enable schedules" in cron
+
+
+def test_copper_runbook_is_experimental_and_product_scoped():
+    runbook = _read("deployments/copper/AGENTS.md")
+    cron = _read("deployments/copper/cron.example")
+    assert "export CCVM_PRODUCT=copper" in runbook
+    assert "ccvm/data/products/copper" in runbook
+    assert "Section 64" in runbook
+    assert "experimental — validation only" in runbook
+    assert "FRED_API_KEY" in runbook
+    assert "HX CALL" in runbook
     assert "openclaw cron add" not in cron
     assert "Do not register or enable schedules" in cron
 

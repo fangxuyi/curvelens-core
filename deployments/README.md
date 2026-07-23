@@ -5,6 +5,7 @@ repository root as the agent's working directory and give it one sentence:
 
 - WTI: **Operate the CurveLens WTI deployment.**
 - Gold: **Operate the CurveLens Gold deployment.**
+- Copper: **Operate the CurveLens Copper deployment.**
 - Corn: **Operate the CurveLens Corn deployment.**
 - Silver: **Operate the CurveLens Silver deployment.**
 
@@ -18,6 +19,7 @@ For the supported daily analysis, the one-sentence instructions are:
 
 - WTI: **Use `$curvelens-daily-analysis` to run WTI for today.**
 - Gold: **Use `$curvelens-daily-analysis` to run Gold for today.**
+- Copper: **Use `$curvelens-daily-analysis` to run Copper for today.**
 - Corn: **Use `$curvelens-daily-analysis` to run Corn for today.**
 - Silver: **Use `$curvelens-daily-analysis` to run Silver for today.**
 
@@ -32,5 +34,6 @@ has been removed.
 |---|---|
 | WTI | Operational |
 | Gold | Validation-only; schedules and delivery disabled |
+| Copper | Validation-only; schedules and delivery disabled |
 | Corn | Validation-only; schedules and delivery disabled |
 | Silver | Validation-only; schedules and delivery disabled |
