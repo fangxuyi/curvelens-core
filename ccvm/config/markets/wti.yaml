@@ -28,7 +28,7 @@ market:
     settlement_style: Futures
     risk_free_rate: 0.05  # deployment assumption; update as rate policy evolves
     premium_tick_size: 0.01
-    rnd_max_projection_ticks: 2.0
+    rnd_max_fit_residual_ticks: 2.0
     # LO option expiry = CL futures LTD − 3 business days (holiday-aware).
     # Futures LTD = 3 business days before the (adjusted) 25th of the month
     # prior to delivery. Source of truth: src/ccvm/reference/wti_calendar.py

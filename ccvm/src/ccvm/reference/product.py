@@ -137,7 +137,12 @@ class Product:
     risk_free_rate: float = 0.05
     rnd_quality_gate: bool = False
     option_premium_tick_size: float = 0.01
-    rnd_max_projection_ticks: float = 2.0
+    rnd_max_fit_residual_ticks: float = 2.0
+
+    @property
+    def rnd_max_projection_ticks(self) -> float:
+        """Backward-compatible name for pre-state-price product profiles."""
+        return self.rnd_max_fit_residual_ticks
     bulletin: Optional[BulletinSpec] = None
     benchmark: Optional[BenchmarkSpec] = None
     macro: Optional[MacroSpec] = None
@@ -233,10 +238,12 @@ def load_product(key: str) -> Product:
     option_premium_tick_size = float(
         options.get("premium_tick_size", m.get("tick_size", 0.01))
     )
-    rnd_max_projection_ticks = float(options.get("rnd_max_projection_ticks", 2.0))
-    if option_premium_tick_size <= 0 or rnd_max_projection_ticks <= 0:
+    rnd_max_fit_residual_ticks = float(options.get(
+        "rnd_max_fit_residual_ticks", options.get("rnd_max_projection_ticks", 2.0)
+    ))
+    if option_premium_tick_size <= 0 or rnd_max_fit_residual_ticks <= 0:
         raise ValueError(
-            f"Product profile {key!r} RND premium tick and projection limit must be positive"
+            f"Product profile {key!r} RND premium tick and fit-residual limit must be positive"
         )
     macro = m.get("macro", {}) or {}
     analysis = m.get("analysis", {}) or {}
@@ -343,7 +350,7 @@ def load_product(key: str) -> Product:
         risk_free_rate=float(options.get("risk_free_rate", 0.05)),
         rnd_quality_gate=bool(options.get("rnd_quality_gate", False)),
         option_premium_tick_size=option_premium_tick_size,
-        rnd_max_projection_ticks=rnd_max_projection_ticks,
+        rnd_max_fit_residual_ticks=rnd_max_fit_residual_ticks,
         bulletin=bulletin,
         benchmark=(BenchmarkSpec(
             name=benchmark["name"],

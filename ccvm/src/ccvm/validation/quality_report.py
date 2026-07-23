@@ -387,9 +387,9 @@ def _render_markdown(report: dict) -> str:
                 f"convexity violations {expiry.get('convexity_violations')}")
             if expiry.get("projection_applied"):
                 lines.append(
-                    f"  - Convex projection: projected mass {expiry.get('projected_mass')}, "
-                    f"maximum repair {expiry.get('projection_max_adjustment_ticks')} premium "
-                    f"ticks (limit {expiry.get('projection_limit_ticks')})"
+                    f"  - Constrained state-price fit: mass {expiry.get('projected_mass')}, "
+                    f"maximum quote residual {expiry.get('fit_max_residual_ticks', expiry.get('projection_max_adjustment_ticks'))} premium "
+                    f"ticks (limit {expiry.get('fit_residual_limit_ticks', expiry.get('projection_limit_ticks'))})"
                 )
             for warning in expiry.get("validation_warnings", []):
                 lines.append(f"  - ⚠ {warning}")

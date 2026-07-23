@@ -30,7 +30,7 @@ market:
     risk_free_rate: 0.05
     rnd_quality_gate: true
     premium_tick_size: 0.00125  # one eighth cent/bushel
-    rnd_max_projection_ticks: 2.0
+    rnd_max_fit_residual_ticks: 2.0
     expiry_rule: last_friday_at_least_two_business_days_before_prior_month_end
 
   futures_depth: 12
@@ -155,7 +155,7 @@ market:
           - Report 25-delta risk reversal and explain which tail is more expensive.
           - Report 25-delta butterfly and explain wing richness.
           - Report front-to-second-expiry ATM volatility spread and relate it to scheduled USDA or weather risk.
-          - Treat projected RND output as diagnostic and retain all raw validity limitations.
+          - Treat fitted RND output as diagnostic and retain all raw validity limitations.
         required_checks:
           - Treat failed RND diagnostics as a limitation, never as probabilities.
           - Separate seasonal weather premium and scheduled-report premium from a directional forecast.
