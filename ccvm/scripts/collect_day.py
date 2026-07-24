@@ -34,6 +34,7 @@ from ccvm.collectors.cme_bulletin_pdf import CMEBulletinPDFCollector
 from ccvm.collectors.authorized_market_data import AuthorizedMarketDataCollector
 from ccvm.collectors.csv_futures import CSVFuturesCollector
 from ccvm.collectors.fred_macro import FREDMacroCollector
+from ccvm.collectors.equity_context import EquityContextCollector
 from ccvm.fundamentals import get_provider
 from ccvm.reference.product import get_product
 from ccvm.collectors.rss import RSSNewsCollector
@@ -55,7 +56,7 @@ FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures" / "futures"
 
 _SOURCES = ["yfinance_futures", "yfinance_benchmark", "yfinance_brent", "cftc_cot",
             "cme_bulletin_pdf", "fundamentals", "eia", "macro", "fred_macro",
-            "authorized_market_data", "rss_news", "news", "market",
+            "authorized_market_data", "equity_context", "rss_news", "news", "market",
             "csv_futures", "all"]
 
 
@@ -157,6 +158,15 @@ def main() -> None:
             result = FREDMacroCollector(raw_store, manifest_db).collect(as_of)
             results["macro"] = result
             print(f"[macro]             {result}")
+
+    if args.source in ("equity_context", "market", "all"):
+        if product.equity_context is None:
+            if args.source == "equity_context":
+                print("[equity_context]    skipped — product has no equity capability")
+        else:
+            result = EquityContextCollector(raw_store, manifest_db).collect(as_of)
+            results["equity_context"] = result
+            print(f"[equity_context]    {result}")
 
     if args.source in ("rss_news", "news", "all"):
         collector = RSSNewsCollector(raw_store, manifest_db)
