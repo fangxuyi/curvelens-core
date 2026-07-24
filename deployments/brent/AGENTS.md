@@ -27,13 +27,33 @@ export CCVM_PRODUCT=brent
 Runtime state resolves to `ccvm/data/products/brent/`. Never use another
 product's runtime directory.
 
-## Authoritative market-data handoff
+## Authoritative ICE Report Center sources
 
-ICE settlement data is licensed. This repository does not contain ICE
-credentials or make an unreviewed ICE API call. Obtain futures and options
-exports through the deployment owner's authorized ICE Data Services, ICE
-Connect, API, or bulk-file entitlement; transform them to the canonical JSON
-schema; and place them at:
+Use the official daily ICE Report Center CSV exports:
+
+- Futures: `https://www.ice.com/report/10`, contract `B` (Brent Crude Futures).
+- Options: `https://www.ice.com/report/166`, contract `B` (Options on Brent
+  Futures).
+
+Use `$curvelens-ice-report-download` when either handoff file is missing. ICE
+may require its click-through terms, login, or CAPTCHA. Those are human gates:
+pause for the user and never bypass or automate around them. Select the
+requested trade date explicitly; “latest” is acceptable only when it equals
+the requested date.
+
+After downloading both files, run:
+
+```bash
+CCVM_PRODUCT=brent ccvm/.venv/bin/python \
+  ccvm/scripts/import_ice_brent_reports.py \
+  --date <YYYY-MM-DD> \
+  --futures-csv <report-10.csv> \
+  --options-csv <report-166.csv>
+```
+
+The importer verifies date and Brent identity, normalizes the official CSV
+fields, archives the exact source bytes and hashes under the isolated runtime
+directory, and atomically creates:
 
 ```text
 ccvm/data/products/brent/authorized_market_data/trade_date=<date>/futures.json
@@ -52,10 +72,11 @@ volume and open interest are optional. Options rows require `option_expiry`,
 `settlement`; bid, ask, volume, open interest, IV, and greeks are optional.
 Contract codes use physical `B` plus month letter and two-digit year.
 
-The collector validates product, date, and required fields and then stores
-immutable raw copies. It does not treat the manually transformed JSON as an
-independent source: retain the original authorized export and transformation
-audit outside Git according to the data license.
+ICE settlement data is licensed. Never commit or redistribute downloaded CSVs,
+source manifests, canonical handoffs, credentials, or runtime data. The
+repository makes no ICE API call and stores no ICE credential. If browser
+access is unavailable, obtain the same reports through an owner-authorized ICE
+channel and use the same importer; never transform values by hand.
 
 ## Other sources
 
@@ -71,11 +92,12 @@ audit outside Git according to the data license.
 
 ## Supported validation run
 
-1. Verify the authorized ICE export's settlement date, venue, contract family,
+1. Verify both official ICE exports' settlement date, venue, contract B,
    units, and license.
-2. Produce both canonical JSON files at the isolated handoff paths.
+2. Import both CSVs with `$curvelens-ice-report-download`.
 3. Invoke: **Use `$curvelens-daily-analysis` to run Brent for `<date>`.**
-4. On `NEED_AUTHORIZED_MARKET_DATA`, obtain the missing file; never substitute.
+4. On `NEED_AUTHORIZED_MARKET_DATA`, use the ICE download skill; never
+   substitute.
 5. Resume durable state and inspect analysis, statistics, mobile, and monitor
    outputs. Do not use `--restart` unless explicitly requested.
 6. Do not prepare notification, mutate an outbox, schedule, or deliver.

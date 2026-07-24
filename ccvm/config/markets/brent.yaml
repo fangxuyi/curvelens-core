@@ -53,6 +53,9 @@ market:
     futures_filename: futures.json
     options_filename: options.json
     credentials_env: []
+    futures_source_url: https://www.ice.com/report/10
+    options_source_url: https://www.ice.com/report/166
+    source_contract: B
 
   benchmark:
     name: WTI

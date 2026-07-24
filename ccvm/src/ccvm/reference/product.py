@@ -77,6 +77,9 @@ class MarketDataSpec:
     futures_filename: str
     options_filename: str
     credentials_env: tuple[str, ...] = ()
+    futures_source_url: str = ""
+    options_source_url: str = ""
+    source_contract: str = ""
 
     def required_paths(self, root: Path, trade_date: str) -> tuple[Path, Path]:
         base = root / self.input_subdir / f"trade_date={trade_date}"
@@ -368,6 +371,18 @@ def load_product(key: str) -> Product:
             raise ValueError(
                 f"Product profile {key!r} market_data missing: {missing}"
             )
+        source_fields = (
+            "futures_source_url", "options_source_url", "source_contract",
+        )
+        if any(market_data.get(name) for name in source_fields):
+            missing_sources = [
+                name for name in source_fields if not market_data.get(name)
+            ]
+            if missing_sources:
+                raise ValueError(
+                    f"Product profile {key!r} market_data source missing: "
+                    f"{missing_sources}"
+                )
         market_data_spec = MarketDataSpec(
             provider=provider,
             input_subdir=str(market_data["input_subdir"]),
@@ -376,6 +391,9 @@ def load_product(key: str) -> Product:
             credentials_env=tuple(
                 str(value) for value in market_data.get("credentials_env", [])
             ),
+            futures_source_url=str(market_data.get("futures_source_url", "")),
+            options_source_url=str(market_data.get("options_source_url", "")),
+            source_contract=str(market_data.get("source_contract", "")),
         )
     return Product(
         key=key,

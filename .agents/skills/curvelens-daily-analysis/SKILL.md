@@ -16,9 +16,12 @@ or a vendor model CLI.
    CCVM_PRODUCT=<product> ccvm/.venv/bin/python agent/analysis_orchestrator.py start --date <date>
    ```
 
-3. Parse its JSON result. Handle `NEED_CME_PDF` according to the product runbook.
-   Stop on `ORCHESTRATION_ERROR` or `ORCHESTRATION_BLOCKED` and report its exact
-   detail. Never use `--restart` unless the user requests a fresh run.
+3. Parse its JSON result. Handle `NEED_CME_PDF` according to the product
+   runbook. On `NEED_AUTHORIZED_MARKET_DATA`, follow the selected deployment
+   runbook; for Brent, use `$curvelens-ice-report-download` to obtain and import
+   official ICE Report 10 and 166 files. Stop on `ORCHESTRATION_ERROR` or
+   `ORCHESTRATION_BLOCKED` and report its exact detail. Never use `--restart`
+   unless the user requests a fresh run.
 4. Execute every returned action using native subagents:
    - `RUN_QC_REVIEWER`: spawn one `curvelens_data_qc` agent and give it only the
      referenced task file. Wait for its response file.

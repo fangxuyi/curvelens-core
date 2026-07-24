@@ -23,6 +23,9 @@ def test_brent_profile_uses_authorized_ice_market_data():
     assert product.option_premium_tick_size == pytest.approx(0.01)
     assert product.options_expiry_horizon_months == 12
     assert product.market_data.provider == "authorized_files"
+    assert product.market_data.futures_source_url == "https://www.ice.com/report/10"
+    assert product.market_data.options_source_url == "https://www.ice.com/report/166"
+    assert product.market_data.source_contract == "B"
     assert product.bulletin is None
     assert product.fundamentals_provider == "eia_weekly_petroleum"
     assert product.benchmark.name == "WTI"
