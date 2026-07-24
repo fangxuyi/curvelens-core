@@ -37,9 +37,13 @@ Use the official daily ICE Report Center CSV exports:
 
 Use `$curvelens-ice-report-download` when either handoff file is missing. ICE
 may require its click-through terms, login, or CAPTCHA. Those are human gates:
-pause for the user and never bypass or automate around them. Select the
-requested trade date explicitly; “latest” is acceptable only when it equals
-the requested date.
+never bypass or automate around them. The deployment owner has explicitly
+approved one deduplicated `HUMAN_ACTION_REQUIRED` Telegram alert per report page
+and trade date. Use the ICE download skill to queue it in the Brent-isolated
+outbox, deliver only that exact message through the configured Brent deployment
+integration, ack it, and pause for the user. This operational alert does not
+authorize daily-report preparation or delivery. Select the requested trade
+date explicitly; “latest” is acceptable only when it equals the requested date.
 
 After downloading both files, run:
 
@@ -100,7 +104,8 @@ channel and use the same importer; never transform values by hand.
    substitute.
 5. Resume durable state and inspect analysis, statistics, mobile, and monitor
    outputs. Do not use `--restart` unless explicitly requested.
-6. Do not prepare notification, mutate an outbox, schedule, or deliver.
+6. Do not prepare or deliver the daily report, enable a schedule, or mutate
+   other outbox items. Only the human-gate alert above is approved.
 
 ## Live-data acceptance gates
 

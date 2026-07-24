@@ -143,6 +143,80 @@ def test_daily_delivery_requires_completed_agent_orchestration(tmp_path, monkeyp
     assert result["phase"] == "SPECIALISTS_REQUIRED"
 
 
+def test_human_action_alert_is_approved_deduplicated_and_acknowledged(
+    tmp_path, monkeypatch, capsys,
+):
+    product = SimpleNamespace(
+        display_name="Brent",
+        market_data=SimpleNamespace(
+            futures_source_url="https://www.ice.com/report/10",
+            options_source_url="https://www.ice.com/report/166",
+        ),
+    )
+    monkeypatch.setattr(notify, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(notify, "OUTBOX_DIR", tmp_path / "agent_outbox")
+    monkeypatch.setattr(notify, "PENDING_PATH", tmp_path / "agent_outbox/pending.json")
+    monkeypatch.setattr(notify, "DELIVERED_PATH", tmp_path / "agent_outbox/delivered.json")
+    monkeypatch.setattr(notify, "_product", lambda: product)
+
+    notify.cmd_prepare_human_action(
+        "2026-07-23", "https://www.ice.com/report/10",
+    )
+    first = json.loads(capsys.readouterr().out)
+    assert first["result"] == "HUMAN_ACTION_QUEUED"
+    assert first["id"] == "2026-07-23:HUMAN_ACTION_REQUIRED_ICE_REPORT_10"
+    assert "reCAPTCHA" in first["item"]["text"]
+    assert "No source was substituted" in first["item"]["text"]
+
+    notify.cmd_prepare_human_action(
+        "2026-07-23", "https://www.ice.com/report/10",
+    )
+    second = json.loads(capsys.readouterr().out)
+    assert second["result"] == "HUMAN_ACTION_PENDING"
+    assert second["id"] == first["id"]
+
+    notify.cmd_prepare_human_action(
+        "2026-07-23", "https://www.ice.com/report/166",
+    )
+    options = json.loads(capsys.readouterr().out)
+    assert options["result"] == "HUMAN_ACTION_QUEUED"
+    assert options["id"] == (
+        "2026-07-23:HUMAN_ACTION_REQUIRED_ICE_REPORT_166"
+    )
+
+    notify.cmd_ack([first["id"]], False)
+    capsys.readouterr()
+    notify.cmd_prepare_human_action(
+        "2026-07-23", "https://www.ice.com/report/10",
+    )
+    delivered = json.loads(capsys.readouterr().out)
+    assert delivered["result"] == "HUMAN_ACTION_ALREADY_DELIVERED"
+    assert delivered["item"] is None
+
+
+def test_human_action_alert_rejects_unapproved_url(tmp_path, monkeypatch, capsys):
+    product = SimpleNamespace(
+        display_name="Brent",
+        market_data=SimpleNamespace(
+            futures_source_url="https://www.ice.com/report/10",
+            options_source_url="https://www.ice.com/report/166",
+        ),
+    )
+    monkeypatch.setattr(notify, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(notify, "_product", lambda: product)
+    with pytest.raises(SystemExit) as exc:
+        notify.cmd_prepare_human_action(
+            "2026-07-23", "https://example.com/not-approved",
+        )
+    assert exc.value.code == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["result"] == "ERROR"
+    assert result["allowed_urls"] == [
+        "https://www.ice.com/report/10",
+        "https://www.ice.com/report/166",
+    ]
+
+
 def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_language(
     tmp_path, monkeypatch,
 ):

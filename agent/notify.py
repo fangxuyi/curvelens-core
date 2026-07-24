@@ -16,12 +16,18 @@ Agent-orchestrated product deployments produce one report-derived message:
     DAILY_SYNTHESIS the phone-first mobile.md rendering, preserving the most
                     important specialist numbers, driver, conflict, and watch
 
+Authorized hybrid acquisition workflows may also produce:
+    HUMAN_ACTION_REQUIRED a fixed operational alert when a website is paused
+                          at a human-only access gate
+
 Message ids are deterministic ("<date>:<type>"), so a given date can queue each
 type at most once — re-running --prepare is idempotent and will not re-queue a
 message that was already delivered.
 
 Usage:
     python agent/notify.py --is-new 2026-07-02        # freshness gate (before saving PDF)
+    python agent/notify.py --prepare-human-action --date 2026-07-02 \
+      --url https://www.ice.com/report/10
     python agent/notify.py --prepare --date 2026-07-02
     python agent/notify.py --list-pending
     python agent/notify.py --ack 2026-07-02:DAILY_SYNTHESIS
@@ -508,6 +514,77 @@ def queue_message(msg_type: str, date_str: str, text: str) -> dict:
     return {"result": "QUEUED", "id": msg_id, "pending_total": len(pending)}
 
 
+def cmd_prepare_human_action(date_str: str, url: str) -> None:
+    """Queue one fixed, deduplicated alert for a human-only acquisition gate."""
+    try:
+        parsed_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        _emit({
+            "result": "ERROR",
+            "detail": "--date must use YYYY-MM-DD",
+        })
+        sys.exit(1)
+    if parsed_date.isoformat() != date_str:
+        _emit({
+            "result": "ERROR",
+            "detail": "--date must use YYYY-MM-DD",
+        })
+        sys.exit(1)
+
+    product = _product()
+    spec = product.market_data
+    allowed_urls = {
+        value for value in (
+            getattr(spec, "futures_source_url", ""),
+            getattr(spec, "options_source_url", ""),
+        ) if value
+    } if spec else set()
+    if url not in allowed_urls:
+        _emit({
+            "result": "ERROR",
+            "detail": "URL is not an approved source in the active product profile",
+            "allowed_urls": sorted(allowed_urls),
+        })
+        sys.exit(1)
+
+    report_id = (
+        "10" if url == getattr(spec, "futures_source_url", "") else "166"
+    )
+    message_type = f"HUMAN_ACTION_REQUIRED_ICE_REPORT_{report_id}"
+    text = "\n".join([
+        f"⚠️ *Human action required — CurveLens {product.display_name}*",
+        "",
+        f"ICE Report {report_id} is waiting for terms, login, or reCAPTCHA.",
+        f"Trade date: `{date_str}`",
+        f"Open the existing browser session: {url}",
+        "",
+        "The workflow is paused. No source was substituted and no daily report "
+        "was prepared or sent.",
+    ])
+    queued = queue_message(message_type, date_str, text)
+    msg_id = queued["id"]
+    item = next(
+        (entry for entry in _load(PENDING_PATH) if entry.get("id") == msg_id),
+        None,
+    )
+    if queued["result"] == "QUEUED":
+        result = "HUMAN_ACTION_QUEUED"
+    elif item is not None:
+        result = "HUMAN_ACTION_PENDING"
+    else:
+        result = "HUMAN_ACTION_ALREADY_DELIVERED"
+    _emit({
+        "result": result,
+        "id": msg_id,
+        "item": item,
+        "delivery_instructions": (
+            "If item is present, deliver only item.text through the active "
+            "deployment Telegram integration, then acknowledge this exact id. "
+            "Do not deliver unrelated pending messages."
+        ),
+    })
+
+
 def cmd_prepare(date_str: str) -> None:
     run_state_path = (
         DATA_DIR / "analysis_workflow" / f"trade_date={date_str}" / "run.json"
@@ -599,9 +676,10 @@ def cmd_list_pending() -> None:
         "count": len(pending),
         "instructions": (
             "Deliver each item's `text` verbatim via your Telegram integration "
-            "(Markdown parse mode). Send PRIORITY_ALERT items before routine "
-            "items. Agent-orchestrated runs normally have one DAILY_SYNTHESIS. After each successful send, ack "
-            "its id with: python agent/notify.py --ack <id>"
+            "(Markdown parse mode). Send HUMAN_ACTION_REQUIRED items first, then "
+            "PRIORITY_ALERT, then routine items. Agent-orchestrated runs normally "
+            "have one DAILY_SYNTHESIS. After each successful send, ack its id "
+            "with: python agent/notify.py --ack <id>"
         ),
         "items": pending,
     })
@@ -655,7 +733,17 @@ def cmd_ack(ids: list[str], ack_all: bool) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="CurveLens alert prep + delivery queue")
     parser.add_argument("--prepare", action="store_true", help="Queue messages for a date")
-    parser.add_argument("--date", help="Trade date YYYY-MM-DD (required with --prepare)")
+    parser.add_argument(
+        "--prepare-human-action", action="store_true",
+        help="Queue an approved human-intervention alert",
+    )
+    parser.add_argument(
+        "--date",
+        help="Trade date YYYY-MM-DD (required with --prepare or --prepare-human-action)",
+    )
+    parser.add_argument(
+        "--url", help="Approved source URL (required with --prepare-human-action)",
+    )
     parser.add_argument("--is-new", metavar="DATE",
                         help="Report whether DATE still needs processing (freshness gate)")
     parser.add_argument("--list-pending", action="store_true", help="Print queued messages as JSON")
@@ -663,7 +751,15 @@ def main() -> None:
     parser.add_argument("--ack-all", action="store_true", help="Mark all pending messages delivered")
     args = parser.parse_args()
 
-    if args.prepare:
+    if args.prepare_human_action:
+        if not args.date or not args.url:
+            _emit({
+                "result": "ERROR",
+                "detail": "--prepare-human-action requires --date and --url",
+            })
+            sys.exit(1)
+        cmd_prepare_human_action(args.date, args.url)
+    elif args.prepare:
         if not args.date:
             _emit({"result": "ERROR", "detail": "--prepare requires --date"})
             sys.exit(1)
