@@ -19,6 +19,9 @@ def test_root_agent_instructions_are_framework_scoped():
     assert "deployments/copper/AGENTS.md" in root
     assert "deployments/corn/AGENTS.md" in root
     assert "deployments/silver/AGENTS.md" in root
+    assert "deployments/sp500/AGENTS.md" in root
+    assert "deployments/nasdaq100/AGENTS.md" in root
+    assert "deployments/russell2000/AGENTS.md" in root
     assert "CCVM_PRODUCT=wti" not in root
     assert "Section 63" not in root
     assert "EIA flash" not in root
@@ -34,6 +37,9 @@ def test_readme_exposes_one_sentence_product_deployment():
         "Operate the CurveLens Copper deployment.",
         "Operate the CurveLens Corn deployment.",
         "Operate the CurveLens Silver deployment.",
+        "Operate the CurveLens S&P 500 deployment.",
+        "Operate the CurveLens Nasdaq-100 deployment.",
+        "Operate the CurveLens Russell 2000 deployment.",
     ):
         assert sentence in readme
         assert sentence in deployments
@@ -42,7 +48,10 @@ def test_readme_exposes_one_sentence_product_deployment():
 
 
 def test_each_product_has_a_minimal_deployment_instruction_set():
-    for product in ("wti", "brent", "gold", "copper", "corn", "silver"):
+    for product in (
+        "wti", "brent", "gold", "copper", "corn", "silver",
+        "sp500", "nasdaq100", "russell2000",
+    ):
         base = ROOT / "deployments" / product
         for filename in ("AGENTS.md", "cron.example"):
             assert (base / filename).exists(), f"missing deployments/{product}/{filename}"

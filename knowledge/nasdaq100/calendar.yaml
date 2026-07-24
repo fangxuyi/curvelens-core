@@ -1,0 +1,6 @@
+product: nasdaq100
+recurring:
+  - {name: Federal Open Market Committee decision, day: null, time_et: "14:00", kind: macro, schedule_note: use the dated Federal Reserve calendar}
+  - {name: U.S. CPI release, day: null, time_et: "08:30", kind: macro, schedule_note: monthly; use the BLS calendar}
+  - {name: Major technology earnings, day: null, time_et: null, kind: corporate, schedule_note: use the collected company earnings calendar}
+dated: []

@@ -114,6 +114,29 @@ class MacroSpec:
 
 
 @dataclass(frozen=True)
+class EquityCompanySpec:
+    """A deliberately bounded index constituent used for event monitoring."""
+
+    ticker: str
+    name: str
+    cik: str
+
+
+@dataclass(frozen=True)
+class EquityContextSpec:
+    """Public context feeds for an equity-index implementation."""
+
+    proxy_ticker: str
+    proxy_name: str
+    sector_proxies: tuple[tuple[str, str], ...]
+    company_watchlist: tuple[EquityCompanySpec, ...]
+    earnings_provider: str = "alphavantage"
+    earnings_api_key_env: str = "ALPHAVANTAGE_API_KEY"
+    sec_user_agent_env: str = "SEC_USER_AGENT"
+    history_days: int = 45
+
+
+@dataclass(frozen=True)
 class AnalysisRoleSpec:
     """One profile-driven perspective in the single-operator workflow."""
 
@@ -169,6 +192,7 @@ class Product:
     bulletin: Optional[BulletinSpec] = None
     benchmark: Optional[BenchmarkSpec] = None
     macro: Optional[MacroSpec] = None
+    equity_context: Optional[EquityContextSpec] = None
     news: NewsSpec = field(default_factory=NewsSpec)
     analysis_roles: tuple[AnalysisRoleSpec, ...] = ()
     analysis_blocking_sections: tuple[str, ...] = ("futures",)
@@ -270,6 +294,20 @@ def load_product(key: str) -> Product:
             f"Product profile {key!r} RND premium tick and fit-residual limit must be positive"
         )
     macro = m.get("macro", {}) or {}
+    equity_context = m.get("equity_context", {}) or {}
+    if equity_context:
+        required_equity = ("proxy_ticker", "proxy_name", "sector_proxies")
+        missing = [
+            name for name in required_equity if not equity_context.get(name)
+        ]
+        if missing:
+            raise ValueError(
+                f"Product profile {key!r} equity_context missing: {missing}"
+            )
+        if int(equity_context.get("history_days", 45)) < 2:
+            raise ValueError(
+                f"Product profile {key!r} equity_context history_days must be >= 2"
+            )
     analysis = m.get("analysis", {}) or {}
     listed_futures_months = tuple(
         int(value) for value in m.get("listed_futures_months", range(1, 13))
@@ -435,6 +473,36 @@ def load_product(key: str) -> Product:
                 for key, spec in (macro.get("series", {}) or {}).items()
             ),
         ) if macro else None),
+        equity_context=(EquityContextSpec(
+            proxy_ticker=str(equity_context["proxy_ticker"]),
+            proxy_name=str(equity_context["proxy_name"]),
+            sector_proxies=tuple(
+                (str(ticker), str(name))
+                for ticker, name in (
+                    equity_context.get("sector_proxies", {}) or {}
+                ).items()
+            ),
+            company_watchlist=tuple(
+                EquityCompanySpec(
+                    ticker=str(company["ticker"]),
+                    name=str(company["name"]),
+                    cik=str(company["cik"]).zfill(10),
+                )
+                for company in equity_context.get("company_watchlist", [])
+            ),
+            earnings_provider=str(
+                equity_context.get("earnings_provider", "alphavantage")
+            ),
+            earnings_api_key_env=str(
+                equity_context.get(
+                    "earnings_api_key_env", "ALPHAVANTAGE_API_KEY"
+                )
+            ),
+            sec_user_agent_env=str(
+                equity_context.get("sec_user_agent_env", "SEC_USER_AGENT")
+            ),
+            history_days=int(equity_context.get("history_days", 45)),
+        ) if equity_context else None),
         news=NewsSpec(
             keywords=tuple(str(v).lower() for v in news.get("keywords", [])),
             sources=tuple(

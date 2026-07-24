@@ -14,6 +14,9 @@ The included product profiles are:
 | Copper | Futures curve, volatility surface, macro and physical fundamentals |
 | Corn | Futures curve, volatility surface, crop fundamentals |
 | Silver | Futures curve, volatility surface, macro and industrial fundamentals |
+| S&P 500 | Futures basis, volatility, macro, sectors, earnings and corporate events |
+| Nasdaq-100 | Futures basis, volatility, growth macro, technology and corporate events |
+| Russell 2000 | Futures basis, volatility, credit macro, sectors and corporate events |
 
 The deterministic engine and native-agent workflow are shared. Product facts,
 required analyses, knowledge, calendars, and data providers come from the
@@ -149,6 +152,9 @@ and post-trade-date context is labeled separately.
   - Gold macro data: `FRED_API_KEY`.
   - Silver macro and industrial proxies: `FRED_API_KEY`.
   - Copper macro and industrial proxies: `FRED_API_KEY`.
+  - S&P 500, Nasdaq-100, and Russell 2000: authorized CME futures/options
+    handoff files, `FRED_API_KEY`, optional `ALPHAVANTAGE_API_KEY` for upcoming
+    earnings, and a descriptive `SEC_USER_AGENT` for EDGAR filings.
   - Corn crop data: `USDA_NASS_API_KEY`.
 
 ### Set up the repository
@@ -177,6 +183,9 @@ Point one operating agent at the repository root and give it one sentence:
 - **Operate the CurveLens Copper deployment.**
 - **Operate the CurveLens Corn deployment.**
 - **Operate the CurveLens Silver deployment.**
+- **Operate the CurveLens S&P 500 deployment.**
+- **Operate the CurveLens Nasdaq-100 deployment.**
+- **Operate the CurveLens Russell 2000 deployment.**
 
 The agent reads the shared framework instructions
 and the selected product runbook, verifies the environment, and keeps runtime

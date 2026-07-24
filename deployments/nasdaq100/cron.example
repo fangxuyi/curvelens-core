@@ -1,0 +1,3 @@
+# DISABLED EXAMPLE — validation must pass before scheduling.
+# 30 18 * * 1-5 cd /path/to/curvelens-core && CCVM_PRODUCT=nasdaq100 \
+#   openclaw agent --message 'Use $curvelens-daily-analysis to run Nasdaq-100 for today; do not deliver.'
