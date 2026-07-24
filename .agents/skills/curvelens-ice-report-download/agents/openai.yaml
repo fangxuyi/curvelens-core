@@ -1,0 +1,4 @@
+interface:
+  display_name: "Download ICE Brent Reports"
+  short_description: "Download and validate official ICE Brent daily reports"
+  default_prompt: "Use $curvelens-ice-report-download to obtain and import official ICE Brent futures and options reports for the requested trade date."

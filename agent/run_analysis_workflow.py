@@ -68,6 +68,9 @@ def main() -> None:
                 "provider": product.market_data.provider,
                 "missing_paths": missing,
                 "credentials_env": list(product.market_data.credentials_env),
+                "futures_source_url": product.market_data.futures_source_url,
+                "options_source_url": product.market_data.options_source_url,
+                "source_contract": product.market_data.source_contract,
             })
     pdf_path = root / "cme_bulletin" / f"{as_of_str}.pdf"
     if product.bulletin and not pdf_path.exists() and not args.force_pdf:
