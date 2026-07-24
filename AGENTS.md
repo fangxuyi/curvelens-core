@@ -76,6 +76,11 @@ environment are shared.
   Delivery uses the deployment agent integration.
 - Send only messages queued by the selected deployment's isolated outbox, and
   ack every successful send to preserve deduplication.
+- A product runbook may explicitly authorize a human-intervention alert for a
+  hybrid acquisition gate. Queue only the fixed `HUMAN_ACTION_REQUIRED`
+  message for the blocked page, deliver only that exact item through the
+  deployment integration, and ack it. This does not authorize report
+  preparation or delivery.
 - Never enable schedules or live delivery without explicit approval.
 - Do not commit `.env`, API keys, chat IDs, runtime data, outbox state, or other
   secrets.

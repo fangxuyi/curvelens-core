@@ -54,7 +54,10 @@ or a vendor model CLI.
    forecast. Use the controller's `inspect` command when a user
    asks what agents received, returned, or failed validation.
    Do not call `notify.py`, touch an outbox, enable a schedule, or deliver the
-   report. Promotion is a separate explicitly approved change.
+   report. The only exception is a product-runbook-approved human-gate alert
+   performed by an acquisition skill before analysis can continue. That alert
+   never authorizes report delivery. Promotion is a separate explicitly
+   approved change.
 
 The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
