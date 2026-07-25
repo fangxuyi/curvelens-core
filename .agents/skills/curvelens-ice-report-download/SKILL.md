@@ -1,6 +1,6 @@
 ---
 name: curvelens-ice-report-download
-description: Obtain, validate, and import official daily ICE Report Center CSV files for CurveLens Brent, including the approved Telegram human-intervention alert when ICE presents terms, login, or reCAPTCHA. Use when a Brent run reports NEED_AUTHORIZED_MARKET_DATA, or when asked to download or refresh ICE Brent futures Report 10 or options Report 166 for a trade date.
+description: Obtain, validate, and import official daily ICE Report Center CSV or PDF files for CurveLens Brent, including batch PDF imports and the approved Telegram human-intervention alert when ICE presents terms, login, or reCAPTCHA. Use when a Brent run reports NEED_AUTHORIZED_MARKET_DATA, or when asked to download, refresh, or import ICE Brent futures Report 10 or options Report 166 for one or more trade dates.
 ---
 
 # Download ICE Brent Reports
@@ -38,8 +38,8 @@ description: Obtain, validate, and import official daily ICE Report Center CSV f
    If the requested date is unavailable, stop and report the available dates.
    Never substitute WTI, another Brent instrument, a continuous series, or a
    different date.
-5. Download both CSV files to a temporary or user download directory. Do not
-   edit them. Import them deterministically:
+5. Download the futures and options files in the format ICE supplies. Do not
+   edit them. Import a CSV pair with:
 
    ```bash
    CCVM_PRODUCT=brent ccvm/.venv/bin/python \
@@ -49,15 +49,36 @@ description: Obtain, validate, and import official daily ICE Report Center CSV f
      --options-csv <report-166.csv>
    ```
 
-6. Require `result: OK`. The importer validates the trade date, identifies
-   Brent contract B, checks settlement fields, converts ICE strips and
-   call/put values, rejects conflicting duplicates, archives exact source
-   bytes with SHA-256 provenance, and atomically writes the canonical handoff.
-   On any error, stop and report it; never repair or invent market values.
+   Import a PDF pair with:
+
+   ```bash
+   CCVM_PRODUCT=brent ccvm/.venv/bin/python \
+     ccvm/scripts/import_ice_brent_reports.py \
+     --date <YYYY-MM-DD> \
+     --futures-pdf <report-10.pdf> \
+     --options-pdf <report-166.pdf>
+   ```
+
+   For a directory containing `futures/*.pdf` and `options/*.pdf`, import every
+   internally dated pair with:
+
+   ```bash
+   CCVM_PRODUCT=brent ccvm/.venv/bin/python \
+     ccvm/scripts/import_ice_brent_reports.py \
+     --batch-pdf-root <directory>
+   ```
+
+6. Require `result: OK`. The importer validates each file's internal trade
+   date, report title, and Brent B identity; checks settlement fields; converts
+   ICE strips and call/put values; rejects conflicting duplicates and unpaired
+   batch dates; archives exact source bytes with SHA-256 provenance; and
+   atomically writes the canonical handoff. PDF processing requires
+   `pdftotext`. On any error, stop and report it; never repair or invent market
+   values.
 7. After the user completes the gate, resume the same browser flow and then
    `$curvelens-daily-analysis` without `--restart`.
 
-ICE CSVs, source manifests, canonical handoffs, and runtime outputs are
+ICE CSVs/PDFs, source manifests, canonical handoffs, and runtime outputs are
 licensed operational data. Keep them under the isolated Brent data directory;
 never commit, publish, attach, or redistribute them. This skill makes no model
 API or SDK calls. The human-action alert is operational only; it does not

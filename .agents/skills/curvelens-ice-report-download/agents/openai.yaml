@@ -1,4 +1,4 @@
 interface:
   display_name: "Download ICE Brent Reports"
-  short_description: "Download ICE reports with human-gate alerts"
-  default_prompt: "Use $curvelens-ice-report-download to obtain and import official ICE Brent reports, alerting me if human intervention is required."
+  short_description: "Import ICE CSV/PDF reports with human alerts"
+  default_prompt: "Use $curvelens-ice-report-download to obtain and import official ICE Brent CSV or PDF reports, alerting me if human intervention is required."

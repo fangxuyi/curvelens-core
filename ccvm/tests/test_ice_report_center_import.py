@@ -7,10 +7,18 @@ import os
 import subprocess
 import sys
 from datetime import date
+from pathlib import Path
 
 import pytest
 
-from ccvm.importers.ice_report_center import import_brent_reports
+from ccvm.importers import ice_report_center
+from ccvm.importers.ice_report_center import (
+    import_brent_pdf_directory,
+    import_brent_pdf_reports,
+    import_brent_reports,
+    parse_brent_futures_pdf_text,
+    parse_brent_options_pdf_text,
+)
 from ccvm.reference.product import load_product
 
 FUTURES = """TRADE_DATE,SETTLEMENT_PRICE,LONG_NAME,TOTAL_VOLUME,PRODUCT,OPEN_INTEREST,STRIP
@@ -23,6 +31,25 @@ OPTIONS = """TRADE_DATE,SETTLEMENT_PRICE,LONG_NAME,TOTAL_VOLUME,PRODUCT,OPEN_INT
 2026-07-22,2.10,Options on Brent Futures,25,Brent Crude Futures,100,Sep26,Call,82,0.31,0.52
 2026-07-22,1.95,Options on Brent Futures,20,Brent Crude Futures,90,Sep26,Put,82,0.30,-0.48
 2026-07-22,0.50,Options on WTI Futures,1,WTI Crude Futures,2,Sep26,Call,82,0.20,0.10
+"""
+
+FUTURES_PDF_TEXT = """Futures Daily Market Report for ICE Brent Futures
+22-Jul-2026
+
+B-Brent Crude Future
+
+ B Sep26 95.36 102.00 94.89 101.04 100.69 6.62 445,173 281,481 -13,146 0 2,500 15,827 203,537
+ B Oct26 94.26 4.08 3,232 28,328 162 0 0 897 2,335
+"""
+
+OPTIONS_PDF_TEXT = """Options Daily Market Report for ICE Brent Futures
+22-Jul-2026
+
+B-Option on Brent Crude Future
+
+ B Sep26 80.00 C 0.9815 20.34 20.82 20.30 20.82 20.77 6.49 1,993 20,094 -30 0 945 0 1,230
+ B Sep26 80.25 C 0.9808 20.52 6.48 0 280 0 0 0 0 0
+ B Sep26 80.00 P -0.0185 0.20 -0.01 50 10,000 25 0 0 0 50
 """
 
 
@@ -132,6 +159,124 @@ def test_rejects_overwrite_of_different_archived_source(tmp_path):
         import_brent_reports(**kwargs)
 
 
+def test_parses_official_pdf_layout_with_and_without_ohlc():
+    product = load_product("brent")
+    futures = parse_brent_futures_pdf_text(
+        FUTURES_PDF_TEXT, date(2026, 7, 22), product,
+    )
+    options = parse_brent_options_pdf_text(
+        OPTIONS_PDF_TEXT, date(2026, 7, 22), product,
+    )
+    assert futures == [
+        {
+            "contract_code": "BU26",
+            "delivery_month": "2026-09",
+            "open_interest": 281481,
+            "settlement": 100.69,
+            "settlement_change": 6.62,
+            "trade_date": "2026-07-22",
+            "volume": 445173,
+        },
+        {
+            "contract_code": "BV26",
+            "delivery_month": "2026-10",
+            "open_interest": 28328,
+            "settlement": 94.26,
+            "settlement_change": 4.08,
+            "trade_date": "2026-07-22",
+            "volume": 3232,
+        },
+    ]
+    assert len(options) == 3
+    call = options[0]
+    assert call["underlying_contract"] == "BU26"
+    assert call["option_expiry"] == "2026-07-28"
+    assert call["strike"] == 80.0
+    assert call["call_put"] == "C"
+    assert call["delta"] == pytest.approx(0.9815)
+    assert call["settlement"] == pytest.approx(20.77)
+    assert call["volume"] == 1993
+    assert call["open_interest"] == 20094
+
+
+def test_pdf_parser_rejects_wrong_internal_date_and_identity():
+    product = load_product("brent")
+    with pytest.raises(ValueError, match="does not match"):
+        parse_brent_futures_pdf_text(
+            FUTURES_PDF_TEXT, date(2026, 7, 23), product,
+        )
+    with pytest.raises(ValueError, match="does not identify"):
+        parse_brent_options_pdf_text(
+            OPTIONS_PDF_TEXT.replace(
+                "B-Option on Brent Crude Future", "B-Option on WTI Crude Future",
+            ),
+            date(2026, 7, 22),
+            product,
+        )
+
+
+def test_imports_pdf_pair_to_same_canonical_handoff(
+    tmp_path, monkeypatch,
+):
+    futures_pdf = tmp_path / "futures.pdf"
+    options_pdf = tmp_path / "options.pdf"
+    futures_pdf.write_bytes(b"%PDF-futures")
+    options_pdf.write_bytes(b"%PDF-options")
+    monkeypatch.setattr(
+        ice_report_center,
+        "_extract_pdf_text",
+        lambda path: (
+            FUTURES_PDF_TEXT if Path(path).name == "futures.pdf"
+            else OPTIONS_PDF_TEXT
+        ),
+    )
+    data_dir = tmp_path / "data"
+    result = import_brent_pdf_reports(
+        futures_pdf=futures_pdf,
+        options_pdf=options_pdf,
+        trade_date=date(2026, 7, 22),
+        data_dir=data_dir,
+        product=load_product("brent"),
+    )
+    futures = json.loads(result.futures_path.read_text())
+    options = json.loads(result.options_path.read_text())
+    manifest = json.loads(result.manifest_path.read_text())
+    assert len(futures["settlements"]) == 2
+    assert len(options["settlements"]) == 3
+    assert manifest["sources"]["futures"]["format"] == "pdf"
+    assert manifest["sources"]["options"]["format"] == "pdf"
+    assert (
+        data_dir / "ice_report_center/trade_date=2026-07-22/"
+        "report-10-futures.pdf"
+    ).read_bytes() == b"%PDF-futures"
+
+
+def test_batch_pdf_import_pairs_by_internal_date(tmp_path, monkeypatch):
+    batch = tmp_path / "downloads"
+    futures_dir = batch / "futures"
+    options_dir = batch / "options"
+    futures_dir.mkdir(parents=True)
+    options_dir.mkdir()
+    (futures_dir / "arbitrary-name.pdf").write_bytes(b"%PDF-futures")
+    (options_dir / "different-name.pdf").write_bytes(b"%PDF-options")
+    monkeypatch.setattr(
+        ice_report_center,
+        "_extract_pdf_text",
+        lambda path: (
+            FUTURES_PDF_TEXT if Path(path).parent.name == "futures"
+            else OPTIONS_PDF_TEXT
+        ),
+    )
+    results = import_brent_pdf_directory(
+        batch_root=batch,
+        data_dir=tmp_path / "data",
+        product=load_product("brent"),
+    )
+    assert len(results) == 1
+    assert results[0].futures_rows == 2
+    assert results[0].options_rows == 3
+
+
 def test_missing_handoff_reports_official_source_urls(tmp_path):
     root = __import__("pathlib").Path(__file__).resolve().parents[2]
     env = os.environ.copy()
@@ -156,7 +301,7 @@ def test_missing_handoff_reports_official_source_urls(tmp_path):
 
 
 def test_skill_and_runbook_pin_official_reports_and_human_gate():
-    root = __import__("pathlib").Path(__file__).resolve().parents[2]
+    root = Path(__file__).resolve().parents[2]
     skill = (
         root / ".agents/skills/curvelens-ice-report-download/SKILL.md"
     ).read_text()
@@ -166,3 +311,5 @@ def test_skill_and_runbook_pin_official_reports_and_human_gate():
         assert "https://www.ice.com/report/166" in text
         assert "CAPTCHA" in text
         assert "never bypass" in text
+        assert "--futures-pdf" in text
+        assert "--batch-pdf-root" in text
