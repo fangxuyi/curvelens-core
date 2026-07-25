@@ -1,4 +1,4 @@
-"""Validate ICE Report Center CSV exports and build canonical Brent handoffs."""
+"""Validate ICE Report Center CSV/PDF exports and build Brent handoffs."""
 from __future__ import annotations
 
 import csv
@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -18,6 +19,10 @@ _MONTHS = {
     "JUL": 7, "AUG": 8, "SEP": 9, "SEPT": 9, "OCT": 10, "NOV": 11,
     "DEC": 12,
 }
+_FUTURES_PDF_TITLE = "Futures Daily Market Report for ICE Brent Futures"
+_OPTIONS_PDF_TITLE = "Options Daily Market Report for ICE Brent Futures"
+_PDF_DATE = re.compile(r"^\s*(\d{1,2}-[A-Za-z]{3}-\d{4})\s*$", re.MULTILINE)
+_PDF_ROW = re.compile(r"^\s*B\s+[A-Z][a-z]{2}\d{2}\s+")
 
 
 def _key(value: str) -> str:
@@ -149,6 +154,145 @@ def _deduplicate(rows: list[dict], key_fields: tuple[str, ...], label: str) -> l
     return [unique[key] for key in sorted(unique)]
 
 
+def _report_date(text: str, title: str, identity: str) -> date:
+    if title not in text:
+        raise ValueError(f"PDF is not {title!r}")
+    if identity not in text:
+        raise ValueError(f"PDF does not identify {identity}")
+    match = _PDF_DATE.search(text)
+    if not match:
+        raise ValueError("PDF has no recognizable internal report date")
+    try:
+        return datetime.strptime(match.group(1), "%d-%b-%Y").date()
+    except ValueError as exc:
+        raise ValueError(
+            f"PDF has invalid internal report date {match.group(1)!r}"
+        ) from exc
+
+
+def _integer(value: str, label: str) -> int:
+    number = _number(value, label)
+    if not number.is_integer():
+        raise ValueError(f"{label} must be an integer")
+    return int(number)
+
+
+def parse_brent_futures_pdf_text(
+    text: str, expected_date: date, product: Product,
+) -> list[dict]:
+    """Parse layout-preserved text from official ICE futures Report 10."""
+    observed = _report_date(text, _FUTURES_PDF_TITLE, "B-Brent Crude Future")
+    if observed != expected_date:
+        raise ValueError(
+            f"futures PDF report date {observed.isoformat()} does not match "
+            f"{expected_date.isoformat()}"
+        )
+    result = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not _PDF_ROW.match(line):
+            continue
+        parts = line.split()
+        if len(parts) < 11 or parts[0] != product.product_code:
+            raise ValueError(
+                f"futures PDF row {line_number} has an unexpected layout"
+            )
+        year, month = _parse_strip(parts[1])
+        tail = parts[-9:]
+        settlement = _number(tail[0], "settlement")
+        if settlement < 0:
+            raise ValueError(
+                f"futures PDF row {line_number} has negative settlement"
+            )
+        result.append({
+            "trade_date": expected_date.isoformat(),
+            "contract_code": product.contract_code(year, month),
+            "delivery_month": f"{year:04d}-{month:02d}",
+            "settlement": settlement,
+            "settlement_change": _number(tail[1], "settlement change"),
+            "volume": _integer(tail[2], "volume"),
+            "open_interest": _integer(tail[3], "open interest"),
+        })
+    if not result:
+        raise ValueError("futures PDF has no Brent settlement rows")
+    return _deduplicate(result, ("contract_code",), "futures")
+
+
+def parse_brent_options_pdf_text(
+    text: str, expected_date: date, product: Product,
+) -> list[dict]:
+    """Parse layout-preserved text from official ICE options Report 166."""
+    observed = _report_date(
+        text, _OPTIONS_PDF_TITLE, "B-Option on Brent Crude Future",
+    )
+    if observed != expected_date:
+        raise ValueError(
+            f"options PDF report date {observed.isoformat()} does not match "
+            f"{expected_date.isoformat()}"
+        )
+    result = []
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if not _PDF_ROW.match(line):
+            continue
+        parts = line.split()
+        if len(parts) < 14 or parts[0] != product.product_code:
+            raise ValueError(
+                f"options PDF row {line_number} has an unexpected layout"
+            )
+        put_call = parts[3].upper()
+        if put_call not in {"C", "P"}:
+            raise ValueError(
+                f"options PDF row {line_number} has invalid put/call"
+            )
+        year, month = _parse_strip(parts[1])
+        tail = parts[-9:]
+        settlement = _number(tail[0], "settlement")
+        if settlement < 0:
+            raise ValueError(
+                f"options PDF row {line_number} has negative settlement"
+            )
+        result.append({
+            "trade_date": expected_date.isoformat(),
+            "option_expiry": product.calendar.option_expiry_date(
+                year, month,
+            ).isoformat(),
+            "underlying_contract": product.contract_code(year, month),
+            "underlying_delivery_month": f"{year:04d}-{month:02d}",
+            "strike": _number(parts[2], "strike", positive=True),
+            "call_put": put_call,
+            "settlement": settlement,
+            "settlement_change": _number(tail[1], "settlement change"),
+            "volume": _integer(tail[2], "volume"),
+            "open_interest": _integer(tail[3], "open interest"),
+            "delta": _number(parts[4], "delta"),
+        })
+    if not result:
+        raise ValueError("options PDF has no Brent settlement rows")
+    return _deduplicate(
+        result, ("underlying_contract", "strike", "call_put"), "options",
+    )
+
+
+def _extract_pdf_text(path: Path) -> str:
+    with path.open("rb") as handle:
+        signature = handle.read(5)
+    if signature != b"%PDF-":
+        raise ValueError(f"{path.name} is not a PDF")
+    executable = shutil.which("pdftotext")
+    if executable is None:
+        raise ValueError("pdftotext is required to import ICE PDF reports")
+    process = subprocess.run(
+        [executable, "-layout", "-enc", "UTF-8", str(path), "-"],
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        detail = " ".join(process.stderr.split())
+        raise ValueError(f"pdftotext failed for {path.name}: {detail}")
+    if not process.stdout.strip():
+        raise ValueError(f"{path.name} contains no extractable text")
+    return process.stdout
+
+
 def _futures(
     path: Path, expected_date: date, product: Product,
 ) -> tuple[list[dict], int]:
@@ -267,15 +411,7 @@ class ImportResult:
     options_rows: int
 
 
-def import_brent_reports(
-    *,
-    futures_csv: Path,
-    options_csv: Path,
-    trade_date: date,
-    data_dir: Path,
-    product: Product,
-) -> ImportResult:
-    """Import authorized ICE reports without making network or model calls."""
+def _validate_product(product: Product) -> None:
     if product.key != "brent" or product.market_data is None:
         raise ValueError("ICE Brent report import requires CCVM_PRODUCT=brent")
     spec = product.market_data
@@ -285,13 +421,29 @@ def import_brent_reports(
         raise ValueError(
             "ICE source contract does not match the active product code"
         )
-    futures_csv = Path(futures_csv).resolve()
-    options_csv = Path(options_csv).resolve()
-    if not futures_csv.is_file() or not options_csv.is_file():
-        raise ValueError("both ICE futures and options CSV files must exist")
 
-    futures_rows, futures_excluded = _futures(futures_csv, trade_date, product)
-    options_rows, options_excluded = _options(options_csv, trade_date, product)
+
+def _write_import(
+    *,
+    futures_source: Path,
+    options_source: Path,
+    futures_rows: list[dict],
+    options_rows: list[dict],
+    source_format: str,
+    trade_date: date,
+    data_dir: Path,
+    product: Product,
+    futures_excluded: int = 0,
+    options_excluded: int = 0,
+) -> ImportResult:
+    """Persist validated rows and exact authorized source files."""
+    _validate_product(product)
+    spec = product.market_data
+    assert spec is not None
+    futures_source = Path(futures_source).resolve()
+    options_source = Path(options_source).resolve()
+    if source_format not in {"csv", "pdf"}:
+        raise ValueError(f"unsupported ICE source format {source_format!r}")
     canonical_dir = (
         Path(data_dir) / spec.input_subdir / f"trade_date={trade_date.isoformat()}"
     )
@@ -299,12 +451,12 @@ def import_brent_reports(
         Path(data_dir) / "ice_report_center" / f"trade_date={trade_date.isoformat()}"
     )
     archive_dir.mkdir(parents=True, exist_ok=True)
-    archived_futures = archive_dir / "report-10-futures.csv"
-    archived_options = archive_dir / "report-166-options.csv"
-    if futures_csv != archived_futures.resolve():
-        _archive_exact(futures_csv, archived_futures)
-    if options_csv != archived_options.resolve():
-        _archive_exact(options_csv, archived_options)
+    archived_futures = archive_dir / f"report-10-futures.{source_format}"
+    archived_options = archive_dir / f"report-166-options.{source_format}"
+    if futures_source != archived_futures.resolve():
+        _archive_exact(futures_source, archived_futures)
+    if options_source != archived_options.resolve():
+        _archive_exact(options_source, archived_options)
 
     base = {
         "trade_date": trade_date.isoformat(),
@@ -324,7 +476,8 @@ def import_brent_reports(
         "sources": {
             "futures": {
                 "report_url": spec.futures_source_url,
-                "downloaded_filename": futures_csv.name,
+                "format": source_format,
+                "downloaded_filename": futures_source.name,
                 "archived_path": str(archived_futures),
                 "sha256": _sha256(archived_futures),
                 "rows": len(futures_rows),
@@ -332,7 +485,8 @@ def import_brent_reports(
             },
             "options": {
                 "report_url": spec.options_source_url,
-                "downloaded_filename": options_csv.name,
+                "format": source_format,
+                "downloaded_filename": options_source.name,
                 "archived_path": str(archived_options),
                 "sha256": _sha256(archived_options),
                 "rows": len(options_rows),
@@ -347,3 +501,125 @@ def import_brent_reports(
         futures_rows=len(futures_rows),
         options_rows=len(options_rows),
     )
+
+
+def import_brent_reports(
+    *,
+    futures_csv: Path,
+    options_csv: Path,
+    trade_date: date,
+    data_dir: Path,
+    product: Product,
+) -> ImportResult:
+    """Import authorized ICE CSV reports without network or model calls."""
+    _validate_product(product)
+    futures_csv = Path(futures_csv).resolve()
+    options_csv = Path(options_csv).resolve()
+    if not futures_csv.is_file() or not options_csv.is_file():
+        raise ValueError("both ICE futures and options CSV files must exist")
+    futures_rows, futures_excluded = _futures(
+        futures_csv, trade_date, product,
+    )
+    options_rows, options_excluded = _options(
+        options_csv, trade_date, product,
+    )
+    return _write_import(
+        futures_source=futures_csv,
+        options_source=options_csv,
+        futures_rows=futures_rows,
+        options_rows=options_rows,
+        source_format="csv",
+        trade_date=trade_date,
+        data_dir=data_dir,
+        product=product,
+        futures_excluded=futures_excluded,
+        options_excluded=options_excluded,
+    )
+
+
+def import_brent_pdf_reports(
+    *,
+    futures_pdf: Path,
+    options_pdf: Path,
+    trade_date: date,
+    data_dir: Path,
+    product: Product,
+) -> ImportResult:
+    """Import official ICE text PDFs without network or model calls."""
+    _validate_product(product)
+    futures_pdf = Path(futures_pdf).resolve()
+    options_pdf = Path(options_pdf).resolve()
+    if not futures_pdf.is_file() or not options_pdf.is_file():
+        raise ValueError("both ICE futures and options PDF files must exist")
+    futures_rows = parse_brent_futures_pdf_text(
+        _extract_pdf_text(futures_pdf), trade_date, product,
+    )
+    options_rows = parse_brent_options_pdf_text(
+        _extract_pdf_text(options_pdf), trade_date, product,
+    )
+    return _write_import(
+        futures_source=futures_pdf,
+        options_source=options_pdf,
+        futures_rows=futures_rows,
+        options_rows=options_rows,
+        source_format="pdf",
+        trade_date=trade_date,
+        data_dir=data_dir,
+        product=product,
+    )
+
+
+def _pdf_date(path: Path, title: str, identity: str) -> date:
+    return _report_date(_extract_pdf_text(path), title, identity)
+
+
+def import_brent_pdf_directory(
+    *,
+    batch_root: Path,
+    data_dir: Path,
+    product: Product,
+) -> list[ImportResult]:
+    """Pair and import every official futures/options PDF by internal date."""
+    _validate_product(product)
+    batch_root = Path(batch_root).resolve()
+    groups: dict[str, dict[date, Path]] = {}
+    for kind, title, identity in (
+        ("futures", _FUTURES_PDF_TITLE, "B-Brent Crude Future"),
+        ("options", _OPTIONS_PDF_TITLE, "B-Option on Brent Crude Future"),
+    ):
+        directory = batch_root / kind
+        if not directory.is_dir():
+            raise ValueError(f"batch directory is missing {directory}")
+        dated: dict[date, Path] = {}
+        for path in sorted(directory.glob("*.pdf")):
+            internal_date = _pdf_date(path, title, identity)
+            if internal_date in dated:
+                raise ValueError(
+                    f"duplicate {kind} PDFs for {internal_date.isoformat()}: "
+                    f"{dated[internal_date].name}, {path.name}"
+                )
+            dated[internal_date] = path
+        if not dated:
+            raise ValueError(f"batch directory has no {kind} PDFs")
+        groups[kind] = dated
+
+    futures_dates = set(groups["futures"])
+    options_dates = set(groups["options"])
+    if futures_dates != options_dates:
+        missing_futures = sorted(options_dates - futures_dates)
+        missing_options = sorted(futures_dates - options_dates)
+        raise ValueError(
+            "unpaired ICE PDFs; "
+            f"missing futures={[item.isoformat() for item in missing_futures]}, "
+            f"missing options={[item.isoformat() for item in missing_options]}"
+        )
+    return [
+        import_brent_pdf_reports(
+            futures_pdf=groups["futures"][trade_date],
+            options_pdf=groups["options"][trade_date],
+            trade_date=trade_date,
+            data_dir=data_dir,
+            product=product,
+        )
+        for trade_date in sorted(futures_dates)
+    ]
