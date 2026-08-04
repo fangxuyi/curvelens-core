@@ -68,7 +68,11 @@ failure. Retrospective completion never authorizes delivery or activates a
 learning candidate.
 
 Use `learn --date <as-of-date>` to rebuild bounded product-isolated aggregate
-memory after retrospective artifacts accumulate. Do not promote a candidate
+memory after the daily analysis completes. Execute any returned
+`RUN_RETROSPECTIVE` actions in parallel with `curvelens_retrospective`, then run
+`learn` again until it returns `LEARNING_MEMORY_UPDATED`. A retrospective error
+is reported separately and does not reopen or block the completed daily report.
+Do not promote a candidate
 unless the user explicitly requests that advisory ID; promotion uses
 `promote-learning --advisory-id <id>`. The controller enforces minimum sample
 and active-advisory caps. Learning memory is a hypothesis layer, never market

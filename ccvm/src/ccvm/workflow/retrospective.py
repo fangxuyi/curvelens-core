@@ -301,4 +301,36 @@ def prepare_retrospective(
     }
 
 
-__all__ = ["prepare_retrospective", "validate_retrospective_response"]
+def refresh_retrospectives(
+    data_root: Path, as_of: date, *, max_source_dates: int = 30,
+) -> dict[str, Any]:
+    """Refresh eligible historical outcomes without blocking the daily report."""
+    if max_source_dates < 1:
+        raise ValueError("max_source_dates must be positive")
+    candidates: list[tuple[date, str]] = []
+    for path in (data_root / "analysis").glob("trade_date=*/analysis.json"):
+        value = path.parent.name.removeprefix("trade_date=")
+        try:
+            source_date = date.fromisoformat(value)
+        except ValueError:
+            continue
+        if source_date < as_of:
+            candidates.append((source_date, value))
+    results = []
+    actions = []
+    errors = []
+    for _, value in sorted(candidates)[-max_source_dates:]:
+        try:
+            result = prepare_retrospective(data_root, value)
+        except (AnalysisValidationError, ValueError, KeyError) as exc:
+            errors.append({"trade_date": value, "error": str(exc)})
+            continue
+        results.append({"trade_date": value, "result": result["result"]})
+        actions.extend(result.get("actions", []))
+    return {"as_of": as_of.isoformat(), "results": results, "actions": actions, "errors": errors}
+
+
+__all__ = [
+    "prepare_retrospective", "refresh_retrospectives",
+    "validate_retrospective_response",
+]

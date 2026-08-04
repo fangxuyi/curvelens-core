@@ -21,6 +21,7 @@ SCRIPTS = CCVM_DIR / "scripts"
 sys.path.insert(0, str(CCVM_DIR / "src"))
 
 from ccvm.collectors.rss import find_raw_articles
+from ccvm.learning.memory import load_active_snapshot
 from ccvm.reference.product import get_product
 from ccvm.runtime import data_dir
 from ccvm.workflow import assess_quality, build_analysis_packets, load_articles
@@ -132,6 +133,7 @@ def main() -> None:
         product=product, trade_date=as_of_str,
         report=json.loads(report_path.read_text()), quality=quality,
         articles=load_articles(article_path), output_dir=packet_dir,
+        learning_snapshot=load_active_snapshot(root, as_of),
     )
     stage_failures = [
         {"attempt": item.get("attempt"), "collect_exit_code": item.get("collect_exit_code"),

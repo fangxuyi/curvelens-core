@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +9,7 @@ import pytest
 from ccvm.workflow.finalize import AnalysisValidationError
 from ccvm.workflow.retrospective import (
     prepare_retrospective,
+    refresh_retrospectives,
     validate_retrospective_response,
 )
 
@@ -127,3 +128,15 @@ def test_retrospective_is_pending_until_target_session_exists(tmp_path):
     )
     assert result["result"] == "RETROSPECTIVE_PENDING"
     assert result["actions"] == []
+
+
+def test_refresh_finds_historical_reviews_without_blocking_on_legacy_files(tmp_path):
+    _setup(tmp_path)
+    legacy = tmp_path / "analysis" / "trade_date=2026-07-01"
+    legacy.mkdir(parents=True)
+    (legacy / "analysis.json").write_text(json.dumps({
+        "product": "gold", "trade_date": "2026-07-01",
+    }))
+    result = refresh_retrospectives(tmp_path, date.fromisoformat("2026-07-07"))
+    assert result["actions"][0]["action"] == "RUN_RETROSPECTIVE"
+    assert result["errors"][0]["trade_date"] == "2026-07-01"

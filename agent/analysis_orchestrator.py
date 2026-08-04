@@ -30,7 +30,7 @@ from ccvm.workflow.orchestration import (
     advance_state, initialize_state, load_state, next_actions,
     refresh_after_remediation, save_state,
 )
-from ccvm.workflow.retrospective import prepare_retrospective
+from ccvm.workflow.retrospective import prepare_retrospective, refresh_retrospectives
 
 
 def _emit(value: dict, ok: bool = True) -> None:
@@ -130,12 +130,20 @@ def main() -> None:
     try:
         with _run_lock(run_dir / "run.lock"):
             if args.command == "learn":
+                refresh = refresh_retrospectives(data_dir(), as_of)
                 memory = build_memory(data_dir(), as_of=as_of)
                 _emit({
-                    "result": "LEARNING_MEMORY_UPDATED", "date": as_of_str,
+                    "result": (
+                        "LEARNING_REVIEW_REQUIRED" if refresh["actions"]
+                        else "LEARNING_MEMORY_UPDATED"
+                    ),
+                    "date": as_of_str,
                     "memory": str(data_dir() / "learning" / "memory.json"),
                     "entry_count": len(memory["entries"]),
                     "active_count": len(memory["active_advisories"]),
+                    "retrospectives": refresh["results"],
+                    "retrospective_errors": refresh["errors"],
+                    "actions": refresh["actions"],
                 })
             if args.command == "promote-learning":
                 if not args.advisory_id:

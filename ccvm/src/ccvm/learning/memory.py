@@ -200,7 +200,40 @@ def promote_advisory(data_root: Path, advisory_id: str) -> dict[str, Any]:
     return payload
 
 
+def load_active_snapshot(data_root: Path, trade_date: date) -> dict[str, Any]:
+    """Return an immutable, no-lookahead snapshot for packet construction."""
+    memory_path, _ = _memory_paths(data_root)
+    empty = {
+        "schema_version": MEMORY_SCHEMA_VERSION,
+        "as_of": trade_date.isoformat(),
+        "memory_sha256": "",
+        "advisories": [],
+    }
+    if not memory_path.exists():
+        return empty
+    try:
+        payload = json.loads(memory_path.read_text())
+        memory_as_of = date.fromisoformat(payload["as_of"])
+        advisories = [
+            LearningAdvisory.model_validate(item)
+            for item in payload.get("active_advisories", [])
+        ]
+    except (ValueError, KeyError, json.JSONDecodeError):
+        return {**empty, "unavailable_reason": "learning memory is invalid"}
+    if memory_as_of > trade_date:
+        return {**empty, "unavailable_reason": "learning memory is newer than the packet date"}
+    if len(advisories) > MAX_ACTIVE_ADVISORIES:
+        return {**empty, "unavailable_reason": "active advisory cap exceeded"}
+    return {
+        "schema_version": MEMORY_SCHEMA_VERSION,
+        "as_of": memory_as_of.isoformat(),
+        "memory_sha256": _hash(memory_path),
+        "advisories": [item.model_dump(mode="json") for item in advisories],
+    }
+
+
 __all__ = [
     "CANDIDATE_MIN_SAMPLES", "MAX_ACTIVE_ADVISORIES", "MAX_ENTRIES",
-    "PROMOTION_MIN_SAMPLES", "build_memory", "promote_advisory",
+    "PROMOTION_MIN_SAMPLES", "build_memory", "load_active_snapshot",
+    "promote_advisory",
 ]
