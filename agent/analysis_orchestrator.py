@@ -29,6 +29,7 @@ from ccvm.workflow.orchestration import (
     advance_state, initialize_state, load_state, next_actions,
     refresh_after_remediation, save_state,
 )
+from ccvm.workflow.retrospective import prepare_retrospective
 
 
 def _emit(value: dict, ok: bool = True) -> None:
@@ -104,7 +105,9 @@ def _summary(state: dict) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("start", "advance", "status", "inspect"))
+    parser.add_argument(
+        "command", choices=("start", "advance", "status", "inspect", "retrospect")
+    )
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
     parser.add_argument("--restart", action="store_true",
                         help="Discard orchestration state for this date and prepare anew")
@@ -121,6 +124,8 @@ def main() -> None:
     state_path = run_dir / "run.json"
     try:
         with _run_lock(run_dir / "run.lock"):
+            if args.command == "retrospect":
+                _emit(prepare_retrospective(data_dir(), as_of_str))
             if args.command in {"status", "inspect"}:
                 _emit(_summary(load_state(state_path)))
 
