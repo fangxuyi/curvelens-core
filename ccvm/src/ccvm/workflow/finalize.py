@@ -497,6 +497,7 @@ def validate_and_render(
         "trade_date": manifest.get("trade_date"),
         "specialist_analyses": responses,
         "synthesis": synthesis,
+        "forecast_contract": manifest["synthesis_contract"]["forecast_contract"],
         "status": synthesis["status"],
         "workflow_mode": "agent_orchestrated",
         "statistics_integrated": True,
