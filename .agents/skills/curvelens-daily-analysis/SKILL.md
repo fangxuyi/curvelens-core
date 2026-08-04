@@ -67,6 +67,13 @@ configured future-session outcome is not yet available; it is not a workflow
 failure. Retrospective completion never authorizes delivery or activates a
 learning candidate.
 
+Use `learn --date <as-of-date>` to rebuild bounded product-isolated aggregate
+memory after retrospective artifacts accumulate. Do not promote a candidate
+unless the user explicitly requests that advisory ID; promotion uses
+`promote-learning --advisory-id <id>`. The controller enforces minimum sample
+and active-advisory caps. Learning memory is a hypothesis layer, never market
+evidence, and promotion does not authorize scheduling or delivery.
+
 The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
 and preserve the validated specialist `key_metrics`, the six-to-ten-item synthesis

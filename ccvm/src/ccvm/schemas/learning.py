@@ -265,6 +265,42 @@ class EvaluationRecord(_LearningModel):
         return self
 
 
+class LearningScope(_LearningModel):
+    """Stable, product-neutral fields allowed to key a learning advisory."""
+
+    dimension: SafeKey
+    horizon_sessions: Annotated[int, Field(strict=True, gt=0, le=_MAX_HORIZON_SESSIONS)]
+    confidence: Literal["high", "medium", "low"]
+
+
+class LearningAdvisory(_LearningModel):
+    """Bounded aggregate memory; never a new source of market evidence."""
+
+    advisory_id: SafeIdentifier
+    status: Literal["candidate", "active", "retired"]
+    scope: LearningScope
+    observation: Annotated[str, Field(min_length=1, max_length=512)]
+    suggested_adjustment: Annotated[str, Field(min_length=1, max_length=512)]
+    sample_size: Annotated[int, Field(strict=True, ge=1)]
+    hits: Annotated[int, Field(strict=True, ge=0)]
+    hit_rate: Annotated[float, Field(ge=0, le=1)]
+    mean_brier: Annotated[float, Field(ge=0, le=1)]
+    promotion_eligible: bool
+    source_evaluation_sha256: Annotated[
+        list[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]],
+        Field(min_length=1, max_length=252),
+    ]
+    created_at: datetime
+    updated_at: datetime
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def require_advisory_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("learning advisory timestamps must be timezone-aware")
+        return value
+
+
 __all__ = [
     "ForecastLedgerItem",
     "MemoryFeedbackItem",
@@ -272,4 +308,6 @@ __all__ = [
     "OutcomeMetric",
     "OutcomeRecord",
     "EvaluationRecord",
+    "LearningScope",
+    "LearningAdvisory",
 ]
