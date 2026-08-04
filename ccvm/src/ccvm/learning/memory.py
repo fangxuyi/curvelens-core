@@ -15,6 +15,8 @@ CANDIDATE_MIN_SAMPLES = 5
 PROMOTION_MIN_SAMPLES = 20
 MAX_ENTRIES = 50
 MAX_ACTIVE_ADVISORIES = 8
+MAX_SHADOW_ADVISORIES = 8
+MIN_SHADOW_REVIEWS = 5
 
 
 def _hash(path: Path) -> str:
@@ -81,6 +83,88 @@ def _advisory_text(dimension: str, horizon: int, confidence: str,
     return observation, adjustment
 
 
+def _matching(record: EvaluationRecord, advisory: LearningAdvisory) -> bool:
+    return (
+        record.status == "scored"
+        and record.dimension == advisory.scope.dimension
+        and record.horizon_sessions == advisory.scope.horizon_sessions
+        and record.confidence == advisory.scope.confidence
+    )
+
+
+def assess_shadow(data_root: Path, advisory: LearningAdvisory) -> dict[str, Any]:
+    """Compare shadow-reviewed dates with the same scope's historical baseline."""
+    baseline: list[EvaluationRecord] = []
+    shadow: list[EvaluationRecord] = []
+    review_count = 0
+    evaluations_root = data_root / "learning" / "evaluations"
+    for path in sorted(evaluations_root.glob("trade_date=*/evaluation.json")):
+        try:
+            payload = json.loads(path.read_text())
+            records = [
+                EvaluationRecord.model_validate(item)
+                for item in payload.get("evaluations", [])
+            ]
+        except (ValueError, json.JSONDecodeError):
+            continue
+        scoped = [item for item in records if _matching(item, advisory)]
+        baseline.extend(scoped)
+        trade_date = path.parent.name.removeprefix("trade_date=")
+        analysis_path = data_root / "analysis" / f"trade_date={trade_date}" / "analysis.json"
+        if not analysis_path.exists():
+            continue
+        try:
+            analysis = json.loads(analysis_path.read_text())
+        except json.JSONDecodeError:
+            continue
+        feedback = (analysis.get("synthesis") or {}).get("memory_feedback", [])
+        item = next((
+            value for value in feedback
+            if isinstance(value, dict) and value.get("advisory_id") == advisory.advisory_id
+            and value.get("disposition") in {"shadow_would_use", "shadow_rejected"}
+        ), None)
+        if item is not None:
+            review_count += 1
+            shadow.extend(scoped)
+
+    def metrics(records: list[EvaluationRecord]) -> tuple[float | None, float | None]:
+        if not records:
+            return None, None
+        return (
+            sum(bool(item.hit) for item in records) / len(records),
+            sum(item.brier_loss or 0 for item in records) / len(records),
+        )
+
+    shadow_hit, shadow_brier = metrics(shadow)
+    baseline_hit, baseline_brier = metrics(baseline)
+    replay_passed = bool(
+        len(baseline) >= PROMOTION_MIN_SAMPLES
+        and baseline_hit is not None and baseline_brier is not None
+        and baseline_hit >= advisory.hit_rate - 0.05
+        and baseline_brier <= advisory.mean_brier + 0.05
+    )
+    shadow_passed = bool(
+        review_count >= MIN_SHADOW_REVIEWS
+        and len(shadow) >= MIN_SHADOW_REVIEWS
+        and shadow_hit is not None and baseline_hit is not None
+        and shadow_brier is not None and baseline_brier is not None
+        and shadow_hit >= baseline_hit - 0.05
+        and shadow_brier <= baseline_brier + 0.05
+    )
+    return {
+        "review_count": review_count, "scored": len(shadow),
+        "hit_rate": round(shadow_hit, 6) if shadow_hit is not None else None,
+        "mean_brier": round(shadow_brier, 6) if shadow_brier is not None else None,
+        "baseline_scored": len(baseline),
+        "baseline_hit_rate": round(baseline_hit, 6) if baseline_hit is not None else None,
+        "baseline_mean_brier": round(baseline_brier, 6) if baseline_brier is not None else None,
+        "replay_passed": replay_passed,
+        "shadow_passed": shadow_passed,
+        "no_degradation_passed": replay_passed and shadow_passed,
+        "rule": "shadow hit rate >= baseline - 5pp and Brier <= baseline + 0.05",
+    }
+
+
 def build_memory(
     data_root: Path, *, as_of: date | None = None,
     candidate_min_samples: int = CANDIDATE_MIN_SAMPLES,
@@ -143,7 +227,17 @@ def build_memory(
             promotion_eligible=len(records) >= promotion_min_samples,
             source_evaluation_sha256=source_evaluation_hashes,
             created_at=previous.created_at if previous else now, updated_at=now,
+            shadow_evaluation=previous.shadow_evaluation if previous else {},
         )
+        if advisory.status in {"shadow", "active"}:
+            assessment = assess_shadow(data_root, advisory)
+            advisory = advisory.model_copy(update={
+                "shadow_evaluation": assessment,
+            })
+            if advisory.status == "active" and not assessment["no_degradation_passed"]:
+                advisory = advisory.model_copy(update={"status": "retired"})
+                _event(events_path, "advisory_retired", advisory_id,
+                       reason="no-degradation safeguard failed")
         entries.append(advisory)
         if previous is None:
             _event(events_path, "candidate_created", advisory_id, sample_size=len(records))
@@ -151,8 +245,11 @@ def build_memory(
     entries.sort(key=lambda item: (-item.sample_size, item.advisory_id))
     entries = entries[:max_entries]
     active = [item for item in entries if item.status == "active"]
+    shadow = [item for item in entries if item.status == "shadow"]
     if len(active) > MAX_ACTIVE_ADVISORIES:
         raise ValueError("active learning advisories exceed the safety cap")
+    if len(shadow) > MAX_SHADOW_ADVISORIES:
+        raise ValueError("shadow learning advisories exceed the safety cap")
     result = {
         "schema_version": MEMORY_SCHEMA_VERSION,
         "generated_at": now.isoformat(), "as_of": as_of.isoformat(),
@@ -161,10 +258,13 @@ def build_memory(
             "promotion_min_samples": promotion_min_samples,
             "max_entries": max_entries,
             "max_active_advisories": MAX_ACTIVE_ADVISORIES,
+            "max_shadow_advisories": MAX_SHADOW_ADVISORIES,
+            "min_shadow_reviews": MIN_SHADOW_REVIEWS,
         },
         "source_evaluations": source_hashes, "source_errors": errors,
         "entries": [item.model_dump(mode="json") for item in entries],
         "active_advisories": [item.model_dump(mode="json") for item in active],
+        "shadow_advisories": [item.model_dump(mode="json") for item in shadow],
     }
     _write_json(memory_path, result)
     return result
@@ -181,12 +281,14 @@ def promote_advisory(data_root: Path, advisory_id: str) -> dict[str, Any]:
         raise ValueError(f"unknown learning advisory: {advisory_id}")
     if not target.promotion_eligible:
         raise ValueError("learning advisory has insufficient scored samples for promotion")
-    active_count = sum(item.status == "active" for item in entries)
-    if target.status != "active" and active_count >= MAX_ACTIVE_ADVISORIES:
-        raise ValueError("active learning advisory cap reached")
+    if target.status != "candidate":
+        raise ValueError("only candidate advisories can enter shadow status")
+    shadow_count = sum(item.status == "shadow" for item in entries)
+    if target.status == "candidate" and shadow_count >= MAX_SHADOW_ADVISORIES:
+        raise ValueError("shadow learning advisory cap reached")
     now = datetime.now(timezone.utc)
     updated = [
-        item.model_copy(update={"status": "active", "updated_at": now})
+        item.model_copy(update={"status": "shadow", "updated_at": now})
         if item.advisory_id == advisory_id else item
         for item in entries
     ]
@@ -195,8 +297,46 @@ def promote_advisory(data_root: Path, advisory_id: str) -> dict[str, Any]:
     payload["active_advisories"] = [
         item.model_dump(mode="json") for item in updated if item.status == "active"
     ]
+    payload["shadow_advisories"] = [
+        item.model_dump(mode="json") for item in updated if item.status == "shadow"
+    ]
     _write_json(memory_path, payload)
-    _event(events_path, "advisory_promoted", advisory_id, sample_size=target.sample_size)
+    _event(events_path, "advisory_shadowed", advisory_id, sample_size=target.sample_size)
+    return payload
+
+
+def activate_advisory(data_root: Path, advisory_id: str) -> dict[str, Any]:
+    memory_path, events_path = _memory_paths(data_root)
+    if not memory_path.exists():
+        raise ValueError("learning memory does not exist; run learn first")
+    payload = json.loads(memory_path.read_text())
+    entries = [LearningAdvisory.model_validate(item) for item in payload.get("entries", [])]
+    target = next((item for item in entries if item.advisory_id == advisory_id), None)
+    if target is None or target.status != "shadow":
+        raise ValueError("learning advisory must be in shadow status before activation")
+    assessment = assess_shadow(data_root, target)
+    if not assessment["no_degradation_passed"]:
+        raise ValueError("learning advisory has not passed shadow no-degradation safeguards")
+    if sum(item.status == "active" for item in entries) >= MAX_ACTIVE_ADVISORIES:
+        raise ValueError("active learning advisory cap reached")
+    now = datetime.now(timezone.utc)
+    updated = [
+        item.model_copy(update={
+            "status": "active", "updated_at": now, "shadow_evaluation": assessment,
+        }) if item.advisory_id == advisory_id else item
+        for item in entries
+    ]
+    payload["generated_at"] = now.isoformat()
+    payload["entries"] = [item.model_dump(mode="json") for item in updated]
+    payload["active_advisories"] = [
+        item.model_dump(mode="json") for item in updated if item.status == "active"
+    ]
+    payload["shadow_advisories"] = [
+        item.model_dump(mode="json") for item in updated if item.status == "shadow"
+    ]
+    _write_json(memory_path, payload)
+    _event(events_path, "advisory_activated", advisory_id,
+           shadow_evaluation=assessment)
     return payload
 
 
@@ -216,14 +356,16 @@ def load_active_snapshot(data_root: Path, trade_date: date) -> dict[str, Any]:
         memory_as_of = date.fromisoformat(payload["as_of"])
         advisories = [
             LearningAdvisory.model_validate(item)
-            for item in payload.get("active_advisories", [])
+            for field in ("active_advisories", "shadow_advisories")
+            for item in payload.get(field, [])
         ]
     except (ValueError, KeyError, json.JSONDecodeError):
         return {**empty, "unavailable_reason": "learning memory is invalid"}
     if memory_as_of > trade_date:
         return {**empty, "unavailable_reason": "learning memory is newer than the packet date"}
-    if len(advisories) > MAX_ACTIVE_ADVISORIES:
-        return {**empty, "unavailable_reason": "active advisory cap exceeded"}
+    if len([item for item in advisories if item.status == "active"]) > MAX_ACTIVE_ADVISORIES \
+            or len([item for item in advisories if item.status == "shadow"]) > MAX_SHADOW_ADVISORIES:
+        return {**empty, "unavailable_reason": "learning advisory cap exceeded"}
     return {
         "schema_version": MEMORY_SCHEMA_VERSION,
         "as_of": memory_as_of.isoformat(),
@@ -234,6 +376,7 @@ def load_active_snapshot(data_root: Path, trade_date: date) -> dict[str, Any]:
 
 __all__ = [
     "CANDIDATE_MIN_SAMPLES", "MAX_ACTIVE_ADVISORIES", "MAX_ENTRIES",
-    "PROMOTION_MIN_SAMPLES", "build_memory", "load_active_snapshot",
+    "MAX_SHADOW_ADVISORIES", "MIN_SHADOW_REVIEWS", "PROMOTION_MIN_SAMPLES",
+    "activate_advisory", "assess_shadow", "build_memory", "load_active_snapshot",
     "promote_advisory",
 ]

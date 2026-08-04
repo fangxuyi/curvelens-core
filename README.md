@@ -51,6 +51,9 @@ flowchart TD
     R --> O2[statistics.md]
     R --> O3[mobile.md]
     R --> O4[workflow monitor files]
+    O1 -. Future sessions mature .-> L1[Deterministic outcome and retrospective evaluation]
+    L1 --> L2[Bounded product learning memory]
+    L2 -. Promoted snapshot in next packet .-> D
     O3 -. Separate explicit approval .-> O5[Delivery outbox]
 ```
 
@@ -76,6 +79,10 @@ At a high level:
 5. Deterministic validation checks every role, citation, required field, and
    copied metric before rendering the report. Analysis completion never
    authorizes delivery by itself.
+6. Later sessions deterministically score the forecast ledger. Product-isolated
+   memory candidates require repeated samples, explicit shadow promotion, and a
+   replay plus no-degradation gate before activation. Learning snapshots are
+   hypotheses in the next packet, never market evidence.
 
 The controller persists every phase, so an interrupted run can resume without
 repeating completed work. Temporary specialists exist only for the run; their

@@ -1,5 +1,5 @@
 """
-Self-scorecard: agreement-state hit rates (C7).
+Product-neutral self-scorecard: agreement-state hit rates (C7).
 
 The only way the "tune after accumulating history" thresholds ever get tuned —
 and the only way the agreement states earn (or honestly lose) user trust. For
@@ -26,18 +26,25 @@ _DIRECTION = {"confirmed_upside_risk": +1, "confirmed_downside_risk": -1}
 _MIN_RENDER_SAMPLES = 5  # brief shows the table once any state has this many
 
 
-def compute(pq_store, data_dir: Path, as_of_str: str, max_lookback: int = 252) -> dict:
-    """Build the scorecard from gold history up to as_of (inclusive)."""
-    dates = [d for d in pq_store.list_dates("gold", "futures_features") if d <= as_of_str]
+def compute(
+    pq_store, data_dir: Path, as_of_str: str, max_lookback: int = 252,
+    *, product: str = "gold", layer: str | None = None,
+) -> dict:
+    """Build a product-neutral agreement scorecard up to as_of (inclusive)."""
+    storage_layer = layer or product
+    dates = [
+        d for d in pq_store.list_dates(storage_layer, "futures_features")
+        if d <= as_of_str
+    ]
     dates = dates[-max_lookback:]
 
     settles: dict[str, float] = {}
     states: dict[str, str] = {}
     for dt in dates:
-        fd = pq_store.read("gold", "futures_features", dt).to_pydict()
+        fd = pq_store.read(storage_layer, "futures_features", dt).to_pydict()
         if fd.get("settlement") and fd["settlement"][0] is not None:
             settles[dt] = fd["settlement"][0]
-        ap = data_dir / "gold" / "agreement" / f"trade_date={dt}" / "agreement.json"
+        ap = data_dir / product / "agreement" / f"trade_date={dt}" / "agreement.json"
         if ap.exists():
             st = json.loads(ap.read_text()).get("state")
             if st:
@@ -79,6 +86,7 @@ def compute(pq_store, data_dir: Path, as_of_str: str, max_lookback: int = 252) -
         rows.append(row)
 
     out = {
+        "product": product,
         "as_of": as_of_str,
         "dates_covered": len(ordered),
         "render_ready": any(r["n_fwd_3d"] >= _MIN_RENDER_SAMPLES for r in rows),

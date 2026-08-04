@@ -137,3 +137,39 @@ stages owned by the controller.
 Analysis and delivery remain separate authorities. The controller never touches
 `notify.py`, an outbox, or a delivery destination. A product runbook may permit
 delivery only after its acceptance gates and an explicit human approval.
+
+## Retrospective learning loop
+
+Daily synthesis records an evidence-linked forecast ledger for price direction,
+volatility direction, and move magnitude. After future sessions mature, run:
+
+```bash
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py learn --date YYYY-MM-DD
+```
+
+The controller materializes versioned outcomes, scores direction and confidence,
+summarizes controller-visible retries, and emits bounded retrospective actions.
+It never evaluates hidden chain-of-thought. Re-run `learn` after completing those
+actions to rebuild product-isolated memory.
+
+Candidates require five scored samples and cannot influence analysis. With at
+least twenty samples, an explicitly selected candidate may enter shadow status:
+
+```bash
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py promote-learning \
+  --advisory-id learning:<id>
+```
+
+Shadow advisories are included only for would-use feedback. Activation remains
+a separate explicit action and requires at least five shadow reviews plus a
+historical replay and no-degradation check:
+
+```bash
+CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py activate-learning \
+  --advisory-id learning:<id>
+```
+
+At most eight shadow and eight active advisories are retained. The exact memory
+snapshot is hashed into the next analysis packet. Learning never authorizes
+delivery, changes deterministic outcome thresholds, or substitutes for current
+market evidence.

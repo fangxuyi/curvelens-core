@@ -74,9 +74,13 @@ memory after the daily analysis completes. Execute any returned
 is reported separately and does not reopen or block the completed daily report.
 Do not promote a candidate
 unless the user explicitly requests that advisory ID; promotion uses
-`promote-learning --advisory-id <id>`. The controller enforces minimum sample
-and active-advisory caps. Learning memory is a hypothesis layer, never market
-evidence, and promotion does not authorize scheduling or delivery.
+`promote-learning --advisory-id <id>` and enters shadow status only. Shadow
+advisories must never influence synthesis. Activation is a separate explicit
+request using `activate-learning --advisory-id <id>` after the controller's
+minimum shadow-review and no-degradation gates pass. The controller enforces
+sample, shadow, and active-advisory caps. Learning memory is a hypothesis layer,
+never market evidence, and promotion or activation does not authorize
+scheduling or delivery.
 
 The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
