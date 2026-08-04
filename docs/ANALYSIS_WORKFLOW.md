@@ -155,7 +155,11 @@ CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py learn --d
 ```
 
 The controller materializes versioned outcomes, scores direction and confidence,
-summarizes controller-visible retries, and emits bounded retrospective actions.
+scores every selected and omitted mobile candidate against configured one-session
+absolute price or implied-volatility movement, summarizes controller-visible
+retries, and emits bounded retrospective actions. Mobile scoring is separate
+from forecast correctness and reports precision, false prominence, missed
+material rate, and overall selection accuracy.
 It never evaluates hidden chain-of-thought. Re-run `learn` after completing those
 actions to rebuild product-isolated memory.
 

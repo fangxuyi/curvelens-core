@@ -205,6 +205,7 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
     assert set(manifest["synthesis_contract"]["forecast_contract"]["required_dimensions"]) == {
         "price_direction", "volatility_direction", "market_impact",
     }
+    assert manifest["synthesis_contract"]["mobile_relevance_contract"]["horizon_sessions"] == 1
     assert template["memory_feedback"] == []
 
 
@@ -249,6 +250,16 @@ def test_packet_identity_includes_forecast_policy(monkeypatch, tmp_path):
     first = _packets(tmp_path / "a")["packet_id"]
     rule = packets_module.FORECAST_DIMENSIONS["price_direction"]["outcome_rule"]
     monkeypatch.setitem(rule, "thresholds", [0.01])
+    second = _packets(tmp_path / "b")["packet_id"]
+    assert first != second
+
+
+def test_packet_identity_includes_mobile_relevance_policy(monkeypatch, tmp_path):
+    from ccvm.workflow import packets as packets_module
+
+    first = _packets(tmp_path / "a")["packet_id"]
+    definition = packets_module.MOBILE_RELEVANCE_DIMENSIONS["volatility_direction"]
+    monkeypatch.setitem(definition, "thresholds", [0.01, 0.02])
     second = _packets(tmp_path / "b")["packet_id"]
     assert first != second
 
@@ -363,6 +374,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert output["delivery_approved"] is False
     assert output["synthesis"]["forecast_ledger"] == _forecast_ledger(manifest)
     assert output["forecast_contract"]["version"] == 2
+    assert output["mobile_relevance_contract"]["version"] == 1
     assert output["forecast_contract"]["dimensions"]["volatility_direction"][
         "outcome_rule"
     ]["source_metric"] == "front_atm_iv"

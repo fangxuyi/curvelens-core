@@ -29,6 +29,30 @@ def _contract():
     }
 
 
+def _mobile_contract():
+    return {
+        "version": 1, "horizon_sessions": 1,
+        "dimensions": {"price_direction": {"thresholds": [0.005, 0.015]}},
+    }
+
+
+def _mobile_selection():
+    return {
+        "selected_view_ranks": [1],
+        "selection_rationale": "The first view has the highest expected impact.",
+        "candidates": [{
+            "source_view_rank": rank,
+            "disposition": "selected" if rank == 1 else "omitted",
+            "materiality": "high" if rank == 1 else "low",
+            "expected_impact_dimensions": ["price_direction"],
+            "rationale": "Current evidence determined the ex-ante priority.",
+            "evidence_ids": ["feature:market:2026-07-02"],
+        } for rank in (1, 2, 3)],
+        "limitation_disposition": "not_applicable",
+        "limitation_rationale": "No material limitation was reported.",
+    }
+
+
 def _setup(root: Path, *, target=True):
     trade_date = "2026-07-02"
     analysis_dir = root / "analysis" / f"trade_date={trade_date}"
@@ -43,7 +67,11 @@ def _setup(root: Path, *, target=True):
     (analysis_dir / "analysis.json").write_text(json.dumps({
         "product": "gold", "trade_date": trade_date,
         "forecast_contract": _contract(),
-        "synthesis": {"forecast_ledger": [forecast], "top_views": [{"rank": 1}]},
+        "mobile_relevance_contract": _mobile_contract(),
+        "synthesis": {
+            "forecast_ledger": [forecast], "top_views": [{"rank": 1}],
+            "mobile_selection": _mobile_selection(),
+        },
     }))
     reports = root / "reports"
     reports.mkdir()
@@ -75,6 +103,8 @@ def test_retrospective_materializes_outcomes_evaluation_and_action(tmp_path):
     packet = json.loads(Path(result["packet"]).read_text())
     assert packet["evaluations"][0]["hit"] is True
     assert packet["trace_summary"]["validation_rejections"] == 1
+    assert packet["mobile_relevance"]["records"][0]["selection_correct"] is True
+    assert packet["mobile_relevance"]["aggregate"]["precision"] == 1
     assert "hidden chain-of-thought" in packet["trace_summary"]["scope_note"]
 
 
@@ -88,10 +118,16 @@ def test_valid_response_completes_without_activating_candidates(tmp_path):
         "status": "complete", "outcome_assessment": "The forecast matched the label.",
         "trace_assessment": "One validation retry was visible.",
         "priority_assessment": "The first-ranked view received full weight.",
+        "mobile_assessment": "The selected view was materially relevant.",
     })
     template["forecast_reviews"][0].update({
         "assessment": "correct", "diagnosis": "The stated direction matched.",
         "improvement": "Retain the explicit threshold and evidence link.",
+    })
+    template["mobile_reviews"][0].update({
+        "assessment": "appropriate",
+        "diagnosis": "The selected view was associated with a material move.",
+        "improvement": "Retain the ex-ante materiality threshold.",
     })
     Path(action["response_path"]).write_text(json.dumps(template))
     result = prepare_retrospective(tmp_path, trade_date, generated_at=now)
@@ -110,12 +146,42 @@ def test_response_cannot_override_deterministic_score(tmp_path):
     response.update({
         "status": "complete", "outcome_assessment": "Done.",
         "trace_assessment": "Done.", "priority_assessment": "Done.",
+        "mobile_assessment": "Done.",
     })
     response["forecast_reviews"][0].update({
         "assessment": "incorrect", "diagnosis": "No.", "improvement": "No.",
     })
+    response["mobile_reviews"][0].update({
+        "assessment": "appropriate", "diagnosis": "Done.", "improvement": "Done.",
+    })
     Path(action["response_path"]).write_text(json.dumps(response))
     with pytest.raises(AnalysisValidationError, match="preserve deterministic scoring"):
+        validate_retrospective_response(
+            Path(action["packet_path"]), Path(action["response_path"]),
+        )
+
+
+def test_response_cannot_override_mobile_relevance_score(tmp_path):
+    trade_date = _setup(tmp_path)
+    result = prepare_retrospective(
+        tmp_path, trade_date, generated_at=datetime.fromisoformat("2026-07-07T12:00:00+00:00"),
+    )
+    action = result["actions"][0]
+    response = json.loads(Path(action["template_path"]).read_text())
+    response.update({
+        "status": "complete", "outcome_assessment": "Done.",
+        "trace_assessment": "Done.", "priority_assessment": "Done.",
+        "mobile_assessment": "Done.",
+    })
+    response["forecast_reviews"][0].update({
+        "assessment": "correct", "diagnosis": "Done.", "improvement": "Done.",
+    })
+    response["mobile_reviews"][0].update({
+        "assessment": "false_prominence", "diagnosis": "Done.", "improvement": "Done.",
+    })
+    Path(action["response_path"]).write_text(json.dumps(response))
+
+    with pytest.raises(AnalysisValidationError, match="preserve deterministic relevance scoring"):
         validate_retrospective_response(
             Path(action["packet_path"]), Path(action["response_path"]),
         )

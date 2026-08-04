@@ -10,11 +10,16 @@ from typing import Any
 
 from ccvm.analytics.outcomes import persist_outcome, realize_outcome
 from ccvm.schemas.learning import EvaluationRecord, OutcomeRecord
+from ccvm.workflow.mobile_evaluation import (
+    MOBILE_RELEVANCE_EVALUATOR_VERSION,
+    aggregate_mobile_relevance,
+    evaluate_mobile_selection,
+)
 
 from .evaluation import EVALUATOR_VERSION, aggregate_evaluations, evaluate_forecast
 from .finalize import AnalysisValidationError
 
-RETROSPECTIVE_SCHEMA_VERSION = 1
+RETROSPECTIVE_SCHEMA_VERSION = 2
 
 
 def _hash_bytes(value: bytes) -> str:
@@ -79,19 +84,29 @@ def _trace_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _response_template(packet_id: str, evaluations: list[EvaluationRecord]) -> dict[str, Any]:
+def _response_template(
+    packet_id: str, evaluations: list[EvaluationRecord],
+    mobile_evaluations: list[dict[str, Any]],
+) -> dict[str, Any]:
     return {
         "packet_id": packet_id,
         "status": "complete|limited",
         "outcome_assessment": "",
         "trace_assessment": "",
         "priority_assessment": "",
+        "mobile_assessment": "",
         "forecast_reviews": [{
             "forecast_id": item.forecast_id,
             "assessment": "correct|incorrect",
             "diagnosis": "",
             "improvement": "",
         } for item in evaluations if item.status == "scored"],
+        "mobile_reviews": [{
+            "source_view_rank": item["source_view_rank"],
+            "assessment": "appropriate|missed_material|false_prominence",
+            "diagnosis": "",
+            "improvement": "",
+        } for item in mobile_evaluations if item["status"] == "scored"],
         "candidate_advisories": [],
     }
 
@@ -105,7 +120,10 @@ def validate_retrospective_response(
         raise AnalysisValidationError("retrospective response does not match this packet")
     if response.get("status") not in {"complete", "limited"}:
         raise AnalysisValidationError("retrospective response has invalid status")
-    for field in ("outcome_assessment", "trace_assessment", "priority_assessment"):
+    for field in (
+        "outcome_assessment", "trace_assessment", "priority_assessment",
+        "mobile_assessment",
+    ):
         if not str(response.get(field, "")).strip():
             raise AnalysisValidationError(f"retrospective response requires {field}")
 
@@ -131,6 +149,37 @@ def validate_retrospective_response(
         for field in ("diagnosis", "improvement"):
             if not str(review.get(field, "")).strip():
                 raise AnalysisValidationError(f"forecast_reviews[{index}] requires {field}")
+
+    mobile_scored = {
+        item["source_view_rank"]: item
+        for item in packet.get("mobile_relevance", {}).get("records", [])
+        if item.get("status") == "scored"
+    }
+    mobile_reviews = response.get("mobile_reviews")
+    if not isinstance(mobile_reviews, list) or {
+        item.get("source_view_rank") for item in mobile_reviews if isinstance(item, dict)
+    } != set(mobile_scored):
+        raise AnalysisValidationError(
+            "retrospective must review every scored mobile candidate exactly once"
+        )
+    if len(mobile_reviews) != len(mobile_scored):
+        raise AnalysisValidationError("retrospective has duplicate mobile candidate reviews")
+    for index, review in enumerate(mobile_reviews):
+        if not isinstance(review, dict):
+            raise AnalysisValidationError(f"mobile_reviews[{index}] must be an object")
+        scored_item = mobile_scored[review["source_view_rank"]]
+        expected = "appropriate"
+        if scored_item["missed_material"]:
+            expected = "missed_material"
+        elif scored_item["false_prominence"]:
+            expected = "false_prominence"
+        if review.get("assessment") != expected:
+            raise AnalysisValidationError(
+                f"mobile_reviews[{index}].assessment must preserve deterministic relevance scoring"
+            )
+        for field in ("diagnosis", "improvement"):
+            if not str(review.get(field, "")).strip():
+                raise AnalysisValidationError(f"mobile_reviews[{index}] requires {field}")
 
     advisories = response.get("candidate_advisories")
     if not isinstance(advisories, list) or len(advisories) > 8:
@@ -201,12 +250,33 @@ def prepare_retrospective(
         )
         for forecast, outcome in zip(forecasts, outcome_models, strict=True)
     ]
+    mobile_contract = analysis.get("mobile_relevance_contract")
+    mobile_selection = (analysis.get("synthesis") or {}).get("mobile_selection")
+    mobile_records = []
+    mobile_unavailable_reason = ""
+    if isinstance(mobile_contract, dict) and isinstance(mobile_selection, dict) \
+            and mobile_selection.get("candidates"):
+        mobile_records = evaluate_mobile_selection(
+            mobile_selection, forecasts, outcome_models, contract=mobile_contract,
+            analysis_sha256=analysis_hash, outcome_hashes=outcome_hashes,
+            evaluated_at=now,
+        )
+    else:
+        mobile_unavailable_reason = "analysis lacks a mobile selection or relevance contract"
+    mobile_payload = {
+        "evaluator_version": MOBILE_RELEVANCE_EVALUATOR_VERSION,
+        "status": "available" if mobile_records else "unavailable",
+        "unavailable_reason": mobile_unavailable_reason,
+        "records": [item.model_dump(mode="json") for item in mobile_records],
+        "aggregate": aggregate_mobile_relevance(mobile_records),
+    }
     evaluation_artifact = {
         "schema_version": RETROSPECTIVE_SCHEMA_VERSION,
         "trade_date": trade_date,
         "generated_at": now.isoformat(),
         "evaluations": [item.model_dump(mode="json") for item in evaluations],
         "aggregate": aggregate_evaluations(evaluations),
+        "mobile_relevance": mobile_payload,
     }
     evaluation_path = run_dir / "evaluation.json"
     _write_json(evaluation_path, evaluation_artifact)
@@ -218,6 +288,7 @@ def prepare_retrospective(
         "outcome_hashes": outcome_hashes,
         "events_sha256": _hash_file(events_path),
         "evaluator_version": EVALUATOR_VERSION,
+        "mobile_relevance_evaluator_version": MOBILE_RELEVANCE_EVALUATOR_VERSION,
     }
     packet_id = _hash_bytes(json.dumps(identity, sort_keys=True).encode())
     packet = {
@@ -236,6 +307,7 @@ def prepare_retrospective(
         "outcomes": [item.model_dump(mode="json") for item in outcome_models],
         "evaluations": evaluation_artifact["evaluations"],
         "aggregate": evaluation_artifact["aggregate"],
+        "mobile_relevance": mobile_payload,
         "trace_summary": _trace_summary(events),
         "review_contract": {
             "language_rule": (
@@ -259,11 +331,15 @@ def prepare_retrospective(
     response_path = run_dir / "retrospective.response.json"
     task_path = run_dir / "retrospective.task.md"
     scored = [item for item in evaluations if item.status == "scored"]
-    _write_json(template_path, _response_template(packet_id, evaluations))
+    _write_json(
+        template_path,
+        _response_template(packet_id, evaluations, mobile_payload["records"]),
+    )
     task_path.write_text(
         "# CurveLens retrospective review\n\n"
         "Review only the controller-visible packet and deterministic outcomes. Do not spawn agents. "
         "Do not reinterpret outcome labels or claim causation. Diagnose prioritization, calibration, "
+        "mobile false prominence and missed material information, "
         "evidence use, and trace friction; write the completed JSON only to "
         f"`{response_path}` using `{template_path}`. Candidate advisories remain inactive hypotheses.\n"
     )
