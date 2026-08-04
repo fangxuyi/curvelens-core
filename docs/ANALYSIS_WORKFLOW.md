@@ -184,3 +184,19 @@ At most eight shadow and eight active advisories are retained. The exact memory
 snapshot is hashed into the next analysis packet. Learning never authorizes
 delivery, changes deterministic outcome thresholds, or substitutes for current
 market evidence.
+
+Mobile relevance builds a separate product-isolated advisory set in the same
+`learning/memory.json`. Its stable scope is source-view rank, ex-ante
+materiality, and linked impact dimensions. It recommends `prefer_select` only
+after that scope repeatedly precedes material next-session movement, or
+`prefer_omit` when it repeatedly remains muted. Mobile candidates use the same
+five-sample candidate and twenty-sample promotion gates and the same explicit
+promotion and activation commands, with IDs beginning `mobile-learning:`.
+
+At most four mobile advisories may be shadow and four active. Active mobile
+advice may affect only `mobile_selection`; it cannot change the full views,
+forecast ledger, confidence, evidence, or wording. Shadow activation requires
+at least five would-use reviews, historical replay, no more than a five-point
+selection-accuracy degradation, no increase in missed-material rate, and no
+more than a five-point false-prominence increase. Active advice is retired if
+those safeguards later fail.

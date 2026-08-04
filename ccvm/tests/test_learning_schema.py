@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from ccvm.schemas.learning import ForecastLedgerItem, MemoryFeedbackItem
+from ccvm.schemas.learning import (
+    ForecastLedgerItem,
+    MemoryFeedbackItem,
+    MobileLearningAdvisory,
+)
 
 
 def forecast_payload(**overrides):
@@ -25,6 +29,28 @@ def memory_payload(**overrides):
         "disposition": "used",
         "rationale": "The advisory matched the observed evidence and was retained.",
         "evidence_ids": [],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def mobile_advisory_payload(**overrides):
+    payload = {
+        "advisory_id": "mobile-learning:abc123",
+        "status": "candidate",
+        "scope": {
+            "source_view_rank": 1, "expected_materiality": "high",
+            "impact_dimensions": ["price_direction", "volatility_direction"],
+        },
+        "recommendation": "prefer_select",
+        "observation": "This scope was materially relevant in 70% of samples.",
+        "suggested_adjustment": "Prefer selection when current evidence matches.",
+        "sample_size": 20, "material_count": 14, "material_rate": 0.7,
+        "selection_accuracy": 0.65, "missed_material_rate": 0.1,
+        "false_prominence_rate": 0.15, "promotion_eligible": True,
+        "source_evaluation_sha256": ["a" * 64],
+        "created_at": "2026-08-01T12:00:00+00:00",
+        "updated_at": "2026-08-03T12:00:00+00:00",
     }
     payload.update(overrides)
     return payload
@@ -94,3 +120,29 @@ def test_memory_feedback_rejects_invalid_values(field, value):
 def test_learning_items_forbid_unexpected_fields():
     with pytest.raises(ValidationError):
         ForecastLedgerItem(**forecast_payload(unexpected="value"))
+
+
+def test_mobile_learning_advisory_has_strict_stable_scope():
+    advisory = MobileLearningAdvisory.model_validate(mobile_advisory_payload())
+
+    assert advisory.recommendation == "prefer_select"
+    assert advisory.scope.impact_dimensions == [
+        "price_direction", "volatility_direction",
+    ]
+
+
+def test_mobile_learning_advisory_rejects_unstable_scope_and_counts():
+    value = mobile_advisory_payload()
+    value["scope"]["impact_dimensions"] = ["volatility_direction", "price_direction"]
+    with pytest.raises(ValidationError, match="unique and sorted"):
+        MobileLearningAdvisory.model_validate(value)
+
+    with pytest.raises(ValidationError, match="cannot exceed"):
+        MobileLearningAdvisory.model_validate(
+            mobile_advisory_payload(material_count=21)
+        )
+
+    with pytest.raises(ValidationError, match="neutral mobile advice"):
+        MobileLearningAdvisory.model_validate(
+            mobile_advisory_payload(recommendation="neutral")
+        )

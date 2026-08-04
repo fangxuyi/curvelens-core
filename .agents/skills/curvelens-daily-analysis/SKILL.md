@@ -84,6 +84,11 @@ minimum shadow-review and no-degradation gates pass. The controller enforces
 sample, shadow, and active-advisory caps. Learning memory is a hypothesis layer,
 never market evidence, and promotion or activation does not authorize
 scheduling or delivery.
+Mobile advisories use `mobile-learning:<id>` with the same explicit commands.
+They are product-isolated, capped at four shadow and four active entries, and may
+affect only `mobile_selection`. Shadow mobile advice must not affect any report
+field. Activation also forbids an increase in missed-material rate; active mobile
+advice is retired when its no-degradation safeguards fail.
 
 The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,

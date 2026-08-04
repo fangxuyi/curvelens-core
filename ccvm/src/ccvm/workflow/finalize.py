@@ -10,7 +10,11 @@ from typing import Any
 from pydantic import ValidationError
 
 from ccvm.reporting.mobile import render_mobile_brief
-from ccvm.schemas.learning import ForecastLedgerItem, MemoryFeedbackItem
+from ccvm.schemas.learning import (
+    ForecastLedgerItem,
+    MemoryFeedbackItem,
+    MobileLearningAdvisory,
+)
 from ccvm.schemas.reporting import MobileSelection
 
 from .packets import PACKET_SCHEMA_VERSION
@@ -407,6 +411,71 @@ def _check_mobile_selection(
         raise AnalysisValidationError("mobile selection must address existing data limitations")
 
 
+def _check_mobile_memory_feedback(
+    synthesis: dict[str, Any], manifest: dict[str, Any], allowed: set[str],
+) -> None:
+    raw_items = synthesis.get("mobile_memory_feedback")
+    if not isinstance(raw_items, list):
+        raise AnalysisValidationError("synthesis mobile_memory_feedback must be a list")
+    items: list[MemoryFeedbackItem] = []
+    for index, raw in enumerate(raw_items):
+        try:
+            items.append(MemoryFeedbackItem.model_validate(raw))
+        except ValidationError as exc:
+            raise AnalysisValidationError(
+                f"synthesis.mobile_memory_feedback[{index}] is invalid: "
+                f"{exc.errors()[0]['msg']}"
+            ) from exc
+    raw_advisories = (
+        (manifest.get("synthesis_contract") or {})
+        .get("learning_context", {})
+        .get("mobile_advisories", [])
+    )
+    advisories = [MobileLearningAdvisory.model_validate(item) for item in raw_advisories]
+    by_id = {item.advisory_id: item for item in advisories}
+    submitted_ids = [item.advisory_id for item in items]
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise AnalysisValidationError(
+            "synthesis mobile_memory_feedback has duplicate advisory_id values"
+        )
+    if set(submitted_ids) != set(by_id):
+        raise AnalysisValidationError(
+            "synthesis mobile_memory_feedback must address every mobile advisory exactly once"
+        )
+    candidates = (
+        (synthesis.get("mobile_selection") or {}).get("candidates", [])
+        if synthesis.get("status") != "blocked" else []
+    )
+    for index, item in enumerate(items):
+        label = f"synthesis.mobile_memory_feedback[{index}]"
+        advisory = by_id[item.advisory_id]
+        if advisory.status == "shadow" and item.disposition not in {
+            "shadow_would_use", "shadow_rejected",
+        }:
+            raise AnalysisValidationError(f"{label} must preserve shadow isolation")
+        if advisory.status == "active" and item.disposition not in {"used", "rejected"}:
+            raise AnalysisValidationError(f"{label} has invalid active disposition")
+        _check_ids(item.evidence_ids, allowed, label)
+        if advisory.status != "active" or item.disposition != "used":
+            continue
+        matching = next((
+            candidate for candidate in candidates
+            if candidate.get("source_view_rank") == advisory.scope.source_view_rank
+            and candidate.get("materiality") == advisory.scope.expected_materiality
+            and sorted(candidate.get("expected_impact_dimensions") or [])
+            == advisory.scope.impact_dimensions
+        ), None)
+        if matching is None:
+            raise AnalysisValidationError(f"{label} used advisory has no matching mobile candidate")
+        expected = {
+            "prefer_select": "selected", "prefer_omit": "omitted",
+        }.get(advisory.recommendation)
+        if expected is not None and matching.get("disposition") != expected:
+            raise AnalysisValidationError(
+                f"{label} used advisory must apply its {advisory.recommendation} recommendation"
+            )
+
+
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
     manifest = _read(manifest_path)
     if manifest.get("schema_version") != PACKET_SCHEMA_VERSION:
@@ -557,6 +626,7 @@ def validate_synthesis_response(
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
     _check_forecast_ledger(synthesis, manifest, allowed)
     _check_mobile_selection(synthesis, manifest, allowed)
+    _check_mobile_memory_feedback(synthesis, manifest, allowed)
     _check_memory_feedback(synthesis, manifest, allowed)
     if synthesis["status"] != "blocked" and not synthesis["evidence_ids"]:
         raise AnalysisValidationError("synthesis requires cited evidence")

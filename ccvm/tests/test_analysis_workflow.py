@@ -146,7 +146,7 @@ def test_profiles_define_three_independent_roles(product_key):
 
 def _learning_snapshot(status="active"):
     return {
-        "schema_version": 1, "as_of": "2026-07-20", "memory_sha256": "a" * 64,
+        "schema_version": 2, "as_of": "2026-07-20", "memory_sha256": "a" * 64,
         "advisories": [{
             "advisory_id": "learning:abc123", "status": status,
             "scope": {"dimension": "price_direction", "horizon_sessions": 1,
@@ -155,6 +155,22 @@ def _learning_snapshot(status="active"):
             "suggested_adjustment": "Keep confidence bounded by current evidence.",
             "sample_size": 20, "hits": 12, "hit_rate": 0.6, "mean_brier": 0.22,
             "promotion_eligible": True, "source_evaluation_sha256": ["b" * 64],
+            "created_at": "2026-07-19T12:00:00+00:00",
+            "updated_at": "2026-07-19T12:00:00+00:00",
+        }],
+        "mobile_advisories": [{
+            "advisory_id": "mobile-learning:abc123", "status": status,
+            "scope": {
+                "source_view_rank": 1, "expected_materiality": "high",
+                "impact_dimensions": ["price_direction"],
+            },
+            "recommendation": "prefer_select",
+            "observation": "Rank-one price views were materially relevant in 70% of samples.",
+            "suggested_adjustment": "Prefer selection when current evidence matches this scope.",
+            "sample_size": 20, "material_count": 14, "material_rate": 0.7,
+            "selection_accuracy": 0.65, "missed_material_rate": 0.1,
+            "false_prominence_rate": 0.15, "promotion_eligible": True,
+            "source_evaluation_sha256": ["c" * 64],
             "created_at": "2026-07-19T12:00:00+00:00",
             "updated_at": "2026-07-19T12:00:00+00:00",
         }],
@@ -207,6 +223,7 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
     }
     assert manifest["synthesis_contract"]["mobile_relevance_contract"]["horizon_sessions"] == 1
     assert template["memory_feedback"] == []
+    assert template["mobile_memory_feedback"] == []
 
 
 def test_wti_packets_use_the_same_workflow_with_fundamentals_desk(tmp_path):
@@ -277,6 +294,7 @@ def test_packet_identity_includes_immutable_learning_snapshot(tmp_path):
         ]).read_text()
     )
     assert template["memory_feedback"][0]["advisory_id"] == "learning:abc123"
+    assert template["mobile_memory_feedback"][0]["advisory_id"] == "mobile-learning:abc123"
 
 
 def test_shadow_learning_is_visible_but_cannot_be_used(tmp_path):
@@ -287,7 +305,9 @@ def test_shadow_learning_is_visible_but_cannot_be_used(tmp_path):
     )
     context = manifest["synthesis_contract"]["learning_context"]
     assert context["advisories"][0]["status"] == "shadow"
+    assert context["mobile_advisories"][0]["status"] == "shadow"
     assert "must not influence" in context["rule"]
+    assert "must not affect" in context["mobile_rule"]
 
 
 def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
@@ -337,6 +357,10 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     synthesis["memory_feedback"][0].update({
         "disposition": "used",
         "rationale": "Current validated evidence supports retaining the bounded reminder.",
+    })
+    synthesis["mobile_memory_feedback"][0].update({
+        "disposition": "used",
+        "rationale": "Current evidence matches the active mobile materiality scope.",
     })
     used_id = json.loads(
         Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text()
@@ -422,6 +446,22 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     synthesis_path.write_text(json.dumps(bad_synthesis))
     with pytest.raises(AnalysisValidationError, match="invalid active disposition"):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-memory")
+    synthesis_path.write_text(json.dumps(synthesis))
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["mobile_memory_feedback"][0]["disposition"] = "shadow_would_use"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(AnalysisValidationError, match="invalid active disposition"):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-mobile-memory")
+    synthesis_path.write_text(json.dumps(synthesis))
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["mobile_selection"]["selected_view_ranks"] = [2]
+    bad_synthesis["mobile_selection"]["candidates"][0]["disposition"] = "omitted"
+    bad_synthesis["mobile_selection"]["candidates"][1]["disposition"] = "selected"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(AnalysisValidationError, match="must apply its prefer_select"):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "unused-mobile-advice")
     synthesis_path.write_text(json.dumps(synthesis))
 
     bad_path = Path(manifest["role_response_paths"][manifest["roles"][0]])
