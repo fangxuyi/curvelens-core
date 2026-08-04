@@ -10,7 +10,24 @@ from typing import Any
 from ccvm.reference.product import Product
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 4
+PACKET_SCHEMA_VERSION = 5
+
+FORECAST_CONTRACT_VERSION = 1
+FORECAST_HORIZONS_SESSIONS = (1, 5)
+FORECAST_DIMENSIONS = {
+    "price_direction": {
+        "metric_key": "front_settlement_return",
+        "labels": ["down", "flat", "up"],
+    },
+    "volatility_direction": {
+        "metric_key": "front_atm_iv_change",
+        "labels": ["lower", "unchanged", "higher"],
+    },
+    "market_impact": {
+        "metric_key": "absolute_front_settlement_return",
+        "labels": ["muted", "material", "extreme"],
+    },
+}
 
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
@@ -98,6 +115,21 @@ def _top_view_template(rank: int) -> dict[str, Any]:
             "evidence_ids": [],
         },
         "what_to_watch": [],
+    }
+
+
+def _forecast_template(rank: int, packet_id: str) -> dict[str, Any]:
+    dimension = tuple(FORECAST_DIMENSIONS)[rank - 1]
+    definition = FORECAST_DIMENSIONS[dimension]
+    return {
+        "forecast_id": f"{packet_id[:16]}:v{rank}:{dimension}:h1",
+        "source_view_rank": rank,
+        "dimension": dimension,
+        "metric_key": definition["metric_key"],
+        "horizon_sessions": 1,
+        "expected_label": "|".join(definition["labels"]),
+        "confidence": "high|medium|low",
+        "evidence_ids": [],
     }
 
 
@@ -305,6 +337,31 @@ def build_analysis_packets(
                     "macro prior, carry headwind, or conviction unless immediately explained."
                 ),
                 "limitations": "Consolidate duplicate limitations; keep the delivery-facing list to the material items.",
+                "forecast_ledger": (
+                    "For every non-blocked synthesis, create one or more falsifiable forecasts for each "
+                    "ranked top view. Collectively cover every required forecast dimension. Use only the "
+                    "configured dimension, metric, label, and session horizon combinations. Cite evidence "
+                    "already used by the source top view. Build forecast_id exactly as specified so a later "
+                    "retrospective can join forecasts to realized outcomes without interpreting prose."
+                ),
+            },
+            "forecast_contract": {
+                "version": FORECAST_CONTRACT_VERSION,
+                "horizons_sessions": list(FORECAST_HORIZONS_SESSIONS),
+                "dimensions": FORECAST_DIMENSIONS,
+                "required_dimensions": list(FORECAST_DIMENSIONS),
+                "minimum_per_top_view": 1,
+                "maximum_items": 9,
+                "forecast_id_format": (
+                    f"{packet_id[:16]}:v<source_view_rank>:<dimension>:h<horizon_sessions>"
+                ),
+            },
+            "learning_context": {
+                "advisories": [],
+                "rule": (
+                    "Learning advisories are hypotheses, never evidence. Record used or rejected "
+                    "advisories in memory_feedback; leave memory_feedback empty when none are supplied."
+                ),
             },
             "do_not": [
                 "invent missing evidence", "present settlement analytics as executable prices",
@@ -320,6 +377,10 @@ def build_analysis_packets(
         "executive_summary": "",
         "plain_english_summary": "",
         "top_views": [_top_view_template(rank) for rank in (1, 2, 3)],
+        "forecast_ledger": [
+            _forecast_template(rank, packet_id) for rank in (1, 2, 3)
+        ],
+        "memory_feedback": [],
         "market_snapshot": [],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],
