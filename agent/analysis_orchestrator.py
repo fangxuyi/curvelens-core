@@ -22,6 +22,7 @@ CCVM_DIR = REPO_ROOT / "ccvm"
 sys.path.insert(0, str(CCVM_DIR / "src"))
 
 from ccvm.reference.product import get_product
+from ccvm.learning.memory import build_memory, promote_advisory
 from ccvm.runtime import data_dir
 from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
 from ccvm.workflow.monitoring import build_monitor, monitor_paths, record_event
@@ -106,12 +107,16 @@ def _summary(state: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "command", choices=("start", "advance", "status", "inspect", "retrospect")
+        "command", choices=(
+            "start", "advance", "status", "inspect", "retrospect", "learn",
+            "promote-learning",
+        )
     )
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
     parser.add_argument("--restart", action="store_true",
                         help="Discard orchestration state for this date and prepare anew")
     parser.add_argument("--max-agent-corrections", type=int, default=2)
+    parser.add_argument("--advisory-id", help="Learning advisory to promote")
     args = parser.parse_args()
     try:
         as_of = date.fromisoformat(args.date) if args.date else datetime.now(
@@ -124,6 +129,26 @@ def main() -> None:
     state_path = run_dir / "run.json"
     try:
         with _run_lock(run_dir / "run.lock"):
+            if args.command == "learn":
+                memory = build_memory(data_dir(), as_of=as_of)
+                _emit({
+                    "result": "LEARNING_MEMORY_UPDATED", "date": as_of_str,
+                    "memory": str(data_dir() / "learning" / "memory.json"),
+                    "entry_count": len(memory["entries"]),
+                    "active_count": len(memory["active_advisories"]),
+                })
+            if args.command == "promote-learning":
+                if not args.advisory_id:
+                    raise AnalysisValidationError(
+                        "promote-learning requires --advisory-id"
+                    )
+                memory = promote_advisory(data_dir(), args.advisory_id)
+                _emit({
+                    "result": "LEARNING_ADVISORY_PROMOTED",
+                    "advisory_id": args.advisory_id,
+                    "memory": str(data_dir() / "learning" / "memory.json"),
+                    "active_count": len(memory["active_advisories"]),
+                })
             if args.command == "retrospect":
                 _emit(prepare_retrospective(data_dir(), as_of_str))
             if args.command in {"status", "inspect"}:
