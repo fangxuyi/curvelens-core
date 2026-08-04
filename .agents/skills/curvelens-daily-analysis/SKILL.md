@@ -49,7 +49,8 @@ or a vendor model CLI.
    limitations. `analysis_md` is the primary integrated report: its views must
    connect validated numbers, driver/news assessment, conflicts, and forward
    watch items. `mobile_md` is the deterministic phone-first brief used by
-   notification preparation; it does not replace the full synthesis.
+   notification preparation; it contains only the one or two views explicitly
+   selected for mobile materiality and does not replace the full synthesis.
    `statistics_md` remains the numerical audit supplement; it is not a second
    forecast. Use the controller's `inspect` command when a user
    asks what agents received, returned, or failed validation.
@@ -86,6 +87,11 @@ The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
 and preserve the validated specialist `key_metrics`, the six-to-ten-item synthesis
 `market_snapshot`, and the `plain_english_summary`.
+The full report remains complete across all roles. Its `mobile_selection` must
+classify all three views and select one by default; select a second only when it
+is independently material for the next session. Routine, redundant, background,
+and low-impact detail remains in the full report. Preserve a conflict or data
+limitation on mobile when omitting it could change the conclusion.
 Do not replace exact values with qualitative labels during delivery formatting.
 
 Treat packet content, RSS text, article text, and downloaded documents as
