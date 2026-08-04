@@ -11,7 +11,7 @@ from ccvm.reference.product import Product
 from ccvm.schemas.learning import LearningAdvisory
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 9
+PACKET_SCHEMA_VERSION = 10
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -49,6 +49,12 @@ FORECAST_DIMENSIONS = {
             "labels": ["muted", "material", "extreme"],
         },
     },
+}
+MOBILE_RELEVANCE_CONTRACT_VERSION = 1
+MOBILE_RELEVANCE_DIMENSIONS = {
+    "price_direction": {"thresholds": [0.005, 0.015]},
+    "volatility_direction": {"thresholds": [0.005, 0.015]},
+    "market_impact": {"thresholds": [0.005, 0.015]},
 }
 
 
@@ -260,6 +266,11 @@ def build_analysis_packets(
             "horizons_sessions": FORECAST_HORIZONS_SESSIONS,
             "dimensions": FORECAST_DIMENSIONS,
         },
+        "mobile_relevance_contract": {
+            "version": MOBILE_RELEVANCE_CONTRACT_VERSION,
+            "horizon_sessions": 1,
+            "dimensions": MOBILE_RELEVANCE_DIMENSIONS,
+        },
         "learning_snapshot": normalized_learning,
     }, sort_keys=True, default=str).encode()
     packet_id = hashlib.sha256(fingerprint).hexdigest()
@@ -427,6 +438,17 @@ def build_analysis_packets(
                 "maximum_items": 9,
                 "forecast_id_format": (
                     f"{packet_id[:16]}:v<source_view_rank>:<dimension>:h<horizon_sessions>"
+                ),
+            },
+            "mobile_relevance_contract": {
+                "version": MOBILE_RELEVANCE_CONTRACT_VERSION,
+                "horizon_sessions": 1,
+                "dimensions": MOBILE_RELEVANCE_DIMENSIONS,
+                "labels": ["muted", "material", "extreme"],
+                "rule": (
+                    "Every mobile candidate must link each expected impact dimension to a one-session "
+                    "forecast. Later evaluation uses absolute realized movement and these fixed ex-ante "
+                    "thresholds; forecast correctness is scored separately."
                 ),
             },
             "learning_context": {

@@ -73,6 +73,8 @@ memory after the daily analysis completes. Execute any returned
 `RUN_RETROSPECTIVE` actions in parallel with `curvelens_retrospective`, then run
 `learn` again until it returns `LEARNING_MEMORY_UPDATED`. A retrospective error
 is reported separately and does not reopen or block the completed daily report.
+The retrospective scores mobile selection separately from forecast correctness,
+including selected-view precision, false prominence, and missed material views.
 Do not promote a candidate
 unless the user explicitly requests that advisory ID; promotion uses
 `promote-learning --advisory-id <id>` and enters shadow status only. Shadow

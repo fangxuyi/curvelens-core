@@ -363,9 +363,18 @@ def _check_mobile_selection(
         .get("dimensions", {})
     )
     forecasts = {
-        (item.get("source_view_rank"), item.get("dimension"))
+        (
+            item.get("source_view_rank"), item.get("dimension"),
+            item.get("horizon_sessions"),
+        )
         for item in synthesis.get("forecast_ledger", []) if isinstance(item, dict)
     }
+    relevance_contract = (
+        (manifest.get("synthesis_contract") or {}).get("mobile_relevance_contract") or {}
+    )
+    relevance_horizon = relevance_contract.get("horizon_sessions")
+    if relevance_horizon != 1 or set(relevance_contract.get("dimensions") or {}) != set(dimensions):
+        raise AnalysisValidationError("manifest mobile_relevance_contract is incomplete")
     views = {item["rank"]: item for item in synthesis["top_views"]}
     for index, item in enumerate(selection.candidates):
         label = f"synthesis.mobile_selection.candidates[{index}]"
@@ -376,7 +385,7 @@ def _check_mobile_selection(
                 f"{sorted(unknown_dimensions)}"
             )
         if any(
-            (item.source_view_rank, dimension) not in forecasts
+            (item.source_view_rank, dimension, relevance_horizon) not in forecasts
             for dimension in item.expected_impact_dimensions
         ):
             raise AnalysisValidationError(
@@ -584,6 +593,9 @@ def validate_and_render(
         "specialist_analyses": responses,
         "synthesis": synthesis,
         "forecast_contract": manifest["synthesis_contract"]["forecast_contract"],
+        "mobile_relevance_contract": manifest["synthesis_contract"][
+            "mobile_relevance_contract"
+        ],
         "status": synthesis["status"],
         "workflow_mode": "agent_orchestrated",
         "statistics_integrated": True,

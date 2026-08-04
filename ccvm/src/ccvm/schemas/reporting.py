@@ -1,6 +1,7 @@
 """Strict contracts for delivery-facing report selection."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -70,4 +71,63 @@ class MobileSelection(BaseModel):
         return self
 
 
-__all__ = ["MobileSelection", "MobileSelectionCandidate"]
+class MobileDimensionResult(BaseModel):
+    """One realized move used in a mobile materiality score."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dimension: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")]
+    absolute_change: Annotated[float, Field(ge=0)]
+    realized_materiality: Literal["muted", "material", "extreme"]
+    forecast_id: Annotated[str, Field(min_length=1, max_length=128)]
+
+
+class MobileRelevanceEvaluation(BaseModel):
+    """Deterministic next-session relevance score for one mobile candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1] = 1
+    source_view_rank: Annotated[int, Field(strict=True, ge=1, le=3)]
+    disposition: Literal["selected", "omitted"]
+    expected_materiality: Literal["high", "medium", "low"]
+    expected_impact_dimensions: Annotated[
+        list[str], Field(min_length=1, max_length=3)
+    ]
+    status: Literal["scored", "unscored"]
+    unscored_reason: Annotated[str, Field(max_length=512)] = ""
+    realized_materiality: Literal["muted", "material", "extreme"] | None = None
+    materiality_score: Annotated[int | None, Field(strict=True, ge=0, le=2)] = None
+    selection_correct: bool | None = None
+    missed_material: bool | None = None
+    false_prominence: bool | None = None
+    dimension_results: Annotated[list[MobileDimensionResult], Field(max_length=3)]
+    analysis_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    outcome_sha256: Annotated[
+        list[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]],
+        Field(max_length=3),
+    ]
+    evaluated_at: datetime
+    evaluator_version: Annotated[int, Field(strict=True, gt=0)]
+
+    @model_validator(mode="after")
+    def validate_score_state(self) -> MobileRelevanceEvaluation:
+        scores = (
+            self.realized_materiality, self.materiality_score,
+            self.selection_correct, self.missed_material, self.false_prominence,
+        )
+        if self.status == "scored" and any(value is None for value in scores):
+            raise ValueError("scored mobile relevance requires complete scores")
+        if self.status == "scored" and (not self.dimension_results or not self.outcome_sha256):
+            raise ValueError("scored mobile relevance requires outcome provenance")
+        if self.status == "unscored" and not self.unscored_reason:
+            raise ValueError("unscored mobile relevance requires a reason")
+        if self.evaluated_at.tzinfo is None or self.evaluated_at.utcoffset() is None:
+            raise ValueError("evaluated_at must be timezone-aware")
+        return self
+
+
+__all__ = [
+    "MobileDimensionResult", "MobileRelevanceEvaluation", "MobileSelection",
+    "MobileSelectionCandidate",
+]
