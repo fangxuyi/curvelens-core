@@ -59,6 +59,14 @@ or a vendor model CLI.
    never authorizes report delivery. Promotion is a separate explicitly
    approved change.
 
+When the user asks for retrospective evaluation, run the same controller with
+`retrospect --date <source-date>`. On `RETROSPECTIVE_REQUIRED`, spawn exactly
+one `curvelens_retrospective` agent with only the returned task file, wait for
+its response, and run `retrospect` again. `RETROSPECTIVE_PENDING` means the
+configured future-session outcome is not yet available; it is not a workflow
+failure. Retrospective completion never authorizes delivery or activates a
+learning candidate.
+
 The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
 and preserve the validated specialist `key_metrics`, the six-to-ten-item synthesis

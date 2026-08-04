@@ -224,10 +224,52 @@ class OutcomeRecord(_LearningModel):
         return self
 
 
+class EvaluationRecord(_LearningModel):
+    """Deterministic scoring of one forecast against one realized outcome."""
+
+    schema_version: Literal[1] = 1
+    forecast_id: SafeIdentifier
+    dimension: SafeKey
+    horizon_sessions: Annotated[int, Field(strict=True, gt=0, le=_MAX_HORIZON_SESSIONS)]
+    source_view_rank: Annotated[int, Field(strict=True, ge=1, le=3)]
+    confidence: Literal["high", "medium", "low"]
+    expected_label: SafeKey
+    realized_label: SafeKey | None = None
+    status: Literal["scored", "unscored"]
+    unscored_reason: Annotated[str, Field(max_length=512)] = ""
+    hit: bool | None = None
+    confidence_probability: Annotated[float | None, Field(ge=0, le=1)] = None
+    brier_loss: Annotated[float | None, Field(ge=0, le=1)] = None
+    rank_weight: Annotated[float, Field(gt=0, le=1)]
+    weighted_hit: Annotated[float | None, Field(ge=0, le=1)] = None
+    association: Literal["forecast_associated_with_realized_outcome"] = (
+        "forecast_associated_with_realized_outcome"
+    )
+    analysis_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    outcome_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    evaluated_at: datetime
+    evaluator_version: Annotated[int, Field(strict=True, gt=0)] = 1
+
+    @model_validator(mode="after")
+    def validate_score_state(self) -> EvaluationRecord:
+        scores = (
+            self.realized_label, self.hit, self.confidence_probability,
+            self.brier_loss, self.weighted_hit,
+        )
+        if self.status == "scored" and any(value is None for value in scores):
+            raise ValueError("scored evaluation requires realized label and numeric scores")
+        if self.status == "unscored" and not self.unscored_reason:
+            raise ValueError("unscored evaluation requires a reason")
+        if self.evaluated_at.tzinfo is None or self.evaluated_at.utcoffset() is None:
+            raise ValueError("evaluated_at must be timezone-aware")
+        return self
+
+
 __all__ = [
     "ForecastLedgerItem",
     "MemoryFeedbackItem",
     "OutcomeRule",
     "OutcomeMetric",
     "OutcomeRecord",
+    "EvaluationRecord",
 ]
