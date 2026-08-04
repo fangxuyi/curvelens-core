@@ -199,6 +199,16 @@ def test_packet_id_is_stable(tmp_path):
     assert first == second
 
 
+def test_packet_identity_includes_forecast_policy(monkeypatch, tmp_path):
+    from ccvm.workflow import packets as packets_module
+
+    first = _packets(tmp_path / "a")["packet_id"]
+    rule = packets_module.FORECAST_DIMENSIONS["price_direction"]["outcome_rule"]
+    monkeypatch.setitem(rule, "thresholds", [0.01])
+    second = _packets(tmp_path / "b")["packet_id"]
+    assert first != second
+
+
 def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
     base = load_product("gold")
     roles = tuple(
@@ -276,6 +286,10 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert output["statistics_integrated"] is True
     assert output["delivery_approved"] is False
     assert output["synthesis"]["forecast_ledger"] == _forecast_ledger(manifest)
+    assert output["forecast_contract"]["version"] == 2
+    assert output["forecast_contract"]["dimensions"]["volatility_direction"][
+        "outcome_rule"
+    ]["source_metric"] == "front_atm_iv"
     markdown = md_path.read_text()
     assert "Overall forward view" in markdown and "Data limitations" in markdown
     assert "Driver and news validation" in markdown

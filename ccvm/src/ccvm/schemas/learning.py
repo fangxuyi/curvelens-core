@@ -1,10 +1,12 @@
-"""Product-neutral contracts for ex-ante learning records."""
+"""Product-neutral contracts for ex-ante and realized learning records."""
 from __future__ import annotations
 
+import math
 import re
+from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 _SAFE_KEY_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
@@ -17,6 +19,7 @@ _PLACEHOLDER_VALUES = frozenset({
 _MAX_EVIDENCE_IDS = 64
 _MAX_HORIZON_SESSIONS = 252
 _SAFE_IDENTIFIER_RE = re.compile(_SAFE_IDENTIFIER_PATTERN)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 SafeKey = Annotated[
     str,
@@ -96,4 +99,135 @@ class MemoryFeedbackItem(_LearningModel):
     ]
 
 
-__all__ = ["ForecastLedgerItem", "MemoryFeedbackItem"]
+class OutcomeRule(_LearningModel):
+    """A generic deterministic rule for converting a metric change to a label."""
+
+    source_metric: Literal["front_settlement", "front_atm_iv"]
+    calculation: Literal["return", "change", "absolute_return"]
+    kind: Literal["signed_band", "absolute_bands"]
+    thresholds: Annotated[list[float], Field(min_length=1, max_length=2)]
+    labels: Annotated[list[str], Field(min_length=3, max_length=3)]
+
+    @field_validator("thresholds")
+    @classmethod
+    def validate_thresholds(cls, value: list[float]) -> list[float]:
+        if any(not math.isfinite(item) or item <= 0 for item in value):
+            raise ValueError("thresholds must contain only positive finite numbers")
+        return value
+
+    @field_validator("labels")
+    @classmethod
+    def validate_labels(cls, value: list[str]) -> list[str]:
+        cleaned = [_validate_text(item, "labels") for item in value]
+        if len(set(cleaned)) != len(cleaned):
+            raise ValueError("labels must be unique")
+        return cleaned
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> OutcomeRule:
+        expected = 1 if self.kind == "signed_band" else 2
+        if len(self.thresholds) != expected:
+            raise ValueError(
+                f"{self.kind} requires exactly {expected} threshold(s)"
+            )
+        if self.kind == "absolute_bands" and self.thresholds[0] >= self.thresholds[1]:
+            raise ValueError("absolute_bands thresholds must be strictly ascending")
+        return self
+
+
+class OutcomeMetric(_LearningModel):
+    """One metric's baseline, target, change, and deterministic label."""
+
+    metric_key: SafeKey
+    baseline: float | None = None
+    target: float | None = None
+    change: float | None = None
+    realized_label: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @field_validator("baseline", "target", "change")
+    @classmethod
+    def validate_finite_metric(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("metric values must be finite when present")
+        return value
+
+    @field_validator("realized_label")
+    @classmethod
+    def validate_realized_label(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_text(value, "realized_label")
+
+
+class OutcomeRecord(_LearningModel):
+    """Strict, auditable realization of one forecast-ledger item."""
+
+    forecast_id: SafeIdentifier
+    dimension: SafeKey
+    expected_label: str | None = Field(default=None, min_length=1, max_length=128)
+    source_trade_date: date
+    target_date: date
+    horizon_sessions: Annotated[
+        int,
+        Field(strict=True, gt=0, le=_MAX_HORIZON_SESSIONS),
+    ]
+    status: Literal["pending", "missing", "complete"]
+    metrics: Annotated[list[OutcomeMetric], Field(min_length=1, max_length=64)]
+    data_quality_notes: Annotated[list[str], Field(max_length=128)] = Field(default_factory=list)
+    analysis_sha256: str | None = None
+    baseline_sha256: str | None = None
+    target_sha256: str | None = None
+    policy_sha256: str | None = None
+    policy_version: Annotated[int, Field(strict=True, ge=1)]
+    generated_at: datetime
+    record_version: Annotated[int, Field(strict=True, ge=1)]
+    supersedes_hash: str | None = None
+
+    @field_validator("expected_label")
+    @classmethod
+    def validate_expected_label(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_text(value, "expected_label")
+
+    @field_validator("data_quality_notes")
+    @classmethod
+    def validate_notes(cls, value: list[str]) -> list[str]:
+        return [_validate_text(item, "data_quality_notes") for item in value]
+
+    @field_validator(
+        "analysis_sha256", "baseline_sha256", "target_sha256",
+        "policy_sha256", "supersedes_hash",
+    )
+    @classmethod
+    def validate_hash(cls, value: str | None) -> str | None:
+        if value is not None and not _SHA256_RE.fullmatch(value):
+            raise ValueError("hashes must be lowercase SHA256 hex digests")
+        return value
+
+    @field_validator("generated_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("generated_at must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_dates_and_completion(self) -> OutcomeRecord:
+        if self.target_date <= self.source_trade_date:
+            raise ValueError("target_date must be later than source_trade_date")
+        if self.status == "complete":
+            if any(
+                item.baseline is None
+                or item.target is None
+                or item.change is None
+                or item.realized_label is None
+                for item in self.metrics
+            ):
+                raise ValueError("complete outcomes require complete metric values")
+        return self
+
+
+__all__ = [
+    "ForecastLedgerItem",
+    "MemoryFeedbackItem",
+    "OutcomeRule",
+    "OutcomeMetric",
+    "OutcomeRecord",
+]

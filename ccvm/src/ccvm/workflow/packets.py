@@ -10,22 +10,43 @@ from typing import Any
 from ccvm.reference.product import Product
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 5
+PACKET_SCHEMA_VERSION = 6
 
-FORECAST_CONTRACT_VERSION = 1
+FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
 FORECAST_DIMENSIONS = {
     "price_direction": {
         "metric_key": "front_settlement_return",
         "labels": ["down", "flat", "up"],
+        "outcome_rule": {
+            "source_metric": "front_settlement",
+            "calculation": "return",
+            "kind": "signed_band",
+            "thresholds": [0.0025],
+            "labels": ["down", "flat", "up"],
+        },
     },
     "volatility_direction": {
         "metric_key": "front_atm_iv_change",
         "labels": ["lower", "unchanged", "higher"],
+        "outcome_rule": {
+            "source_metric": "front_atm_iv",
+            "calculation": "change",
+            "kind": "signed_band",
+            "thresholds": [0.005],
+            "labels": ["lower", "unchanged", "higher"],
+        },
     },
     "market_impact": {
         "metric_key": "absolute_front_settlement_return",
         "labels": ["muted", "material", "extreme"],
+        "outcome_rule": {
+            "source_metric": "front_settlement",
+            "calculation": "absolute_return",
+            "kind": "absolute_bands",
+            "thresholds": [0.005, 0.015],
+            "labels": ["muted", "material", "extreme"],
+        },
     },
 }
 
@@ -195,6 +216,11 @@ def build_analysis_packets(
             "blocking_sections": product.analysis_blocking_sections,
             "retryable_empty_sections": product.analysis_retryable_empty_sections,
             "max_quality_attempts": product.analysis_max_quality_attempts,
+        },
+        "forecast_contract": {
+            "version": FORECAST_CONTRACT_VERSION,
+            "horizons_sessions": FORECAST_HORIZONS_SESSIONS,
+            "dimensions": FORECAST_DIMENSIONS,
         },
     }, sort_keys=True, default=str).encode()
     packet_id = hashlib.sha256(fingerprint).hexdigest()
