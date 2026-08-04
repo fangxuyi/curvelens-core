@@ -102,6 +102,13 @@ partially supported, conflicting, or unexplained, and state what would confirm
 or invalidate the view next. This structure keeps news and fundamentals in the
 analysis without overstating causal attribution.
 
+The full synthesis separately records a validated `mobile_selection` decision
+for all three views. Mobile selects one view by default and at most two; it does
+not need to represent every specialist. Routine, redundant, background, and
+low-impact detail stays in the full report. The deterministic renderer preserves
+exact numbers and includes a conflict or data limitation only when the selection
+marks it as material to the conclusion.
+
 ## Workflow inspection
 
 The controller updates three product- and date-isolated debugging artifacts:

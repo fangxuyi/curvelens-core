@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-MAX_MOBILE_BRIEF_CHARS = 2800
+MAX_MOBILE_BRIEF_CHARS = 1400
 
 
 def _clean(value: Any) -> str:
@@ -30,40 +30,50 @@ def _metrics_line(metrics: list[dict[str, Any]]) -> str:
 
 
 def render_mobile_brief(analysis: dict[str, Any]) -> str:
-    """Return one compact Markdown message without changing the synthesis."""
+    """Return the validated editorial subset of a complete synthesis."""
     synthesis = analysis.get("synthesis") or {}
     product = _short(analysis.get("product") or "Market", 30).upper()
     trade_date = _short(analysis.get("trade_date") or "", 20)
     lines = [f"*{product} Daily Brief — {trade_date}*", "", "*Bottom line*"]
     summary = synthesis.get("plain_english_summary") or synthesis.get("executive_summary")
-    lines.append(_short(summary, 280) or "No validated summary is available.")
+    lines.append(_short(summary, 240) or "No validated summary is available.")
 
-    for index, view in enumerate((synthesis.get("top_views") or [])[:3], start=1):
-        rank = view.get("rank") or index
-        lines.extend(["", f"*{rank}. {_short(view.get('title'), 70)}*"])
-        plain_view = _short(view.get("plain_english_view"), 150)
+    views = {
+        int(view.get("rank", index)): view
+        for index, view in enumerate(synthesis.get("top_views") or [], start=1)
+        if isinstance(view, dict)
+    }
+    selection = synthesis.get("mobile_selection") or {}
+    selected_ranks = selection.get("selected_view_ranks")
+    if not isinstance(selected_ranks, list):
+        selected_ranks = [min(views)] if views else []
+    selected_views = [views[rank] for rank in selected_ranks if rank in views][:2]
+    if selected_views:
+        lines.extend(["", "*What matters now*"])
+    for index, view in enumerate(selected_views, start=1):
+        lines.extend(["", f"*{index}. {_short(view.get('title'), 68)}*"])
+        plain_view = _short(view.get("plain_english_view"), 135)
         if plain_view:
             lines.append(plain_view)
         metrics = _metrics_line(view.get("key_metrics") or [])
         if metrics:
-            lines.append(f"Numbers: {metrics}")
-        driver = view.get("driver_analysis") or {}
-        explanation = _short(driver.get("explanation"), 150)
-        if explanation:
-            status = _clean(driver.get("status")).replace("_", " ")
-            lines.append(f"Driver ({status}): {explanation}")
+            lines.append(f"Key move: {metrics}")
         conflicts = view.get("conflicting_evidence") or []
-        if conflicts:
+        if view.get("evidence_relationship") == "conflicting" and conflicts:
             item = conflicts[0]
             claim = item.get("claim") if isinstance(item, dict) else item
-            lines.append(f"Conflict: {_short(claim, 110)}")
+            lines.append(f"Material conflict: {_short(claim, 100)}")
         watch = view.get("what_to_watch") or []
         if watch:
-            lines.append(f"Watch: {_short(watch[0], 120)}")
+            lines.append(f"Watch: {_short(watch[0], 110)}")
 
     limitations = synthesis.get("data_limitations") or []
-    if limitations:
-        lines.extend(["", f"_Data note: {_short(limitations[0], 160)}_"])
+    include_limitation = (
+        selection.get("limitation_disposition") == "included"
+        if selection else bool(limitations)
+    )
+    if limitations and include_limitation:
+        lines.extend(["", f"_Risk note: {_short(limitations[0], 140)}_"])
 
     message = "\n".join(lines)
     if len(message) > MAX_MOBILE_BRIEF_CHARS:

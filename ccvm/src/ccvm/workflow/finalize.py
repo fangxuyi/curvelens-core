@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from ccvm.reporting.mobile import render_mobile_brief
 from ccvm.schemas.learning import ForecastLedgerItem, MemoryFeedbackItem
+from ccvm.schemas.reporting import MobileSelection
 
 from .packets import PACKET_SCHEMA_VERSION
 
@@ -333,6 +334,70 @@ def _check_memory_feedback(
         _check_ids(item.evidence_ids, allowed, f"synthesis.memory_feedback[{index}]")
 
 
+def _check_mobile_selection(
+    synthesis: dict[str, Any], manifest: dict[str, Any], allowed: set[str],
+) -> None:
+    raw = synthesis.get("mobile_selection")
+    if not isinstance(raw, dict):
+        raise AnalysisValidationError("synthesis mobile_selection must be an object")
+    if synthesis["status"] == "blocked":
+        if raw.get("selected_view_ranks") or raw.get("candidates"):
+            raise AnalysisValidationError("blocked synthesis mobile_selection must select no views")
+        if raw.get("limitation_disposition") != "included" \
+                or not str(raw.get("selection_rationale", "")).strip() \
+                or not str(raw.get("limitation_rationale", "")).strip():
+            raise AnalysisValidationError(
+                "blocked synthesis mobile_selection must explain and include its limitation"
+            )
+        return
+    try:
+        selection = MobileSelection.model_validate(raw)
+    except ValidationError as exc:
+        raise AnalysisValidationError(
+            f"synthesis.mobile_selection is invalid: {exc.errors()[0]['msg']}"
+        ) from exc
+
+    dimensions = (
+        (manifest.get("synthesis_contract") or {})
+        .get("forecast_contract", {})
+        .get("dimensions", {})
+    )
+    forecasts = {
+        (item.get("source_view_rank"), item.get("dimension"))
+        for item in synthesis.get("forecast_ledger", []) if isinstance(item, dict)
+    }
+    views = {item["rank"]: item for item in synthesis["top_views"]}
+    for index, item in enumerate(selection.candidates):
+        label = f"synthesis.mobile_selection.candidates[{index}]"
+        unknown_dimensions = set(item.expected_impact_dimensions) - set(dimensions)
+        if unknown_dimensions:
+            raise AnalysisValidationError(
+                f"{label}.expected_impact_dimensions are not configured: "
+                f"{sorted(unknown_dimensions)}"
+            )
+        if any(
+            (item.source_view_rank, dimension) not in forecasts
+            for dimension in item.expected_impact_dimensions
+        ):
+            raise AnalysisValidationError(
+                f"{label} must link every expected impact dimension to a source-view forecast"
+            )
+        _check_ids(item.evidence_ids, allowed, label)
+        if not set(item.evidence_ids).issubset(_view_evidence_ids(views[item.source_view_rank])):
+            raise AnalysisValidationError(f"{label} must cite evidence from its source top view")
+
+    limitations = synthesis.get("data_limitations") or []
+    if not limitations and selection.limitation_disposition != "not_applicable":
+        raise AnalysisValidationError(
+            "mobile limitation disposition must be not_applicable when none exist"
+        )
+    if limitations and synthesis["status"] == "limited" \
+            and selection.limitation_disposition != "included":
+        raise AnalysisValidationError("limited synthesis must include its mobile data limitation")
+    if limitations and selection.limitation_disposition == "not_applicable":
+        raise AnalysisValidationError("mobile selection must address existing data limitations")
+
+
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
     manifest = _read(manifest_path)
     if manifest.get("schema_version") != PACKET_SCHEMA_VERSION:
@@ -482,6 +547,7 @@ def validate_synthesis_response(
     )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
     _check_forecast_ledger(synthesis, manifest, allowed)
+    _check_mobile_selection(synthesis, manifest, allowed)
     _check_memory_feedback(synthesis, manifest, allowed)
     if synthesis["status"] != "blocked" and not synthesis["evidence_ids"]:
         raise AnalysisValidationError("synthesis requires cited evidence")

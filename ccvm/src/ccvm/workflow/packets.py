@@ -11,7 +11,7 @@ from ccvm.reference.product import Product
 from ccvm.schemas.learning import LearningAdvisory
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 8
+PACKET_SCHEMA_VERSION = 9
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -152,6 +152,23 @@ def _forecast_template(rank: int, packet_id: str) -> dict[str, Any]:
         "expected_label": "|".join(definition["labels"]),
         "confidence": "high|medium|low",
         "evidence_ids": [],
+    }
+
+
+def _mobile_selection_template() -> dict[str, Any]:
+    return {
+        "selected_view_ranks": [1],
+        "selection_rationale": "",
+        "candidates": [{
+            "source_view_rank": rank,
+            "disposition": "selected" if rank == 1 else "omitted",
+            "materiality": "high|medium|low",
+            "expected_impact_dimensions": [],
+            "rationale": "",
+            "evidence_ids": [],
+        } for rank in (1, 2, 3)],
+        "limitation_disposition": "included|omitted|not_applicable",
+        "limitation_rationale": "",
     }
 
 
@@ -392,6 +409,14 @@ def build_analysis_packets(
                     "already used by the source top view. Build forecast_id exactly as specified so a later "
                     "retrospective can join forecasts to realized outcomes without interpreting prose."
                 ),
+                "mobile_selection": (
+                    "Classify all three validated views for scarce mobile space, then select one by default. "
+                    "Select a second only when it is independently material rather than supporting detail. "
+                    "Base the decision on expected next-session price or volatility impact, imminence, "
+                    "cross-support, novelty, and whether omission could change the reader's conclusion. "
+                    "Mobile need not cover every specialist. Routine, redundant, background, and low-impact "
+                    "views belong only in the full report. Preserve a material conflict or data limitation."
+                ),
             },
             "forecast_contract": {
                 "version": FORECAST_CONTRACT_VERSION,
@@ -427,6 +452,7 @@ def build_analysis_packets(
         "executive_summary": "",
         "plain_english_summary": "",
         "top_views": [_top_view_template(rank) for rank in (1, 2, 3)],
+        "mobile_selection": _mobile_selection_template(),
         "forecast_ledger": [
             _forecast_template(rank, packet_id) for rank in (1, 2, 3)
         ],

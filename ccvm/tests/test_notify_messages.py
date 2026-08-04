@@ -235,6 +235,10 @@ def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_langu
             "confirmations": ["Settlement falls below $4,015.90/oz."],
             "invalidations": ["Settlement recovers above $4,018.80/oz."],
             "data_limitations": ["Only two local GC settlement dates are available."],
+            "mobile_selection": {
+                "selected_view_ranks": [1, 2],
+                "limitation_disposition": "included",
+            },
             "top_views": [
                 {"rank": 1, "title": "Curve carry is a headwind",
                  "plain_english_view": "Deferred gold settled above the front contract.",
@@ -285,10 +289,9 @@ def test_agent_synthesis_message_preserves_numbers_sections_news_and_plain_langu
     assert "*2. Options favor downside protection*" in text
     assert "19.94%" in text and "-3.26 vol points" in text
     assert "+0.45 vol points" not in text
-    assert "*3. Macro evidence is mixed*" in text and "2.31%" in text
-    assert "Conflict: The dollar strengthened." in text
-    assert "_Data note:" in text
-    assert len(text) <= 2800
+    assert "Macro evidence is mixed" not in text and "2.31%" not in text
+    assert "_Risk note:" in text
+    assert len(text) <= 1400
 
 
 def test_agent_synthesis_message_integrates_numbers_drivers_and_watch_items(tmp_path, monkeypatch):
@@ -319,5 +322,4 @@ def test_agent_synthesis_message_integrates_numbers_drivers_and_watch_items(tmp_
     text = notify._analysis_synthesis_text("2026-07-20")
     assert "*1. Gold holds a higher range*" in text
     assert "Front settlement: $4,015.90/oz" in text
-    assert "Driver (partially supported): Lower real yields" in text
     assert "Watch: Watch whether the next settlement holds above $4,000/oz." in text

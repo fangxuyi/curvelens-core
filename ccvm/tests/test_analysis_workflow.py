@@ -90,6 +90,30 @@ def _forecast_ledger(manifest):
     return items
 
 
+def _mobile_selection(manifest, selected=(1,)):
+    dimensions = manifest["synthesis_contract"]["forecast_contract"]["required_dimensions"]
+    candidates = []
+    for rank, dimension in enumerate(dimensions, start=1):
+        response = json.loads(
+            Path(manifest["role_response_paths"][manifest["roles"][rank - 1]]).read_text()
+        )
+        candidates.append({
+            "source_view_rank": rank,
+            "disposition": "selected" if rank in selected else "omitted",
+            "materiality": "high" if rank == selected[0] else "medium",
+            "expected_impact_dimensions": [dimension],
+            "rationale": "Current validated evidence determines mobile priority.",
+            "evidence_ids": [response["evidence_ids"][0]],
+        })
+    return {
+        "selected_view_ranks": list(selected),
+        "selection_rationale": "Only independently material views receive mobile space.",
+        "candidates": candidates,
+        "limitation_disposition": "included",
+        "limitation_rationale": "The limited synthesis requires its data note on mobile.",
+    }
+
+
 def test_quality_retries_only_missing_market_inputs():
     missing = assess_quality(_quality(futures_count=0, futures_status="INSUFFICIENT_DATA"), 1, 2)
     assert missing["should_retry"] is True
@@ -176,6 +200,8 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
         "what_to_watch",
     }.issubset(view) for view in template["top_views"])
     assert [item["source_view_rank"] for item in template["forecast_ledger"]] == [1, 2, 3]
+    assert template["mobile_selection"]["selected_view_ranks"] == [1]
+    assert [item["source_view_rank"] for item in template["mobile_selection"]["candidates"]] == [1, 2, 3]
     assert set(manifest["synthesis_contract"]["forecast_contract"]["required_dimensions"]) == {
         "price_direction", "volatility_direction", "market_impact",
     }
@@ -308,6 +334,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "plain_english_summary": "The test signals are mixed.",
                       "market_snapshot": _metrics(used_id, 6),
                       "top_views": _top_views(manifest),
+                      "mobile_selection": _mobile_selection(manifest),
                       "forecast_ledger": _forecast_ledger(manifest),
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
@@ -318,6 +345,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "plain_english_summary": "The test signals are mixed.",
                       "market_snapshot": _metrics(used_id, 6),
                       "top_views": _top_views(manifest),
+                      "mobile_selection": _mobile_selection(manifest),
                       "forecast_ledger": _forecast_ledger(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Mixed."},
                       "data_limitations": ["Specialists were limited."],
@@ -352,9 +380,10 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     mobile = mobile_path.read_text()
     assert "*GOLD Daily Brief — 2026-07-20*" in mobile
     assert "*1. View from futures_curve*" in mobile
-    assert "Numbers: Metric 1: 1.0%" in mobile
+    assert "Key move: Metric 1: 1.0%" in mobile
+    assert "View from vol_surface" not in mobile
     assert "forecast_ledger" not in mobile and "memory_feedback" not in mobile
-    assert len(mobile) <= 2800
+    assert len(mobile) <= 1400
 
     bad_synthesis = json.loads(synthesis_path.read_text())
     bad_synthesis["forecast_ledger"][0]["expected_label"] = "certainly_up"
@@ -438,6 +467,7 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
                       "plain_english_summary": "The market signals are mixed today.",
                       "market_snapshot": _metrics(used, 6),
                       "top_views": _top_views(manifest),
+                      "mobile_selection": _mobile_selection(manifest),
                       "forecast_ledger": _forecast_ledger(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Signals are mixed."},
                       "data_limitations": ["Synthetic evidence is limited."],
