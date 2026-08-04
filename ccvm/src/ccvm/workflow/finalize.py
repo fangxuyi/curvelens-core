@@ -7,7 +7,10 @@ import re
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from ccvm.reporting.mobile import render_mobile_brief
+from ccvm.schemas.learning import ForecastLedgerItem, MemoryFeedbackItem
 
 from .packets import PACKET_SCHEMA_VERSION
 
@@ -191,6 +194,125 @@ def _check_top_views(
     return cited_ids
 
 
+def _view_evidence_ids(view: dict[str, Any]) -> set[str]:
+    ids = {
+        evidence_id
+        for metric in view.get("key_metrics", [])
+        for evidence_id in metric.get("evidence_ids", [])
+    }
+    for field in ("supporting_evidence", "conflicting_evidence"):
+        for claim in view.get(field, []):
+            ids.update(claim.get("evidence_ids", []))
+    ids.update((view.get("driver_analysis") or {}).get("evidence_ids", []))
+    return ids
+
+
+def _check_forecast_ledger(
+    synthesis: dict[str, Any], manifest: dict[str, Any], allowed: set[str],
+) -> None:
+    raw_items = synthesis.get("forecast_ledger")
+    if not isinstance(raw_items, list):
+        raise AnalysisValidationError("synthesis forecast_ledger must be a list")
+    if synthesis["status"] == "blocked":
+        if raw_items:
+            raise AnalysisValidationError("blocked synthesis forecast_ledger must be empty")
+        return
+
+    contract = (manifest.get("synthesis_contract") or {}).get("forecast_contract") or {}
+    dimensions = contract.get("dimensions") or {}
+    required_dimensions = set(contract.get("required_dimensions") or [])
+    horizons = set(contract.get("horizons_sessions") or [])
+    maximum_items = int(contract.get("maximum_items", 0))
+    if not dimensions or not required_dimensions or not horizons or maximum_items < 1:
+        raise AnalysisValidationError("manifest forecast_contract is incomplete")
+    if not raw_items or len(raw_items) > maximum_items:
+        raise AnalysisValidationError(
+            f"synthesis forecast_ledger requires 1 to {maximum_items} items"
+        )
+
+    items: list[ForecastLedgerItem] = []
+    for index, raw in enumerate(raw_items):
+        try:
+            items.append(ForecastLedgerItem.model_validate(raw))
+        except ValidationError as exc:
+            raise AnalysisValidationError(
+                f"synthesis.forecast_ledger[{index}] is invalid: {exc.errors()[0]['msg']}"
+            ) from exc
+
+    forecast_ids = [item.forecast_id for item in items]
+    if len(forecast_ids) != len(set(forecast_ids)):
+        raise AnalysisValidationError("synthesis forecast_ledger has duplicate forecast_id values")
+    view_ids = {
+        int(view["rank"]): _view_evidence_ids(view)
+        for view in synthesis["top_views"]
+    }
+    covered_ranks: set[int] = set()
+    covered_dimensions: set[str] = set()
+    for index, item in enumerate(items):
+        label = f"synthesis.forecast_ledger[{index}]"
+        definition = dimensions.get(item.dimension)
+        if not isinstance(definition, dict):
+            raise AnalysisValidationError(f"{label}.dimension is not configured")
+        if item.metric_key != definition.get("metric_key"):
+            raise AnalysisValidationError(f"{label}.metric_key does not match its dimension")
+        if item.expected_label not in set(definition.get("labels") or []):
+            raise AnalysisValidationError(f"{label}.expected_label is not configured")
+        if item.horizon_sessions not in horizons:
+            raise AnalysisValidationError(f"{label}.horizon_sessions is not configured")
+        expected_id = (
+            f"{manifest['packet_id'][:16]}:v{item.source_view_rank}:"
+            f"{item.dimension}:h{item.horizon_sessions}"
+        )
+        if item.forecast_id != expected_id:
+            raise AnalysisValidationError(f"{label}.forecast_id must be {expected_id!r}")
+        _check_ids(item.evidence_ids, allowed, label)
+        if not set(item.evidence_ids).issubset(view_ids[item.source_view_rank]):
+            raise AnalysisValidationError(f"{label} must cite evidence from its source top view")
+        covered_ranks.add(item.source_view_rank)
+        covered_dimensions.add(item.dimension)
+    if covered_ranks != set(view_ids):
+        raise AnalysisValidationError("synthesis forecast_ledger must cover every top view")
+    if not required_dimensions.issubset(covered_dimensions):
+        missing = sorted(required_dimensions - covered_dimensions)
+        raise AnalysisValidationError(
+            f"synthesis forecast_ledger missing required dimensions: {missing}"
+        )
+
+
+def _check_memory_feedback(
+    synthesis: dict[str, Any], manifest: dict[str, Any], allowed: set[str],
+) -> None:
+    raw_items = synthesis.get("memory_feedback")
+    if not isinstance(raw_items, list):
+        raise AnalysisValidationError("synthesis memory_feedback must be a list")
+    items: list[MemoryFeedbackItem] = []
+    for index, raw in enumerate(raw_items):
+        try:
+            items.append(MemoryFeedbackItem.model_validate(raw))
+        except ValidationError as exc:
+            raise AnalysisValidationError(
+                f"synthesis.memory_feedback[{index}] is invalid: {exc.errors()[0]['msg']}"
+            ) from exc
+    advisory_ids = {
+        item.get("advisory_id")
+        for item in (
+            (manifest.get("synthesis_contract") or {})
+            .get("learning_context", {})
+            .get("advisories", [])
+        )
+        if isinstance(item, dict) and item.get("advisory_id")
+    }
+    submitted_ids = [item.advisory_id for item in items]
+    if len(submitted_ids) != len(set(submitted_ids)):
+        raise AnalysisValidationError("synthesis memory_feedback has duplicate advisory_id values")
+    if set(submitted_ids) != advisory_ids:
+        raise AnalysisValidationError(
+            "synthesis memory_feedback must address every supplied learning advisory exactly once"
+        )
+    for index, item in enumerate(items):
+        _check_ids(item.evidence_ids, allowed, f"synthesis.memory_feedback[{index}]")
+
+
 def load_manifest(manifest_path: Path) -> dict[str, Any]:
     manifest = _read(manifest_path)
     if manifest.get("schema_version") != PACKET_SCHEMA_VERSION:
@@ -339,6 +461,8 @@ def validate_synthesis_response(
         0 if synthesis["status"] == "blocked" else 6,
     )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
+    _check_forecast_ledger(synthesis, manifest, allowed)
+    _check_memory_feedback(synthesis, manifest, allowed)
     if synthesis["status"] != "blocked" and not synthesis["evidence_ids"]:
         raise AnalysisValidationError("synthesis requires cited evidence")
     snapshot_ids = {

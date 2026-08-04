@@ -67,6 +67,29 @@ def _synthesis_ids(manifest):
     })
 
 
+def _forecast_ledger(manifest):
+    contract = manifest["synthesis_contract"]["forecast_contract"]
+    items = []
+    for rank, dimension in enumerate(contract["required_dimensions"], start=1):
+        response = json.loads(
+            Path(manifest["role_response_paths"][manifest["roles"][rank - 1]]).read_text()
+        )
+        horizon = contract["horizons_sessions"][0]
+        items.append({
+            "forecast_id": (
+                f"{manifest['packet_id'][:16]}:v{rank}:{dimension}:h{horizon}"
+            ),
+            "source_view_rank": rank,
+            "dimension": dimension,
+            "metric_key": contract["dimensions"][dimension]["metric_key"],
+            "horizon_sessions": horizon,
+            "expected_label": contract["dimensions"][dimension]["labels"][0],
+            "confidence": "low",
+            "evidence_ids": [response["evidence_ids"][0]],
+        })
+    return items
+
+
 def test_quality_retries_only_missing_market_inputs():
     missing = assess_quality(_quality(futures_count=0, futures_status="INSUFFICIENT_DATA"), 1, 2)
     assert missing["should_retry"] is True
@@ -134,6 +157,11 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
         "supporting_evidence", "conflicting_evidence", "driver_analysis",
         "what_to_watch",
     }.issubset(view) for view in template["top_views"])
+    assert [item["source_view_rank"] for item in template["forecast_ledger"]] == [1, 2, 3]
+    assert set(manifest["synthesis_contract"]["forecast_contract"]["required_dimensions"]) == {
+        "price_direction", "volatility_direction", "market_impact",
+    }
+    assert template["memory_feedback"] == []
 
 
 def test_wti_packets_use_the_same_workflow_with_fundamentals_desk(tmp_path):
@@ -222,6 +250,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "plain_english_summary": "The test signals are mixed.",
                       "market_snapshot": _metrics(used_id, 6),
                       "top_views": _top_views(manifest),
+                      "forecast_ledger": _forecast_ledger(manifest),
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
     synthesis_path.write_text(json.dumps(synthesis))
@@ -231,6 +260,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "plain_english_summary": "The test signals are mixed.",
                       "market_snapshot": _metrics(used_id, 6),
                       "top_views": _top_views(manifest),
+                      "forecast_ledger": _forecast_ledger(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Mixed."},
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
@@ -245,6 +275,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert output["workflow_mode"] == "agent_orchestrated"
     assert output["statistics_integrated"] is True
     assert output["delivery_approved"] is False
+    assert output["synthesis"]["forecast_ledger"] == _forecast_ledger(manifest)
     markdown = md_path.read_text()
     assert "Overall forward view" in markdown and "Data limitations" in markdown
     assert "Driver and news validation" in markdown
@@ -259,7 +290,29 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert "*GOLD Daily Brief — 2026-07-20*" in mobile
     assert "*1. View from futures_curve*" in mobile
     assert "Numbers: Metric 1: 1.0%" in mobile
+    assert "forecast_ledger" not in mobile and "memory_feedback" not in mobile
     assert len(mobile) <= 2800
+
+    bad_synthesis = json.loads(synthesis_path.read_text())
+    bad_synthesis["forecast_ledger"][0]["expected_label"] = "certainly_up"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(AnalysisValidationError, match="expected_label is not configured"):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-forecast")
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["forecast_ledger"][0]["evidence_ids"] = [
+        bad_synthesis["forecast_ledger"][1]["evidence_ids"][0]
+    ]
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(AnalysisValidationError, match="evidence from its source top view"):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-link")
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["forecast_ledger"] = bad_synthesis["forecast_ledger"][:2]
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(AnalysisValidationError, match="cover every top view"):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-coverage")
+    synthesis_path.write_text(json.dumps(synthesis))
 
     bad_path = Path(manifest["role_response_paths"][manifest["roles"][0]])
     bad = json.loads(bad_path.read_text())
@@ -316,6 +369,7 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
                       "plain_english_summary": "The market signals are mixed today.",
                       "market_snapshot": _metrics(used, 6),
                       "top_views": _top_views(manifest),
+                      "forecast_ledger": _forecast_ledger(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Signals are mixed."},
                       "data_limitations": ["Synthetic evidence is limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
