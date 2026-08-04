@@ -120,11 +120,11 @@ def test_profiles_define_three_independent_roles(product_key):
     )
 
 
-def _learning_snapshot():
+def _learning_snapshot(status="active"):
     return {
         "schema_version": 1, "as_of": "2026-07-20", "memory_sha256": "a" * 64,
         "advisories": [{
-            "advisory_id": "learning:abc123", "status": "active",
+            "advisory_id": "learning:abc123", "status": status,
             "scope": {"dimension": "price_direction", "horizon_sessions": 1,
                       "confidence": "high"},
             "observation": "Historical hit rate was 60% across twenty forecasts.",
@@ -240,6 +240,17 @@ def test_packet_identity_includes_immutable_learning_snapshot(tmp_path):
         ]).read_text()
     )
     assert template["memory_feedback"][0]["advisory_id"] == "learning:abc123"
+
+
+def test_shadow_learning_is_visible_but_cannot_be_used(tmp_path):
+    manifest = _packets(tmp_path, learning_snapshot=_learning_snapshot("shadow"))
+    template = json.loads(Path(manifest["synthesis_response_template"]).read_text())
+    assert template["memory_feedback"][0]["disposition"] == (
+        "shadow_would_use|shadow_rejected"
+    )
+    context = manifest["synthesis_contract"]["learning_context"]
+    assert context["advisories"][0]["status"] == "shadow"
+    assert "must not influence" in context["rule"]
 
 
 def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
@@ -364,6 +375,12 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     synthesis_path.write_text(json.dumps(bad_synthesis))
     with pytest.raises(AnalysisValidationError, match="cover every top view"):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-coverage")
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["memory_feedback"][0]["disposition"] = "shadow_would_use"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(AnalysisValidationError, match="invalid active disposition"):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-memory")
     synthesis_path.write_text(json.dumps(synthesis))
 
     bad_path = Path(manifest["role_response_paths"][manifest["roles"][0]])

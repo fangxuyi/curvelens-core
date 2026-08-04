@@ -22,7 +22,7 @@ CCVM_DIR = REPO_ROOT / "ccvm"
 sys.path.insert(0, str(CCVM_DIR / "src"))
 
 from ccvm.reference.product import get_product
-from ccvm.learning.memory import build_memory, promote_advisory
+from ccvm.learning.memory import activate_advisory, build_memory, promote_advisory
 from ccvm.runtime import data_dir
 from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
 from ccvm.workflow.monitoring import build_monitor, monitor_paths, record_event
@@ -110,6 +110,7 @@ def main() -> None:
         "command", choices=(
             "start", "advance", "status", "inspect", "retrospect", "learn",
             "promote-learning",
+            "activate-learning",
         )
     )
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
@@ -152,7 +153,19 @@ def main() -> None:
                     )
                 memory = promote_advisory(data_dir(), args.advisory_id)
                 _emit({
-                    "result": "LEARNING_ADVISORY_PROMOTED",
+                    "result": "LEARNING_ADVISORY_SHADOWED",
+                    "advisory_id": args.advisory_id,
+                    "memory": str(data_dir() / "learning" / "memory.json"),
+                    "active_count": len(memory["active_advisories"]),
+                })
+            if args.command == "activate-learning":
+                if not args.advisory_id:
+                    raise AnalysisValidationError(
+                        "activate-learning requires --advisory-id"
+                    )
+                memory = activate_advisory(data_dir(), args.advisory_id)
+                _emit({
+                    "result": "LEARNING_ADVISORY_ACTIVATED",
                     "advisory_id": args.advisory_id,
                     "memory": str(data_dir() / "learning" / "memory.json"),
                     "active_count": len(memory["active_advisories"]),

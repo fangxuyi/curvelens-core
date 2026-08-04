@@ -309,7 +309,27 @@ def _check_memory_feedback(
         raise AnalysisValidationError(
             "synthesis memory_feedback must address every supplied learning advisory exactly once"
         )
+    advisory_status = {
+        item["advisory_id"]: item.get("status")
+        for item in (
+            (manifest.get("synthesis_contract") or {})
+            .get("learning_context", {})
+            .get("advisories", [])
+        )
+        if isinstance(item, dict) and item.get("advisory_id")
+    }
     for index, item in enumerate(items):
+        status = advisory_status[item.advisory_id]
+        if status == "shadow" and item.disposition not in {
+            "shadow_would_use", "shadow_rejected",
+        }:
+            raise AnalysisValidationError(
+                f"synthesis.memory_feedback[{index}] must preserve shadow isolation"
+            )
+        if status == "active" and item.disposition not in {"used", "rejected"}:
+            raise AnalysisValidationError(
+                f"synthesis.memory_feedback[{index}] has invalid active disposition"
+            )
         _check_ids(item.evidence_ids, allowed, f"synthesis.memory_feedback[{index}]")
 
 

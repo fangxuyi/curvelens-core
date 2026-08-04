@@ -11,7 +11,7 @@ from ccvm.reference.product import Product
 from ccvm.schemas.learning import LearningAdvisory
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 7
+PACKET_SCHEMA_VERSION = 8
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -173,11 +173,14 @@ def build_analysis_packets(
         "memory_sha256": "", "advisories": [],
     }
     raw_advisories = learning_snapshot.get("advisories")
-    if not isinstance(raw_advisories, list) or len(raw_advisories) > 8:
-        raise ValueError("learning snapshot must contain at most 8 advisories")
+    if not isinstance(raw_advisories, list) or len(raw_advisories) > 16:
+        raise ValueError("learning snapshot must contain at most 16 advisories")
     advisories = [LearningAdvisory.model_validate(item) for item in raw_advisories]
-    if any(item.status != "active" for item in advisories):
-        raise ValueError("learning snapshot may contain only active advisories")
+    if any(item.status not in {"active", "shadow"} for item in advisories):
+        raise ValueError("learning snapshot may contain only active or shadow advisories")
+    if sum(item.status == "active" for item in advisories) > 8 \
+            or sum(item.status == "shadow" for item in advisories) > 8:
+        raise ValueError("learning snapshot exceeds active or shadow advisory caps")
     normalized_learning = {
         "schema_version": int(learning_snapshot.get("schema_version", 1)),
         "as_of": str(learning_snapshot.get("as_of", trade_date)),
@@ -405,7 +408,9 @@ def build_analysis_packets(
                 **normalized_learning,
                 "rule": (
                     "Learning advisories are hypotheses, never evidence. Record used or rejected "
-                    "advisories in memory_feedback; leave memory_feedback empty when none are supplied."
+                    "active advisories in memory_feedback. Shadow advisories must not influence the "
+                    "analysis; record only whether they would have been used. Leave memory_feedback "
+                    "empty when none are supplied."
                 ),
             },
             "do_not": [
@@ -427,7 +432,10 @@ def build_analysis_packets(
         ],
         "memory_feedback": [{
             "advisory_id": item.advisory_id,
-            "disposition": "used|rejected",
+            "disposition": (
+                "used|rejected" if item.status == "active"
+                else "shadow_would_use|shadow_rejected"
+            ),
             "rationale": "",
             "evidence_ids": [],
         } for item in advisories],

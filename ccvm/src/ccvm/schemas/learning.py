@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 import re
 from datetime import date, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -91,7 +91,9 @@ class MemoryFeedbackItem(_LearningModel):
     """The ex-ante disposition and rationale for a supplied advisory."""
 
     advisory_id: SafeIdentifier
-    disposition: Literal["used", "rejected"]
+    disposition: Literal[
+        "used", "rejected", "shadow_would_use", "shadow_rejected",
+    ]
     rationale: Annotated[str, Field(min_length=1, max_length=2048)]
     evidence_ids: Annotated[
         list[SafeIdentifier],
@@ -277,7 +279,7 @@ class LearningAdvisory(_LearningModel):
     """Bounded aggregate memory; never a new source of market evidence."""
 
     advisory_id: SafeIdentifier
-    status: Literal["candidate", "active", "retired"]
+    status: Literal["candidate", "shadow", "active", "retired"]
     scope: LearningScope
     observation: Annotated[str, Field(min_length=1, max_length=512)]
     suggested_adjustment: Annotated[str, Field(min_length=1, max_length=512)]
@@ -292,6 +294,7 @@ class LearningAdvisory(_LearningModel):
     ]
     created_at: datetime
     updated_at: datetime
+    shadow_evaluation: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("created_at", "updated_at")
     @classmethod

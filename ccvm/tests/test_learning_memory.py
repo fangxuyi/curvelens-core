@@ -7,6 +7,7 @@ import pytest
 
 from ccvm.learning.memory import (
     MAX_ACTIVE_ADVISORIES,
+    activate_advisory,
     build_memory,
     load_active_snapshot,
     promote_advisory,
@@ -45,6 +46,26 @@ def _write_evaluations(root, count, *, dimension="price_direction", hit_rate=1.0
     (path / "evaluation.json").write_text(json.dumps({"evaluations": records}))
 
 
+def _write_shadow_reviews(root, advisory_id, *, hits=True):
+    for offset, day in enumerate(range(2, 7), start=100):
+        trade_date = f"2026-07-{day:02d}"
+        evaluation = root / "learning" / "evaluations" / f"trade_date={trade_date}"
+        evaluation.mkdir(parents=True, exist_ok=True)
+        (evaluation / "evaluation.json").write_text(json.dumps({
+            "evaluations": [_evaluation(offset, hit=hits)],
+        }))
+        analysis = root / "analysis" / f"trade_date={trade_date}"
+        analysis.mkdir(parents=True, exist_ok=True)
+        (analysis / "analysis.json").write_text(json.dumps({
+            "synthesis": {"memory_feedback": [{
+                "advisory_id": advisory_id,
+                "disposition": "shadow_would_use",
+                "rationale": "Would retain for this shadow review.",
+                "evidence_ids": [],
+            }]},
+        }))
+
+
 def test_memory_candidate_is_created_at_five_samples(tmp_path):
     _write_evaluations(tmp_path, 5, hit_rate=0.4)
     memory = build_memory(tmp_path, as_of=date(2026, 7, 2))
@@ -67,15 +88,31 @@ def test_promotion_requires_twenty_samples_and_persists(tmp_path):
     memory = build_memory(tmp_path, as_of=date(2026, 7, 2))
     advisory_id = memory["entries"][0]["advisory_id"]
     promoted = promote_advisory(tmp_path, advisory_id)
-    assert promoted["active_advisories"][0]["status"] == "active"
+    assert promoted["shadow_advisories"][0]["status"] == "shadow"
+    assert promoted["active_advisories"] == []
     rebuilt = build_memory(tmp_path, as_of=date(2026, 7, 2))
-    assert rebuilt["entries"][0]["status"] == "active"
+    assert rebuilt["entries"][0]["status"] == "shadow"
     events = (tmp_path / "learning" / "memory_events.jsonl").read_text()
-    assert "candidate_created" in events and "advisory_promoted" in events
+    assert "candidate_created" in events and "advisory_shadowed" in events
 
     snapshot = load_active_snapshot(tmp_path, date(2026, 7, 2))
     assert snapshot["advisories"][0]["advisory_id"] == advisory_id
+    assert snapshot["advisories"][0]["status"] == "shadow"
     assert len(snapshot["memory_sha256"]) == 64
+
+    with pytest.raises(ValueError, match="no-degradation"):
+        activate_advisory(tmp_path, advisory_id)
+
+    _write_shadow_reviews(tmp_path, advisory_id)
+    assessed = build_memory(tmp_path, as_of=date(2026, 7, 7))
+    assert assessed["entries"][0]["shadow_evaluation"]["no_degradation_passed"] is True
+    assert assessed["entries"][0]["shadow_evaluation"]["replay_passed"] is True
+    activated = activate_advisory(tmp_path, advisory_id)
+    assert activated["active_advisories"][0]["status"] == "active"
+    _write_shadow_reviews(tmp_path, advisory_id, hits=False)
+    retired = build_memory(tmp_path, as_of=date(2026, 7, 7))
+    assert retired["entries"][0]["status"] == "retired"
+    assert retired["active_advisories"] == []
 
 
 def test_snapshot_rejects_lookahead_memory(tmp_path):

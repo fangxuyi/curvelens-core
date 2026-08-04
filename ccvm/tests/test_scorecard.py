@@ -13,8 +13,10 @@ class _FakePQ:
     """Minimal ParquetStore stand-in: settle series keyed by date."""
     def __init__(self, settles: dict[str, float]):
         self.settles = settles
+        self.layers = []
 
     def list_dates(self, layer, dataset):
+        self.layers.append(layer)
         return sorted(self.settles)
 
     def read(self, layer, dataset, dt):
@@ -65,3 +67,20 @@ def test_nondirectional_states_no_hit_rate(tmp_path):
     out = compute(pq, tmp_path, dates[-1])
     row = out["states"][0]
     assert row["hit_rate_3d"] is None and row["avg_fwd_3d"] == 0.0
+
+
+def test_scorecard_is_product_and_storage_layer_driven(tmp_path):
+    settles = {"2026-07-01": 100, "2026-07-02": 101,
+               "2026-07-03": 102, "2026-07-04": 103}
+    states = {"2026-07-01": "confirmed_upside_risk"}
+    for dt, state in states.items():
+        path = tmp_path / "copper" / "agreement" / f"trade_date={dt}"
+        path.mkdir(parents=True)
+        (path / "agreement.json").write_text(json.dumps({"state": state}))
+    pq = _FakePQ(settles)
+    result = compute(
+        pq, tmp_path, "2026-07-04", product="copper", layer="shared_features",
+    )
+    assert result["product"] == "copper"
+    assert pq.layers == ["shared_features"]
+    assert result["states"][0]["state"] == "confirmed_upside_risk"
