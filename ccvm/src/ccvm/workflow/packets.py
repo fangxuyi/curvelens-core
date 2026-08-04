@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from ccvm.reference.product import Product
+from ccvm.schemas.learning import LearningAdvisory
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 6
+PACKET_SCHEMA_VERSION = 7
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -157,6 +158,7 @@ def _forecast_template(rank: int, packet_id: str) -> dict[str, Any]:
 def build_analysis_packets(
     *, product: Product, trade_date: str, report: dict[str, Any],
     quality: dict[str, Any], articles: list[dict[str, Any]], output_dir: Path,
+    learning_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Write one independent packet per configured role plus a coordinator manifest."""
     sections = report.get("sections", {})
@@ -166,6 +168,22 @@ def build_analysis_packets(
     role_templates: dict[str, str] = {}
     role_responses: dict[str, str] = {}
     role_packet_hashes: dict[str, str] = {}
+    learning_snapshot = learning_snapshot or {
+        "schema_version": 1, "as_of": trade_date,
+        "memory_sha256": "", "advisories": [],
+    }
+    raw_advisories = learning_snapshot.get("advisories")
+    if not isinstance(raw_advisories, list) or len(raw_advisories) > 8:
+        raise ValueError("learning snapshot must contain at most 8 advisories")
+    advisories = [LearningAdvisory.model_validate(item) for item in raw_advisories]
+    if any(item.status != "active" for item in advisories):
+        raise ValueError("learning snapshot may contain only active advisories")
+    normalized_learning = {
+        "schema_version": int(learning_snapshot.get("schema_version", 1)),
+        "as_of": str(learning_snapshot.get("as_of", trade_date)),
+        "memory_sha256": str(learning_snapshot.get("memory_sha256", "")),
+        "advisories": [item.model_dump(mode="json") for item in advisories],
+    }
 
     configured_sections = {
         key for role in product.analysis_roles for key in role.section_keys
@@ -222,6 +240,7 @@ def build_analysis_packets(
             "horizons_sessions": FORECAST_HORIZONS_SESSIONS,
             "dimensions": FORECAST_DIMENSIONS,
         },
+        "learning_snapshot": normalized_learning,
     }, sort_keys=True, default=str).encode()
     packet_id = hashlib.sha256(fingerprint).hexdigest()
 
@@ -383,7 +402,7 @@ def build_analysis_packets(
                 ),
             },
             "learning_context": {
-                "advisories": [],
+                **normalized_learning,
                 "rule": (
                     "Learning advisories are hypotheses, never evidence. Record used or rejected "
                     "advisories in memory_feedback; leave memory_feedback empty when none are supplied."
@@ -406,7 +425,12 @@ def build_analysis_packets(
         "forecast_ledger": [
             _forecast_template(rank, packet_id) for rank in (1, 2, 3)
         ],
-        "memory_feedback": [],
+        "memory_feedback": [{
+            "advisory_id": item.advisory_id,
+            "disposition": "used|rejected",
+            "rationale": "",
+            "evidence_ids": [],
+        } for item in advisories],
         "market_snapshot": [],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],

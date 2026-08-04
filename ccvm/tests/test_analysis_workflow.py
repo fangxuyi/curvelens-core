@@ -120,7 +120,24 @@ def test_profiles_define_three_independent_roles(product_key):
     )
 
 
-def _packets(tmp_path: Path):
+def _learning_snapshot():
+    return {
+        "schema_version": 1, "as_of": "2026-07-20", "memory_sha256": "a" * 64,
+        "advisories": [{
+            "advisory_id": "learning:abc123", "status": "active",
+            "scope": {"dimension": "price_direction", "horizon_sessions": 1,
+                      "confidence": "high"},
+            "observation": "Historical hit rate was 60% across twenty forecasts.",
+            "suggested_adjustment": "Keep confidence bounded by current evidence.",
+            "sample_size": 20, "hits": 12, "hit_rate": 0.6, "mean_brier": 0.22,
+            "promotion_eligible": True, "source_evaluation_sha256": ["b" * 64],
+            "created_at": "2026-07-19T12:00:00+00:00",
+            "updated_at": "2026-07-19T12:00:00+00:00",
+        }],
+    }
+
+
+def _packets(tmp_path: Path, learning_snapshot=None):
     report = {"sections": {
         "what_changed": {"move": 1}, "market_risk": {"iv": .2},
         "rnd": {"status": "invalid_surface"}, "macro": {"real_yield": 2.0},
@@ -136,6 +153,7 @@ def _packets(tmp_path: Path):
     return build_analysis_packets(
         product=load_product("gold"), trade_date="2026-07-20", report=report,
         quality=_quality(options_status="WARN"), articles=articles, output_dir=tmp_path,
+        learning_snapshot=learning_snapshot,
     )
 
 
@@ -209,6 +227,21 @@ def test_packet_identity_includes_forecast_policy(monkeypatch, tmp_path):
     assert first != second
 
 
+def test_packet_identity_includes_immutable_learning_snapshot(tmp_path):
+    snapshot = _learning_snapshot()
+    first = _packets(tmp_path / "a", learning_snapshot=snapshot)["packet_id"]
+    changed = json.loads(json.dumps(snapshot))
+    changed["advisories"][0]["sample_size"] = 21
+    second = _packets(tmp_path / "b", learning_snapshot=changed)["packet_id"]
+    assert first != second
+    template = json.loads(
+        Path(_packets(tmp_path / "c", learning_snapshot=snapshot)[
+            "synthesis_response_template"
+        ]).read_text()
+    )
+    assert template["memory_feedback"][0]["advisory_id"] == "learning:abc123"
+
+
 def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
     base = load_product("gold")
     roles = tuple(
@@ -230,7 +263,7 @@ def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
 
 
 def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
-    manifest = _packets(tmp_path / "packets")
+    manifest = _packets(tmp_path / "packets", learning_snapshot=_learning_snapshot())
     for role in manifest["roles"]:
         template = Path(manifest["role_response_templates"][role])
         path = Path(manifest["role_response_paths"][role])
@@ -253,6 +286,10 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     synthesis_template = Path(manifest["synthesis_response_template"])
     synthesis_path = Path(manifest["synthesis_response_path"])
     synthesis = json.loads(synthesis_template.read_text())
+    synthesis["memory_feedback"][0].update({
+        "disposition": "used",
+        "rationale": "Current validated evidence supports retaining the bounded reminder.",
+    })
     used_id = json.loads(
         Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text()
     )["evidence_ids"][0]
@@ -290,6 +327,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert output["forecast_contract"]["dimensions"]["volatility_direction"][
         "outcome_rule"
     ]["source_metric"] == "front_atm_iv"
+    assert output["synthesis"]["memory_feedback"][0]["advisory_id"] == "learning:abc123"
     markdown = md_path.read_text()
     assert "Overall forward view" in markdown and "Data limitations" in markdown
     assert "Driver and news validation" in markdown
@@ -540,7 +578,10 @@ def test_project_skill_and_custom_agents_are_generic():
     text = skill.read_text()
     assert "analysis_orchestrator.py" in text
     assert "RUN_SPECIALIST" in text and "native subagents" in text
-    for name in ("curvelens_data_qc", "curvelens_specialist", "curvelens_synthesizer"):
+    for name in (
+        "curvelens_data_qc", "curvelens_specialist", "curvelens_synthesizer",
+        "curvelens_retrospective",
+    ):
         config = tomllib.loads((root / ".codex" / "agents" / f"{name}.toml").read_text())
         assert config["name"] == name
         assert config["description"] and config["developer_instructions"]

@@ -8,6 +8,7 @@ import pytest
 from ccvm.learning.memory import (
     MAX_ACTIVE_ADVISORIES,
     build_memory,
+    load_active_snapshot,
     promote_advisory,
 )
 
@@ -71,6 +72,19 @@ def test_promotion_requires_twenty_samples_and_persists(tmp_path):
     assert rebuilt["entries"][0]["status"] == "active"
     events = (tmp_path / "learning" / "memory_events.jsonl").read_text()
     assert "candidate_created" in events and "advisory_promoted" in events
+
+    snapshot = load_active_snapshot(tmp_path, date(2026, 7, 2))
+    assert snapshot["advisories"][0]["advisory_id"] == advisory_id
+    assert len(snapshot["memory_sha256"]) == 64
+
+
+def test_snapshot_rejects_lookahead_memory(tmp_path):
+    _write_evaluations(tmp_path, 20)
+    memory = build_memory(tmp_path, as_of=date(2026, 7, 2))
+    promote_advisory(tmp_path, memory["entries"][0]["advisory_id"])
+    snapshot = load_active_snapshot(tmp_path, date(2026, 7, 1))
+    assert snapshot["advisories"] == []
+    assert "newer than" in snapshot["unavailable_reason"]
 
 
 def test_memory_is_product_isolated_by_runtime_root(tmp_path):
