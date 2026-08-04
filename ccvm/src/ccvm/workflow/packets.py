@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from ccvm.reference.product import Product
-from ccvm.schemas.learning import LearningAdvisory
+from ccvm.schemas.learning import LearningAdvisory, MobileLearningAdvisory
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 10
+PACKET_SCHEMA_VERSION = 11
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -192,8 +192,8 @@ def build_analysis_packets(
     role_responses: dict[str, str] = {}
     role_packet_hashes: dict[str, str] = {}
     learning_snapshot = learning_snapshot or {
-        "schema_version": 1, "as_of": trade_date,
-        "memory_sha256": "", "advisories": [],
+        "schema_version": 2, "as_of": trade_date,
+        "memory_sha256": "", "advisories": [], "mobile_advisories": [],
     }
     raw_advisories = learning_snapshot.get("advisories")
     if not isinstance(raw_advisories, list) or len(raw_advisories) > 16:
@@ -204,11 +204,25 @@ def build_analysis_packets(
     if sum(item.status == "active" for item in advisories) > 8 \
             or sum(item.status == "shadow" for item in advisories) > 8:
         raise ValueError("learning snapshot exceeds active or shadow advisory caps")
+    raw_mobile_advisories = learning_snapshot.get("mobile_advisories", [])
+    if not isinstance(raw_mobile_advisories, list) or len(raw_mobile_advisories) > 8:
+        raise ValueError("learning snapshot must contain at most 8 mobile advisories")
+    mobile_advisories = [
+        MobileLearningAdvisory.model_validate(item) for item in raw_mobile_advisories
+    ]
+    if any(item.status not in {"active", "shadow"} for item in mobile_advisories):
+        raise ValueError("mobile learning snapshot may contain only active or shadow advisories")
+    if sum(item.status == "active" for item in mobile_advisories) > 4 \
+            or sum(item.status == "shadow" for item in mobile_advisories) > 4:
+        raise ValueError("mobile learning snapshot exceeds active or shadow advisory caps")
     normalized_learning = {
-        "schema_version": int(learning_snapshot.get("schema_version", 1)),
+        "schema_version": int(learning_snapshot.get("schema_version", 2)),
         "as_of": str(learning_snapshot.get("as_of", trade_date)),
         "memory_sha256": str(learning_snapshot.get("memory_sha256", "")),
         "advisories": [item.model_dump(mode="json") for item in advisories],
+        "mobile_advisories": [
+            item.model_dump(mode="json") for item in mobile_advisories
+        ],
     }
 
     configured_sections = {
@@ -459,6 +473,12 @@ def build_analysis_packets(
                     "analysis; record only whether they would have been used. Leave memory_feedback "
                     "empty when none are supplied."
                 ),
+                "mobile_rule": (
+                    "Mobile learning advisories are historical editorial hypotheses and never market "
+                    "evidence. Active mobile advisories may affect only mobile_selection and must be "
+                    "recorded as used or rejected. Shadow mobile advisories must not affect top views, "
+                    "forecasts, wording, or mobile_selection; record only counterfactual would-use feedback."
+                ),
             },
             "do_not": [
                 "invent missing evidence", "present settlement analytics as executable prices",
@@ -487,6 +507,15 @@ def build_analysis_packets(
             "rationale": "",
             "evidence_ids": [],
         } for item in advisories],
+        "mobile_memory_feedback": [{
+            "advisory_id": item.advisory_id,
+            "disposition": (
+                "used|rejected" if item.status == "active"
+                else "shadow_would_use|shadow_rejected"
+            ),
+            "rationale": "",
+            "evidence_ids": [],
+        } for item in mobile_advisories],
         "market_snapshot": [],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],
