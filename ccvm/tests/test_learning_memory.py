@@ -7,6 +7,7 @@ import pytest
 
 from ccvm.learning.memory import (
     MAX_ACTIVE_ADVISORIES,
+    MAX_ACTIVE_INVESTIGATOR_ADVISORIES,
     MAX_ACTIVE_MOBILE_ADVISORIES,
     activate_advisory,
     build_memory,
@@ -125,6 +126,77 @@ def _write_mobile_shadow_reviews(root, advisory_id, *, material=True):
                 "advisory_id": advisory_id,
                 "disposition": "shadow_would_use",
                 "rationale": "Would use for this shadow review.",
+                "evidence_ids": [],
+            }]},
+        }))
+
+
+def _investigator_evaluation(index, *, role="futures_curve", material=True):
+    investigation_id = f"packet{index:04d}:futures_curve"
+    return {
+        "schema_version": 1,
+        "finding_id": f"{investigation_id}:f1",
+        "investigation_id": investigation_id,
+        "role": role,
+        "horizon_sessions": 1,
+        "expected_materiality": "medium",
+        "expected_impact_dimensions": ["price_direction"],
+        "confidence": "medium",
+        "lead_disposition": "used" if material else "rejected",
+        "lead_used_finding": material,
+        "status": "scored",
+        "unscored_reason": "",
+        "realized_materiality": "material" if material else "muted",
+        "materiality_score": 1 if material else 0,
+        "materiality_hit": material,
+        "material": material,
+        "rejected_but_material": False,
+        "dimension_results": [{
+            "dimension": "price_direction",
+            "absolute_change": 0.01 if material else 0.001,
+            "realized_materiality": "material" if material else "muted",
+            "outcome_id": f"investigator-outcome:{index:024d}",
+        }],
+        "evidence_validation_passed": True,
+        "analysis_sha256": HASH,
+        "outcome_sha256": [HASH],
+        "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        "evaluator_version": 1,
+    }
+
+
+def _write_investigator_evaluations(root, count, *, material_count=None):
+    path = root / "learning" / "evaluations" / "trade_date=2026-07-01"
+    path.mkdir(parents=True, exist_ok=True)
+    material_count = count if material_count is None else material_count
+    records = [
+        _investigator_evaluation(index, material=index < material_count)
+        for index in range(count)
+    ]
+    (path / "evaluation.json").write_text(json.dumps({
+        "evaluations": [],
+        "investigator_relevance": {"records": records},
+    }))
+
+
+def _write_investigator_shadow_reviews(root, advisory_id, *, material=True):
+    for offset, day in enumerate(range(2, 7), start=300):
+        trade_date = f"2026-07-{day:02d}"
+        evaluation = root / "learning" / "evaluations" / f"trade_date={trade_date}"
+        evaluation.mkdir(parents=True, exist_ok=True)
+        (evaluation / "evaluation.json").write_text(json.dumps({
+            "evaluations": [],
+            "investigator_relevance": {
+                "records": [_investigator_evaluation(offset, material=material)],
+            },
+        }))
+        analysis = root / "analysis" / f"trade_date={trade_date}"
+        analysis.mkdir(parents=True, exist_ok=True)
+        (analysis / "analysis.json").write_text(json.dumps({
+            "research_plan": {"investigator_memory_feedback": [{
+                "advisory_id": advisory_id,
+                "disposition": "shadow_would_use",
+                "rationale": "Would use for this shadow dispatch review.",
                 "evidence_ids": [],
             }]},
         }))
@@ -305,4 +377,50 @@ def test_schema_one_memory_remains_readable_during_mobile_upgrade(tmp_path):
 
     assert snapshot["advisories"][0]["advisory_id"] == advisory_id
     assert snapshot["mobile_advisories"] == []
-    assert snapshot["schema_version"] == 2
+    assert snapshot["schema_version"] == 3
+
+
+def test_investigator_candidate_is_product_role_and_scope_specific(tmp_path):
+    _write_investigator_evaluations(tmp_path, 5, material_count=4)
+    memory = build_memory(tmp_path, as_of=date(2026, 7, 2))
+    entry = memory["investigator_entries"][0]
+    assert entry["scope"] == {
+        "role": "futures_curve", "horizon_sessions": 1,
+        "expected_materiality": "medium",
+        "impact_dimensions": ["price_direction"],
+    }
+    assert entry["recommendation"] == "prefer_dispatch"
+    assert entry["status"] == "candidate"
+    assert memory["active_investigator_advisories"] == []
+
+
+def test_investigator_promotion_shadow_activation_and_snapshot_are_guarded(tmp_path):
+    _write_investigator_evaluations(tmp_path, 20, material_count=20)
+    memory = build_memory(tmp_path, as_of=date(2026, 7, 2))
+    advisory_id = memory["investigator_entries"][0]["advisory_id"]
+    promoted = promote_advisory(tmp_path, advisory_id)
+    assert promoted["shadow_investigator_advisories"][0]["status"] == "shadow"
+    with pytest.raises(ValueError, match="no-degradation"):
+        activate_advisory(tmp_path, advisory_id)
+
+    _write_investigator_shadow_reviews(tmp_path, advisory_id, material=True)
+    assessed = build_memory(tmp_path, as_of=date(2026, 7, 7))
+    shadow = assessed["shadow_investigator_advisories"][0]
+    assert shadow["shadow_evaluation"]["no_degradation_passed"] is True
+    activated = activate_advisory(tmp_path, advisory_id)
+    assert activated["active_investigator_advisories"][0]["status"] == "active"
+    assert len(activated["active_investigator_advisories"]) \
+        <= MAX_ACTIVE_INVESTIGATOR_ADVISORIES
+    snapshot = load_active_snapshot(tmp_path, date(2026, 7, 7))
+    assert snapshot["investigator_advisories"][0]["advisory_id"] == advisory_id
+
+
+def test_investigator_memory_is_product_isolated(tmp_path):
+    gold = tmp_path / "gold"
+    wti = tmp_path / "wti"
+    _write_investigator_evaluations(gold, 5, material_count=5)
+    _write_investigator_evaluations(wti, 5, material_count=0)
+    gold_memory = build_memory(gold, as_of=date(2026, 7, 2))
+    wti_memory = build_memory(wti, as_of=date(2026, 7, 2))
+    assert gold_memory["investigator_entries"][0]["recommendation"] == "prefer_dispatch"
+    assert wti_memory["investigator_entries"][0]["recommendation"] == "prefer_skip"

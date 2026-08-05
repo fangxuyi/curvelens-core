@@ -5,6 +5,7 @@ from ccvm.schemas.learning import (
     ForecastLedgerItem,
     MemoryFeedbackItem,
     MobileLearningAdvisory,
+    InvestigatorLearningAdvisory,
 )
 
 
@@ -146,3 +147,35 @@ def test_mobile_learning_advisory_rejects_unstable_scope_and_counts():
         MobileLearningAdvisory.model_validate(
             mobile_advisory_payload(recommendation="neutral")
         )
+
+
+def test_investigator_learning_advisory_has_strict_capability_scope():
+    payload = {
+        "advisory_id": "investigator-learning:abc123", "status": "candidate",
+        "scope": {
+            "role": "futures_curve", "horizon_sessions": 1,
+            "expected_materiality": "medium",
+            "impact_dimensions": ["price_direction"],
+        },
+        "recommendation": "prefer_dispatch",
+        "observation": "Materiality was high in the scored sample.",
+        "suggested_adjustment": "Prefer dispatch only when current evidence matches.",
+        "sample_size": 20, "material_count": 14, "material_rate": 0.7,
+        "materiality_hit_rate": 0.6, "lead_use_rate": 0.5,
+        "rejected_material_rate": 0.1, "promotion_eligible": True,
+        "source_evaluation_sha256": ["a" * 64],
+        "created_at": "2026-07-19T12:00:00+00:00",
+        "updated_at": "2026-07-19T12:00:00+00:00",
+    }
+    advisory = InvestigatorLearningAdvisory.model_validate(payload)
+    assert advisory.scope.role == "futures_curve"
+    payload["scope"]["impact_dimensions"] = [
+        "volatility_direction", "price_direction",
+    ]
+    with pytest.raises(ValidationError, match="unique and sorted"):
+        InvestigatorLearningAdvisory.model_validate(payload)
+
+    payload["scope"]["impact_dimensions"] = ["price_direction"]
+    payload["material_rate"] = 0.6
+    with pytest.raises(ValidationError, match="must match"):
+        InvestigatorLearningAdvisory.model_validate(payload)

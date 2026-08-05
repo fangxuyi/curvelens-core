@@ -142,6 +142,12 @@ def main() -> None:
                     "memory": str(data_dir() / "learning" / "memory.json"),
                     "entry_count": len(memory["entries"]),
                     "active_count": len(memory["active_advisories"]),
+                    "mobile_entry_count": len(memory["mobile_entries"]),
+                    "active_mobile_count": len(memory["active_mobile_advisories"]),
+                    "investigator_entry_count": len(memory["investigator_entries"]),
+                    "active_investigator_count": len(
+                        memory["active_investigator_advisories"]
+                    ),
                     "retrospectives": refresh["results"],
                     "retrospective_errors": refresh["errors"],
                     "actions": refresh["actions"],
@@ -157,6 +163,10 @@ def main() -> None:
                     "advisory_id": args.advisory_id,
                     "memory": str(data_dir() / "learning" / "memory.json"),
                     "active_count": len(memory["active_advisories"]),
+                    "active_mobile_count": len(memory["active_mobile_advisories"]),
+                    "active_investigator_count": len(
+                        memory["active_investigator_advisories"]
+                    ),
                 })
             if args.command == "activate-learning":
                 if not args.advisory_id:
@@ -169,6 +179,10 @@ def main() -> None:
                     "advisory_id": args.advisory_id,
                     "memory": str(data_dir() / "learning" / "memory.json"),
                     "active_count": len(memory["active_advisories"]),
+                    "active_mobile_count": len(memory["active_mobile_advisories"]),
+                    "active_investigator_count": len(
+                        memory["active_investigator_advisories"]
+                    ),
                 })
             if args.command == "retrospect":
                 _emit(prepare_retrospective(data_dir(), as_of_str))

@@ -436,6 +436,69 @@ class MobileLearningAdvisory(_LearningModel):
         return self
 
 
+class InvestigatorLearningScope(_LearningModel):
+    """Stable product-local scope for one investigator capability pattern."""
+
+    role: SafeKey
+    horizon_sessions: Annotated[int, Field(strict=True, gt=0, le=_MAX_HORIZON_SESSIONS)]
+    expected_materiality: Literal["high", "medium", "low"]
+    impact_dimensions: Annotated[list[SafeKey], Field(min_length=1, max_length=3)]
+
+    @field_validator("impact_dimensions")
+    @classmethod
+    def require_unique_sorted_dimensions(cls, value: list[str]) -> list[str]:
+        if value != sorted(set(value)):
+            raise ValueError("impact_dimensions must be unique and sorted")
+        return value
+
+
+class InvestigatorLearningAdvisory(_LearningModel):
+    """Guarded advice that may affect only investigator planning and assignment."""
+
+    advisory_id: SafeIdentifier
+    status: Literal["candidate", "shadow", "active", "retired"]
+    scope: InvestigatorLearningScope
+    recommendation: Literal["prefer_dispatch", "prefer_skip", "neutral"]
+    observation: Annotated[str, Field(min_length=1, max_length=512)]
+    suggested_adjustment: Annotated[str, Field(min_length=1, max_length=512)]
+    sample_size: Annotated[int, Field(strict=True, ge=1)]
+    material_count: Annotated[int, Field(strict=True, ge=0)]
+    material_rate: Annotated[float, Field(ge=0, le=1)]
+    materiality_hit_rate: Annotated[float, Field(ge=0, le=1)]
+    lead_use_rate: Annotated[float, Field(ge=0, le=1)]
+    rejected_material_rate: Annotated[float, Field(ge=0, le=1)]
+    promotion_eligible: bool
+    source_evaluation_sha256: Annotated[
+        list[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]],
+        Field(min_length=1, max_length=252),
+    ]
+    created_at: datetime
+    updated_at: datetime
+    shadow_evaluation: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("observation", "suggested_adjustment")
+    @classmethod
+    def validate_advisory_text(cls, value: str, info) -> str:
+        return _validate_text(value, info.field_name)
+
+    @field_validator("created_at", "updated_at")
+    @classmethod
+    def require_investigator_advisory_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("investigator learning timestamps must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_counts(self) -> InvestigatorLearningAdvisory:
+        if self.material_count > self.sample_size:
+            raise ValueError("material_count cannot exceed sample_size")
+        if abs(self.material_rate - self.material_count / self.sample_size) > 0.000001:
+            raise ValueError("material_rate must match material_count and sample_size")
+        if self.recommendation == "neutral" and self.promotion_eligible:
+            raise ValueError("neutral investigator advice cannot be promotion eligible")
+        return self
+
+
 __all__ = [
     "ForecastLedgerItem",
     "MemoryFeedbackItem",
@@ -447,4 +510,8 @@ __all__ = [
     "LearningAdvisory",
     "MobileLearningScope",
     "MobileLearningAdvisory",
+    "InvestigatorDimensionResult",
+    "InvestigatorEvaluationRecord",
+    "InvestigatorLearningScope",
+    "InvestigatorLearningAdvisory",
 ]
