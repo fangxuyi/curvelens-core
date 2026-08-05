@@ -110,12 +110,13 @@ Use the repository skill `$curvelens-daily-analysis` for the daily workflow.
 `agent/analysis_orchestrator.py` is the only supported daily controller and
 persists and enforces the
 product-neutral phase graph; deterministic code prepares evidence and validates
-outputs, while the host Codex framework natively delegates QC, every
-profile-configured specialist role, and synthesis. Do not call model SDKs, HTTP
+outputs, while the host Codex framework natively delegates QC, lead research
+planning, optional profile-configured investigators, and synthesis. Do not call model SDKs, HTTP
 model APIs, `codex exec`, or vendor model CLIs from repository code.
 
-The controller must emit a synthesis action only after every configured role
-validates. The removed `agent/run_pipeline.py` path must not be recreated or
+The controller must emit a synthesis action only after the research plan and every
+dispatched investigator validate. Omitted capabilities require a recorded rationale.
+The removed `agent/run_pipeline.py` path must not be recreated or
 used as an alternate daily workflow. Automatic delivery remains a separate
 deployment capability and requires explicit approval; completing analysis does
 not authorize queuing or sending it.

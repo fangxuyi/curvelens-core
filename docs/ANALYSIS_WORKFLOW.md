@@ -5,8 +5,8 @@
 CurveLens separates reproducible evidence preparation from analytical judgment.
 Collection, normalization, quality diagnostics, calculations, news routing,
 evidence IDs, and output validation remain code. Interpretation runs inside the
-existing OpenClaw/OpenAI agent framework as independent specialist tasks,
-followed by a coordinator synthesis. This path makes no direct model API or
+existing OpenClaw/OpenAI agent framework as a complete lead scan, optional
+targeted investigations, and lead synthesis. This path makes no direct model API or
 vendor-CLI calls from repository code.
 
 ```mermaid
@@ -15,14 +15,17 @@ flowchart LR
   B -->|retryable gap| A
   B -->|usable, limitations retained| C[Compute features]
   C --> D[Collect and route news]
-  D --> E1[Futures/curve specialist]
-  D --> E2[Vol-surface specialist]
-  D --> E3[Macro or fundamentals specialist]
-  E1 --> F[Coordinator synthesis]
+  D --> P[Lead scans canonical evidence and plans research]
+  P -->|targeted question| E1[Optional curve investigator]
+  P -->|targeted question| E2[Optional volatility investigator]
+  P -->|targeted question| E3[Optional macro or fundamentals investigator]
+  P --> F[Lead synthesis]
+  E1 --> F
   E2 --> F
   E3 --> F
   F --> G[Validate citations and render integrated analysis plus statistics]
-  E1 -. task response validation .-> M[Workflow monitor]
+  P -. plan validation .-> M[Workflow monitor]
+  E1 -. task response validation .-> M
   E2 -. task response validation .-> M
   E3 -. task response validation .-> M
   F -. task response validation .-> M
@@ -35,12 +38,13 @@ Code can reliably detect missing files, invalid rows, duplicates, coverage
 gaps, and failed model diagnostics. It cannot safely “clean” a structurally
 invalid volatility surface by inventing observations. The QC loop retries only
 potentially recoverable collection gaps. Remaining problems travel into the
-specialist packet as limitations, allowing unaffected sections to proceed.
+canonical packet and investigator outputs as limitations, allowing unaffected sections to proceed.
 
 Model work belongs to the agent framework because source judgment, narrative
 comparison, causal uncertainty, and forward scenarios are analytical tasks.
-Separate specialists reduce cross-domain anchoring. A final coordinator sees
-their completed outputs and explicitly reconciles agreements and tensions.
+Targeted investigators reduce cross-domain anchoring without becoming information
+gates. The lead retains complete evidence access and explicitly accepts or rejects
+each stable investigator finding.
 
 ## Orchestrator choice
 
@@ -50,7 +54,7 @@ agent contexts without adding model credentials or repository-owned LLM calls.
 The repository contributes the durable control plane:
 
 - `.agents/skills/curvelens-daily-analysis/SKILL.md` coordinates the host run;
-- `.codex/agents/` defines generic QC, specialist, and synthesis workers;
+- `.codex/agents/` defines generic QC, planning, investigator, and synthesis workers;
 - `agent/analysis_orchestrator.py` persists state and emits allowed next actions;
 - `ccvm.workflow.monitoring` records controller-visible inputs, outputs,
   corrections, and phase events without making model calls;
@@ -66,18 +70,20 @@ CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py start --d
 
 The command prepares evidence and emits a durable `run.json` plus the next
 native-agent action. State is isolated by product and date. The controller
-enforces `QC_REVIEW_REQUIRED → SPECIALISTS_REQUIRED → SYNTHESIS_REQUIRED →
-READY_TO_FINALIZE → COMPLETE`, with bounded remediation/correction cycles and a
+enforces `QC_REVIEW_REQUIRED → RESEARCH_PLAN_REQUIRED → optional
+INVESTIGATORS_REQUIRED → SYNTHESIS_REQUIRED → READY_TO_FINALIZE → COMPLETE`,
+with bounded remediation/correction cycles and a
 terminal `BLOCKED` state.
 
-The coordinator delegates every listed role through native framework
-sub-agents. Each specialist fills its own JSON template with:
+The lead scans complete canonical evidence and selects zero to three targeted
+investigations. Each dispatched investigator fills its own JSON template with:
 
 - a data-quality assessment;
 - what the computed data says;
 - what the relevant news says;
 - where news supports, conflicts with, or fails to explain the data;
-- a forward view with horizon, confirmations, and invalidations;
+- stable candidate-finding IDs, materiality, horizon, counterevidence,
+  confirmations, and invalidations;
 - evidence IDs and open questions.
 
 After each returned action completes, advance the controller:
@@ -87,9 +93,9 @@ CCVM_PRODUCT=gold ccvm/.venv/bin/python agent/analysis_orchestrator.py advance -
 ```
 
 The repository-scoped `$curvelens-daily-analysis` skill runs this loop using
-native Codex subagents. Generic custom agent types cover QC, an arbitrary
-packet-defined specialist, and synthesis; product profiles determine the roles.
-The controller rejects missing roles, stale packet IDs, unanswered required
+native Codex subagents. Generic custom agent types cover QC, lead planning, an arbitrary
+packet-defined investigator, and synthesis; product profiles determine available capabilities.
+The controller rejects missing dispatched investigators, stale packet IDs, unanswered required
 checks, placeholder statuses, and unknown citations. It writes `analysis.json`,
 the integrated interpretive-and-numerical `analysis.md`, and the audit-oriented
 `statistics.md` under
@@ -104,7 +110,7 @@ analysis without overstating causal attribution.
 
 The full synthesis separately records a validated `mobile_selection` decision
 for all three views. Mobile selects one view by default and at most two; it does
-not need to represent every specialist. Routine, redundant, background, and
+not need to represent every investigator. Routine, redundant, background, and
 low-impact detail stays in the full report. The deterministic renderer preserves
 exact numbers and includes a conflict or data limitation only when the selection
 marks it as material to the conclusion.
@@ -137,7 +143,7 @@ controller decisions.
 
 This is the sole supported end-to-end daily-analysis workflow. The former
 script-only `agent/run_pipeline.py` entry point was removed so scheduled and
-interactive runs cannot silently bypass QC review, specialist analysis, or
+interactive runs cannot silently bypass QC review, lead planning, dispatched investigations, or
 synthesis. The deterministic scripts remain internal evidence-preparation
 stages owned by the controller.
 

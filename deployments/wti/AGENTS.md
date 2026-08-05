@@ -64,14 +64,14 @@ The operating agent must:
 4. Let `agent/analysis_orchestrator.py` start or resume the durable state
    machine. Never use `--restart` unless the user explicitly requests a fresh
    run.
-5. Allow the skill to create one QC reviewer, then all profile-configured WTI
-   specialists in parallel, and finally the synthesizer.
+5. Allow the skill to create one QC reviewer, one lead research planner, zero to
+   three targeted WTI investigators in parallel, and finally the synthesizer.
 6. Finish only on `ORCHESTRATION_COMPLETE`, or report the exact
    `NEED_CME_PDF`, `ORCHESTRATION_BLOCKED`, or `ORCHESTRATION_ERROR` detail.
 7. Report the final analysis paths and retained limitations. Do not queue or
    deliver the analysis without separate approval.
 
-The WTI profile currently creates these temporary specialist roles:
+The WTI profile currently exposes these optional investigator capabilities:
 
 - `futures_curve` — flat price, curve, carry, positioning, and term structure;
 - `vol_surface` — implied volatility, skew, term structure, and RND diagnostics;
@@ -87,7 +87,8 @@ owns this product-neutral phase graph:
 
 ```text
 QC_REVIEW_REQUIRED
-→ SPECIALISTS_REQUIRED
+→ RESEARCH_PLAN_REQUIRED
+→ INVESTIGATORS_REQUIRED (only when one or more are dispatched)
 → SYNTHESIS_REQUIRED
 → READY_TO_FINALIZE
 → COMPLETE
@@ -101,7 +102,7 @@ State and outputs are isolated below:
 
 - `ccvm/data/products/wti/analysis_workflow/trade_date=<date>/run.json`
 - `ccvm/data/products/wti/analysis_workflow/trade_date=<date>/`
-  specialist packets and responses
+  research-plan and investigator packets and responses
 - `ccvm/data/products/wti/analysis/trade_date=<date>/analysis.{md,json}`
 - `ccvm/data/products/wti/quality_reports/<date>.{md,json}`
 
@@ -133,7 +134,7 @@ message. Scheduled analysis and scheduled delivery are separate approvals.
 - Compare physical balances with flat price and curve response rather than
   treating an inventory surprise as mechanically directional.
 - Preserve stale-release, thin-history, missing-options, and source failures in
-  specialist responses and synthesis.
+  investigator responses and synthesis.
 - Interpret using `knowledge/wti/`; knowledge updates follow
   `knowledge/MAINTENANCE.md`.
 

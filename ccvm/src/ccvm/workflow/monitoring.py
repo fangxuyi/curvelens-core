@@ -136,13 +136,23 @@ def build_monitor(state_path: Path) -> dict[str, Any]:
             last_error=state.get("qc", {}).get("last_error", ""),
         )
     ]
+    research_plan = state.get("research_plan", {})
+    agents.append(_agent_record(
+        name="research_plan", agent_type="curvelens_research_planner",
+        status=research_plan.get("status", "pending"),
+        task=research_plan.get("task_path"), packet=manifest.get("canonical_packet"),
+        template=manifest.get("research_plan_template"),
+        response=manifest.get("research_plan_response_path"),
+        corrections=int(research_plan.get("corrections", 0)),
+        last_error=research_plan.get("last_error", ""), knowledge_pack=knowledge_pack,
+    ))
     for role in manifest.get("roles", []):
         role_state = state.get("roles", {}).get(role, {})
         agents.append(_agent_record(
-            name=role, agent_type="curvelens_specialist",
+            name=role, agent_type="curvelens_investigator",
             status=role_state.get("status", "pending"),
             task=role_state.get("task_path"),
-            packet=manifest.get("role_packets", {}).get(role),
+            packet=manifest.get("canonical_packet"),
             template=manifest.get("role_response_templates", {}).get(role),
             response=manifest.get("role_response_paths", {}).get(role),
             corrections=int(role_state.get("corrections", 0)),
