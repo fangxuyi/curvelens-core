@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 
 from ccvm.reference.product import AnalysisRoleSpec, load_product
-from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
+from ccvm.workflow.finalize import (
+    AnalysisValidationError, validate_and_render, validate_research_plan,
+)
 from ccvm.workflow.monitoring import build_monitor
 from ccvm.workflow.orchestration import advance_state, initialize_state, next_actions
 from ccvm.workflow.packets import build_analysis_packets
@@ -197,6 +199,48 @@ def _packets(tmp_path: Path, learning_snapshot=None):
     )
 
 
+def _write_research_plan(manifest, selected=None):
+    selected = list(manifest["roles"] if selected is None else selected)
+    template = json.loads(Path(manifest["research_plan_template"]).read_text())
+    investigations = []
+    evidence_ids = []
+    for role in selected:
+        packet = json.loads(Path(manifest["role_packets"][role]).read_text())
+        evidence_id = next(iter(packet["computed_sections"].values()))["evidence_id"]
+        evidence_ids.append(evidence_id)
+        investigations.append({
+            "investigation_id": f"{manifest['packet_id'][:16]}:{role}",
+            "role": role,
+            "question": f"What could the {role} evidence change in today's ranked view?",
+            "rationale": "The cited anomaly could materially alter the lead conclusion.",
+            "priority": "high",
+            "evidence_ids": [evidence_id],
+        })
+    template.update({
+        "status": "complete",
+        "market_scan_summary": "The complete evidence scan found bounded questions.",
+        "investigations": investigations,
+        "omitted_roles": [
+            {"role": role, "rationale": "No additional decision-relevant question today."}
+            for role in manifest["roles"] if role not in selected
+        ],
+        "evidence_ids": sorted(set(evidence_ids)),
+    })
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(template))
+    return template
+
+
+def _investigator_feedback(manifest):
+    plan = json.loads(Path(manifest["research_plan_response_path"]).read_text())
+    return [{
+        "investigation_id": item["investigation_id"],
+        "disposition": "used",
+        "rationale": "The lead retained one evidence-backed candidate finding.",
+        "used_finding_ids": [f"{item['investigation_id']}:f1"],
+        "evidence_ids": item["evidence_ids"],
+    } for item in plan["investigations"]]
+
+
 def test_packets_are_role_scoped_and_news_is_deduplicated(tmp_path):
     manifest = _packets(tmp_path)
     macro = json.loads(Path(manifest["role_packets"]["macro"]).read_text())
@@ -335,11 +379,14 @@ def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
 
 def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     manifest = _packets(tmp_path / "packets", learning_snapshot=_learning_snapshot())
+    plan = _write_research_plan(manifest)
     for role in manifest["roles"]:
         template = Path(manifest["role_response_templates"][role])
         path = Path(manifest["role_response_paths"][role])
         response = json.loads(template.read_text())
         response["status"] = "limited"
+        investigation = next(item for item in plan["investigations"] if item["role"] == role)
+        response["question"] = investigation["question"]
         response["data_quality_assessment"] = "Options are limited."
         packet = json.loads(Path(manifest["role_packets"][role]).read_text())
         evidence_id = next(iter(packet["computed_sections"].values()))["evidence_id"]
@@ -353,6 +400,14 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
             {"check": check, "status": "concern", "evidence_ids": [evidence_id]}
             for check in packet["required_checks"]
         ]
+        response["candidate_findings"][0].update({
+            "claim": "The targeted evidence may affect the ranked view.",
+            "materiality": "medium", "horizon_sessions": 1, "confidence": "low",
+            "evidence_ids": [evidence_id], "counterevidence_ids": [],
+            "confirmations": ["Watch the next validated settlement."],
+            "invalidations": ["Invalidate if the cited condition reverses."],
+            "unresolved_question": "",
+        })
         path.write_text(json.dumps(response))
     synthesis_template = Path(manifest["synthesis_response_template"])
     synthesis_path = Path(manifest["synthesis_response_path"])
@@ -374,6 +429,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "top_views": _top_views(manifest),
                       "mobile_selection": _mobile_selection(manifest),
                       "forecast_ledger": _forecast_ledger(manifest),
+                      "investigator_feedback": _investigator_feedback(manifest),
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
     direct_id = "feature:rnd:2026-07-20"
@@ -491,8 +547,11 @@ def _write_valid_role(manifest, role):
     template = json.loads(Path(manifest["role_response_templates"][role]).read_text())
     packet = json.loads(Path(manifest["role_packets"][role]).read_text())
     evidence_id = next(iter(packet["computed_sections"].values()))["evidence_id"]
+    plan = json.loads(Path(manifest["research_plan_response_path"]).read_text())
+    investigation = next(item for item in plan["investigations"] if item["role"] == role)
     template.update({
         "status": "limited", "data_quality_assessment": "Reviewed with limitations.",
+        "question": investigation["question"],
         "key_metrics": _metrics(evidence_id),
         "data_findings": [{"claim": "Observed evidence.", "evidence_ids": [evidence_id]}],
         "forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Evidence is mixed.",
@@ -502,6 +561,14 @@ def _write_valid_role(manifest, role):
             {"check": check, "status": "concern", "evidence_ids": [evidence_id]}
             for check in packet["required_checks"]
         ],
+    })
+    template["candidate_findings"][0].update({
+        "claim": "The targeted evidence may affect the ranked view.",
+        "materiality": "medium", "horizon_sessions": 1, "confidence": "low",
+        "evidence_ids": [evidence_id], "counterevidence_ids": [],
+        "confirmations": ["Watch the next validated settlement."],
+        "invalidations": ["Invalidate if the cited condition reverses."],
+        "unresolved_question": "",
     })
     Path(manifest["role_response_paths"][role]).write_text(json.dumps(template))
 
@@ -518,7 +585,11 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     qc_template.update({"disposition": "accept", "rationale": "Inputs are usable."})
     Path(state["qc"]["response_path"]).write_text(json.dumps(qc_template))
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
-    assert state["phase"] == "SPECIALISTS_REQUIRED"
+    assert state["phase"] == "RESEARCH_PLAN_REQUIRED"
+    assert next_actions(state)[0]["action"] == "RUN_RESEARCH_PLANNER"
+    _write_research_plan(manifest)
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    assert state["phase"] == "INVESTIGATORS_REQUIRED"
     assert {a["role"] for a in next_actions(state)} == set(manifest["roles"])
     task_text = Path(next_actions(state)[0]["task_path"]).read_text()
     assert "Fed and real yields move gold" not in task_text
@@ -536,6 +607,7 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
                       "top_views": _top_views(manifest),
                       "mobile_selection": _mobile_selection(manifest),
                       "forecast_ledger": _forecast_ledger(manifest),
+                      "investigator_feedback": _investigator_feedback(manifest),
                       "overall_forward_view": {"horizon": "1m", "bias": "neutral", "thesis": "Signals are mixed."},
                       "data_limitations": ["Synthetic evidence is limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
@@ -545,12 +617,41 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     monitor = build_monitor(state_path)
     assert monitor["phase"] == "READY_TO_FINALIZE"
     assert {item["name"] for item in monitor["agents"]} >= {
-        "data_quality", "futures_curve", "vol_surface", "macro", "synthesis",
+        "data_quality", "research_plan", "futures_curve", "vol_surface", "macro", "synthesis",
     }
     assert any(item["event"] == "agent_dispatched" for item in monitor["events"])
     monitor_md = state_path.with_name("workflow_monitor.md").read_text()
     assert "Exact assigned task" in monitor_md
     assert "Exact submitted response" in monitor_md
+
+
+def test_research_plan_may_skip_all_investigators(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    state_path, state = initialize_state(
+        manifest_path=tmp_path / "run" / "manifest.json", quality=_quality(),
+        quality_attempts=[], repo_root=Path(__file__).resolve().parents[2],
+    )
+    qc = json.loads(Path(state["qc"]["template_path"]).read_text())
+    qc.update({"disposition": "accept", "rationale": "Inputs are usable."})
+    Path(state["qc"]["response_path"]).write_text(json.dumps(qc))
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    _write_research_plan(manifest, selected=[])
+    assert validate_research_plan(tmp_path / "run" / "manifest.json")["investigations"] == []
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    assert state["phase"] == "SYNTHESIS_REQUIRED"
+    assert [item["status"] for item in state["roles"].values()] == [
+        "omitted", "omitted", "omitted",
+    ]
+    assert next_actions(state)[0]["action"] == "RUN_SYNTHESIZER"
+
+
+def test_research_plan_rejects_unexplained_capability_omission(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    plan = _write_research_plan(manifest, selected=[manifest["roles"][0]])
+    plan["omitted_roles"] = plan["omitted_roles"][:1]
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    with pytest.raises(AnalysisValidationError, match="select or explicitly omit every"):
+        validate_research_plan(tmp_path / "run" / "manifest.json")
 
 
 def test_monitor_preserves_rejected_agent_response(tmp_path):
@@ -590,6 +691,8 @@ def test_only_invalid_specialist_is_retried(tmp_path):
     qc = json.loads(Path(state["qc"]["template_path"]).read_text())
     qc.update({"disposition": "accept", "rationale": "Usable."})
     Path(state["qc"]["response_path"]).write_text(json.dumps(qc))
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    _write_research_plan(manifest)
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     for role in manifest["roles"]:
         _write_valid_role(manifest, role)
@@ -633,13 +736,15 @@ def test_malformed_agent_containers_enter_correction_path(tmp_path):
     qc.update({"disposition": "accept", "rationale": "Usable."})
     Path(state["qc"]["response_path"]).write_text(json.dumps(qc))
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    _write_research_plan(manifest, selected=[manifest["roles"][0]])
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
     role = manifest["roles"][0]
     malformed = json.loads(Path(manifest["role_response_templates"][role]).read_text())
     malformed.update({"status": "limited", "data_quality_assessment": "Reviewed.",
                       "forward_view": "not-an-object", "required_check_results": ["bad"]})
     Path(manifest["role_response_paths"][role]).write_text(json.dumps(malformed))
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
-    assert state["phase"] == "SPECIALISTS_REQUIRED"
+    assert state["phase"] == "INVESTIGATORS_REQUIRED"
     assert state["roles"][role]["corrections"] == 1
 
 
@@ -704,9 +809,10 @@ def test_project_skill_and_custom_agents_are_generic():
     skill = root / ".agents" / "skills" / "curvelens-daily-analysis" / "SKILL.md"
     text = skill.read_text()
     assert "analysis_orchestrator.py" in text
-    assert "RUN_SPECIALIST" in text and "native subagents" in text
+    assert "RUN_INVESTIGATOR" in text and "native subagents" in text
     for name in (
-        "curvelens_data_qc", "curvelens_specialist", "curvelens_synthesizer",
+        "curvelens_data_qc", "curvelens_research_planner", "curvelens_investigator",
+        "curvelens_synthesizer",
         "curvelens_retrospective",
     ):
         config = tomllib.loads((root / ".codex" / "agents" / f"{name}.toml").read_text())

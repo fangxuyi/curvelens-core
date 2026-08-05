@@ -107,7 +107,6 @@ def _check_top_views(
             "synthesis top_views schema errors: " + "; ".join(shape_errors)
         )
     valid_roles = set(responses)
-    covered_roles: set[str] = set()
     cited_ids: set[str] = set()
     for index, view in enumerate(views):
         label = f"synthesis.top_views[{index}]"
@@ -126,9 +125,6 @@ def _check_top_views(
         roles = view.get("specialist_roles")
         if not isinstance(roles, list) or set(roles) - valid_roles:
             raise AnalysisValidationError(f"{label}.specialist_roles must name configured roles")
-        if relationship in {"cross_supported", "conflicting"} and len(set(roles)) < 2:
-            raise AnalysisValidationError(f"{label} requires at least two specialist roles")
-        covered_roles.update(roles)
         metrics = _check_key_metrics(view.get("key_metrics"), allowed, label, 2)
         if len(metrics) > 3:
             raise AnalysisValidationError(f"{label}.key_metrics must contain no more than 3 items")
@@ -481,12 +477,90 @@ def load_manifest(manifest_path: Path) -> dict[str, Any]:
     return manifest
 
 
+def validate_research_plan(
+    manifest_path: Path, response_path: Path | None = None,
+) -> dict[str, Any]:
+    """Validate the lead's bounded selection of optional investigator capabilities."""
+    manifest = load_manifest(manifest_path)
+    plan = _read(response_path or Path(manifest["research_plan_response_path"]))
+    if plan.get("packet_id") != manifest["packet_id"]:
+        raise AnalysisValidationError("research plan does not match this packet")
+    if plan.get("status") not in _STATUSES:
+        raise AnalysisValidationError("research plan has invalid or placeholder status")
+    if not str(plan.get("market_scan_summary", "")).strip():
+        raise AnalysisValidationError("research plan requires a market scan summary")
+    allowed = set(manifest.get("evidence_registry", {}))
+    _check_ids(plan.get("evidence_ids"), allowed, "research_plan")
+    investigations = plan.get("investigations")
+    maximum = int((manifest.get("synthesis_contract") or {}).get(
+        "maximum_investigators", 0,
+    ))
+    if not isinstance(investigations, list) or len(investigations) > maximum:
+        raise AnalysisValidationError(
+            f"research plan supports zero to {maximum} investigations"
+        )
+    roles = set(manifest["roles"])
+    selected: list[str] = []
+    cited: set[str] = set()
+    for index, item in enumerate(investigations):
+        label = f"research_plan.investigations[{index}]"
+        if not isinstance(item, dict):
+            raise AnalysisValidationError(f"{label} must be an object")
+        role = item.get("role")
+        if role not in roles or role in selected:
+            raise AnalysisValidationError(f"{label}.role must be a unique configured capability")
+        expected_id = f"{manifest['packet_id'][:16]}:{role}"
+        if item.get("investigation_id") != expected_id:
+            raise AnalysisValidationError(f"{label}.investigation_id must be {expected_id!r}")
+        for field in ("question", "rationale"):
+            if not str(item.get(field, "")).strip():
+                raise AnalysisValidationError(f"{label}.{field} is required")
+        if item.get("priority") not in {"high", "medium", "low"}:
+            raise AnalysisValidationError(f"{label}.priority is invalid")
+        ids = _check_ids(item.get("evidence_ids"), allowed, label)
+        if not ids:
+            raise AnalysisValidationError(f"{label} must cite the anomaly motivating dispatch")
+        selected.append(role)
+        cited.update(ids)
+    omitted = plan.get("omitted_roles")
+    if not isinstance(omitted, list):
+        raise AnalysisValidationError("research_plan.omitted_roles must be a list")
+    omitted_roles: list[str] = []
+    for index, item in enumerate(omitted):
+        label = f"research_plan.omitted_roles[{index}]"
+        if not isinstance(item, dict) or item.get("role") not in roles:
+            raise AnalysisValidationError(f"{label}.role must name a configured capability")
+        if item["role"] in omitted_roles or not str(item.get("rationale", "")).strip():
+            raise AnalysisValidationError(f"{label} requires a unique role and rationale")
+        omitted_roles.append(item["role"])
+    if set(selected) | set(omitted_roles) != roles or set(selected) & set(omitted_roles):
+        raise AnalysisValidationError(
+            "research plan must select or explicitly omit every configured capability"
+        )
+    if not cited.issubset(set(plan["evidence_ids"])):
+        raise AnalysisValidationError(
+            "research_plan.evidence_ids must include every dispatch citation"
+        )
+    return plan
+
+
+def selected_investigator_roles(manifest_path: Path) -> list[str]:
+    plan = validate_research_plan(manifest_path)
+    return [item["role"] for item in plan["investigations"]]
+
+
 def validate_role_response(
     manifest_path: Path, role: str, response_path: Path | None = None,
 ) -> dict[str, Any]:
     manifest = load_manifest(manifest_path)
     if role not in manifest["roles"]:
         raise AnalysisValidationError(f"unknown role: {role}")
+    plan = validate_research_plan(manifest_path)
+    investigation = next((
+        item for item in plan["investigations"] if item["role"] == role
+    ), None)
+    if investigation is None:
+        raise AnalysisValidationError(f"{role} was not selected for investigation")
     packet = _read(Path(manifest["role_packets"][role]))
     packet_hash = hashlib.sha256(
         Path(manifest["role_packets"][role]).read_bytes()
@@ -497,14 +571,14 @@ def validate_role_response(
     packet_id = manifest.get("packet_id")
     if response.get("packet_id") != packet_id or response.get("role") != role:
         raise AnalysisValidationError(f"{role} response does not match this packet")
+    if response.get("investigation_id") != investigation["investigation_id"] \
+            or response.get("question") != investigation["question"]:
+        raise AnalysisValidationError(f"{role} response does not match its assigned investigation")
     if response.get("status") not in _STATUSES:
         raise AnalysisValidationError(f"{role} has invalid or placeholder status")
     if not str(response.get("data_quality_assessment", "")).strip():
         raise AnalysisValidationError(f"{role} must assess data quality")
-    allowed = {
-        item["evidence_id"] for item in packet.get("computed_sections", {}).values()
-    } | {item["article_id"] for item in packet.get("relevant_news", [])} \
-      | {item["evidence_id"] for item in packet.get("knowledge_sources", [])}
+    allowed = set(manifest.get("evidence_registry", {}))
     _check_ids(response.get("evidence_ids"), allowed, role)
     _check_findings(response, allowed, role)
     metrics = _check_key_metrics(
@@ -530,6 +604,48 @@ def validate_role_response(
     } | {
         evidence_id for item in metrics for evidence_id in item["evidence_ids"]
     }
+    candidate_findings = response.get("candidate_findings")
+    if not isinstance(candidate_findings, list) or len(candidate_findings) > 5 \
+            or (response["status"] != "blocked" and not candidate_findings):
+        raise AnalysisValidationError(f"{role}.candidate_findings requires 1 to 5 items")
+    candidate_citations: set[str] = set()
+    horizons = set(
+        (manifest.get("synthesis_contract") or {})
+        .get("forecast_contract", {}).get("horizons_sessions", [])
+    )
+    for index, finding in enumerate(candidate_findings):
+        label = f"{role}.candidate_findings[{index}]"
+        if not isinstance(finding, dict):
+            raise AnalysisValidationError(f"{label} must be an object")
+        expected_id = f"{investigation['investigation_id']}:f{index + 1}"
+        if finding.get("finding_id") != expected_id:
+            raise AnalysisValidationError(f"{label}.finding_id must be {expected_id!r}")
+        if not str(finding.get("claim", "")).strip():
+            raise AnalysisValidationError(f"{label}.claim is required")
+        if finding.get("materiality") not in {"high", "medium", "low"} \
+                or finding.get("confidence") not in {"high", "medium", "low"}:
+            raise AnalysisValidationError(f"{label} has invalid materiality or confidence")
+        if finding.get("horizon_sessions") not in horizons:
+            raise AnalysisValidationError(f"{label}.horizon_sessions is not configured")
+        evidence_ids = _check_ids(finding.get("evidence_ids"), allowed, label)
+        counter_ids = _check_ids(
+            finding.get("counterevidence_ids"), allowed, f"{label}.counterevidence",
+        )
+        if not evidence_ids:
+            raise AnalysisValidationError(f"{label} must cite supporting evidence")
+        if set(evidence_ids) & set(counter_ids):
+            raise AnalysisValidationError(f"{label} cannot use one ID as support and counterevidence")
+        for field in ("confirmations", "invalidations"):
+            values = finding.get(field)
+            if not isinstance(values, list) or not values \
+                    or not all(isinstance(value, str) and value.strip() for value in values):
+                raise AnalysisValidationError(f"{label}.{field} requires concrete items")
+        unresolved = finding.get("unresolved_question")
+        if not isinstance(unresolved, str):
+            raise AnalysisValidationError(f"{label}.unresolved_question must be text")
+        candidate_citations.update(evidence_ids)
+        candidate_citations.update(counter_ids)
+    cited_in_findings.update(candidate_citations)
     if not cited_in_findings.issubset(set(response["evidence_ids"])):
         raise AnalysisValidationError(
             f"{role}.evidence_ids must include every finding and required-check citation"
@@ -552,24 +668,62 @@ def validate_role_response(
     return response
 
 
+def _check_investigator_feedback(
+    synthesis: dict[str, Any], responses: dict[str, dict[str, Any]], allowed: set[str],
+) -> None:
+    raw = synthesis.get("investigator_feedback")
+    if not isinstance(raw, list):
+        raise AnalysisValidationError("synthesis investigator_feedback must be a list")
+    by_investigation = {
+        response["investigation_id"]: response for response in responses.values()
+    }
+    submitted: set[str] = set()
+    for index, item in enumerate(raw):
+        label = f"synthesis.investigator_feedback[{index}]"
+        if not isinstance(item, dict):
+            raise AnalysisValidationError(f"{label} must be an object")
+        investigation_id = item.get("investigation_id")
+        if investigation_id not in by_investigation or investigation_id in submitted:
+            raise AnalysisValidationError(f"{label}.investigation_id is unknown or duplicated")
+        if item.get("disposition") not in {"used", "partially_used", "rejected"}:
+            raise AnalysisValidationError(f"{label}.disposition is invalid")
+        if not str(item.get("rationale", "")).strip():
+            raise AnalysisValidationError(f"{label}.rationale is required")
+        evidence_ids = _check_ids(item.get("evidence_ids"), allowed, label)
+        valid_findings = {
+            finding["finding_id"]
+            for finding in by_investigation[investigation_id]["candidate_findings"]
+        }
+        used = item.get("used_finding_ids")
+        if not isinstance(used, list) or len(used) != len(set(used)) \
+                or set(used) - valid_findings:
+            raise AnalysisValidationError(f"{label}.used_finding_ids are invalid")
+        if item["disposition"] == "rejected" and used:
+            raise AnalysisValidationError(f"{label} rejected feedback cannot use findings")
+        if item["disposition"] != "rejected" and not used:
+            raise AnalysisValidationError(f"{label} used feedback requires finding IDs")
+        if not evidence_ids:
+            raise AnalysisValidationError(f"{label} requires evidence for the lead review")
+        submitted.add(investigation_id)
+    if submitted != set(by_investigation):
+        raise AnalysisValidationError(
+            "synthesis investigator_feedback must review every dispatched investigation"
+        )
+
+
 def validate_synthesis_response(
     manifest_path: Path, responses: dict[str, dict[str, Any]],
     response_path: Path | None = None,
 ) -> dict[str, Any]:
     manifest = load_manifest(manifest_path)
-    if set(responses) != set(manifest["roles"]):
-        raise AnalysisValidationError("synthesis requires every configured role")
+    selected_roles = set(selected_investigator_roles(manifest_path))
+    if set(responses) != selected_roles:
+        raise AnalysisValidationError("synthesis responses must match dispatched investigators")
     synthesis = _read(response_path or Path(manifest["synthesis_response_path"]))
     if synthesis.get("packet_id") != manifest.get("packet_id"):
         raise AnalysisValidationError("synthesis response does not match this packet")
     if synthesis.get("status") not in _STATUSES:
         raise AnalysisValidationError("synthesis has invalid or placeholder status")
-    if any(item.get("status") == "blocked" for item in responses.values()) \
-            and synthesis.get("status") == "complete":
-        raise AnalysisValidationError("synthesis cannot be complete when a required role is blocked")
-    if any(item.get("status") == "limited" for item in responses.values()) \
-            and synthesis.get("status") == "complete":
-        raise AnalysisValidationError("synthesis cannot be complete when a required role is limited")
     if not str(synthesis.get("headline", "")).strip() or not str(
         synthesis.get("executive_summary", "")
     ).strip():
@@ -596,9 +750,6 @@ def validate_synthesis_response(
                 raise AnalysisValidationError(f"synthesis forward view requires {field}")
     elif not synthesis["data_limitations"]:
         raise AnalysisValidationError("blocked synthesis must identify data limitations")
-    if any(item.get("status") in {"limited", "blocked"} for item in responses.values()) \
-            and not synthesis["data_limitations"]:
-        raise AnalysisValidationError("synthesis must preserve specialist limitations")
     allowed = set(manifest.get("evidence_registry", {}))
     top_view_ids = (
         set() if synthesis["status"] == "blocked"
@@ -613,6 +764,7 @@ def validate_synthesis_response(
     _check_mobile_selection(synthesis, manifest, allowed)
     _check_mobile_memory_feedback(synthesis, manifest, allowed)
     _check_memory_feedback(synthesis, manifest, allowed)
+    _check_investigator_feedback(synthesis, responses, allowed)
     if synthesis["status"] != "blocked" and not synthesis["evidence_ids"]:
         raise AnalysisValidationError("synthesis requires cited evidence")
     snapshot_ids = {
@@ -636,7 +788,7 @@ def validate_and_render(
     packet_id = manifest.get("packet_id")
     responses = {
         role: validate_role_response(manifest_path, role)
-        for role in manifest["roles"]
+        for role in selected_investigator_roles(manifest_path)
     }
     synthesis = validate_synthesis_response(manifest_path, responses)
 
@@ -645,7 +797,7 @@ def validate_and_render(
         "packet_id": packet_id,
         "product": manifest.get("product"),
         "trade_date": manifest.get("trade_date"),
-        "specialist_analyses": responses,
+        "investigator_analyses": responses,
         "synthesis": synthesis,
         "forecast_contract": manifest["synthesis_contract"]["forecast_contract"],
         "mobile_relevance_contract": manifest["synthesis_contract"][
@@ -693,16 +845,16 @@ def _render_metric_table(metrics: list[dict[str, Any]]) -> list[str]:
 def _render_statistics_markdown(result: dict[str, Any]) -> str:
     """Render the validated numbers separately from the forward analysis."""
     synthesis = result["synthesis"]
-    responses = result["specialist_analyses"]
+    responses = result["investigator_analyses"]
     lines = [
         f"# {result['product'].upper()} Daily Statistics — {result['trade_date']}", "",
         "> Numerical audit supplement generated from validated daily-analysis outputs. "
         "All material statistics are also integrated into analysis.md.", "",
         "## Run coverage", "",
         f"- Overall status: **{_markdown_cell(result.get('status'))}**",
-        f"- Specialist desks: **{len(responses)}**",
+        f"- Targeted investigators: **{len(responses)}**",
         f"- Snapshot measures: **{len(synthesis.get('market_snapshot', []))}**", "",
-        "| Specialist desk | Status | Validated measures | Evidence references |",
+        "| Investigator capability | Status | Validated measures | Evidence references |",
         "|---|---|---:|---:|",
     ]
     for role, response in responses.items():
@@ -822,7 +974,7 @@ def _render_markdown(result: dict[str, Any]) -> str:
         if not values:
             lines.append("- None identified.")
         lines.append("")
-    for role, response in result["specialist_analyses"].items():
+    for role, response in result["investigator_analyses"].items():
         title = role.replace("_", " ").title()
         lines.extend([f"## {title}", "", f"Status: {response['status']}", ""])
         lines.extend(["### Validated statistics", ""])

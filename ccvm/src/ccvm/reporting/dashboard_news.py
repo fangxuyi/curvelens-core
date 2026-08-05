@@ -88,7 +88,9 @@ def build_validated_news(
                 metadata.setdefault(article_id, article)
 
     stories: dict[str, dict[str, Any]] = {}
-    specialist_analyses = analysis.get("specialist_analyses") or {}
+    specialist_analyses = (
+        analysis.get("investigator_analyses") or analysis.get("specialist_analyses") or {}
+    )
     for role, response in specialist_analyses.items():
         for finding in response.get("news_findings", []):
             relevance = _finding_relevance(finding)
