@@ -287,6 +287,20 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
         "supporting_evidence", "conflicting_evidence", "driver_analysis",
         "what_to_watch",
     }.issubset(view) for view in template["top_views"])
+    metric_fields = {
+        "label", "value", "comparison", "plain_english_meaning", "evidence_ids",
+    }
+    assert all(
+        len(view["key_metrics"]) == 2
+        and all(set(metric) == metric_fields for metric in view["key_metrics"])
+        for view in template["top_views"]
+    )
+    assert len(template["market_snapshot"]) == 6
+    assert all(set(metric) == metric_fields for metric in template["market_snapshot"])
+    assert set(template["investigator_feedback"][0]) == {
+        "investigation_id", "disposition", "rationale",
+        "used_finding_ids", "evidence_ids",
+    }
     assert [item["source_view_rank"] for item in template["forecast_ledger"]] == [1, 2, 3]
     assert template["mobile_selection"]["selected_view_ranks"] == [1]
     assert [item["source_view_rank"] for item in template["mobile_selection"]["candidates"]] == [1, 2, 3]
@@ -603,6 +617,17 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert "View from vol_surface" not in mobile
     assert "forecast_ledger" not in mobile and "memory_feedback" not in mobile
     assert len(mobile) <= 1400
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["market_snapshot"][0] = "legacy metric shorthand"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError, match=r"synthesis\.market_snapshot\[0\] must be an object",
+    ):
+        validate_and_render(
+            tmp_path / "packets" / "manifest.json", tmp_path / "bad-market-snapshot",
+        )
+    synthesis_path.write_text(json.dumps(synthesis))
 
     bad_synthesis = json.loads(synthesis_path.read_text())
     bad_synthesis["forecast_ledger"][0]["expected_label"] = "certainly_up"

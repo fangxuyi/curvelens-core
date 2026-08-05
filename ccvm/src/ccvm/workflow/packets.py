@@ -152,6 +152,16 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
     }
 
 
+def _metric_template() -> dict[str, Any]:
+    return {
+        "label": "",
+        "value": "",
+        "comparison": "",
+        "plain_english_meaning": "",
+        "evidence_ids": [],
+    }
+
+
 def _research_plan_template(
     packet_id: str, advisories: list[InvestigatorLearningAdvisory],
 ) -> dict[str, Any]:
@@ -197,7 +207,7 @@ def _top_view_template(rank: int) -> dict[str, Any]:
         "confidence": "high|medium|low",
         "evidence_relationship": "cross_supported|conflicting|single_desk|direct_evidence",
         "specialist_roles": [],
-        "key_metrics": [],
+        "key_metrics": [_metric_template(), _metric_template()],
         "supporting_evidence": [{"claim": "", "evidence_ids": []}],
         "conflicting_evidence": [],
         "driver_analysis": {
@@ -694,8 +704,14 @@ def build_analysis_packets(
             "rationale": "",
             "evidence_ids": [],
         } for item in mobile_advisories],
-        "investigator_feedback": [],
-        "market_snapshot": [],
+        "investigator_feedback": [{
+            "investigation_id": "",
+            "disposition": "used|partially_used|rejected",
+            "rationale": "",
+            "used_finding_ids": [],
+            "evidence_ids": [],
+        }],
+        "market_snapshot": [_metric_template() for _ in range(6)],
         "overall_forward_view": {"horizon": "", "bias": "", "thesis": ""},
         "cross_role_agreements": [],
         "cross_role_tensions": [],
