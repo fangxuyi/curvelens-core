@@ -109,17 +109,6 @@ def _check_top_views(
     valid_roles = set(responses)
     covered_roles: set[str] = set()
     cited_ids: set[str] = set()
-    specialist_metrics = {
-        (
-            str(metric.get("label", "")), str(metric.get("value", "")),
-            str(metric.get("comparison", "")), str(metric.get("plain_english_meaning", "")),
-        )
-        for response in responses.values() for metric in response.get("key_metrics", [])
-    }
-    evidence_roles: dict[str, set[str]] = {}
-    for role, response in responses.items():
-        for evidence_id in response.get("evidence_ids", []):
-            evidence_roles.setdefault(evidence_id, set()).add(role)
     for index, view in enumerate(views):
         label = f"synthesis.top_views[{index}]"
         if not isinstance(view, dict):
@@ -130,10 +119,12 @@ def _check_top_views(
         if view.get("confidence") not in {"high", "medium", "low"}:
             raise AnalysisValidationError(f"{label}.confidence must be high, medium, or low")
         relationship = view.get("evidence_relationship")
-        if relationship not in {"cross_supported", "conflicting", "single_desk"}:
+        if relationship not in {
+            "cross_supported", "conflicting", "single_desk", "direct_evidence",
+        }:
             raise AnalysisValidationError(f"{label}.evidence_relationship is invalid")
         roles = view.get("specialist_roles")
-        if not isinstance(roles, list) or not roles or set(roles) - valid_roles:
+        if not isinstance(roles, list) or set(roles) - valid_roles:
             raise AnalysisValidationError(f"{label}.specialist_roles must name configured roles")
         if relationship in {"cross_supported", "conflicting"} and len(set(roles)) < 2:
             raise AnalysisValidationError(f"{label} requires at least two specialist roles")
@@ -143,14 +134,6 @@ def _check_top_views(
             raise AnalysisValidationError(f"{label}.key_metrics must contain no more than 3 items")
         view_ids: set[str] = set()
         for metric in metrics:
-            identity = (
-                str(metric.get("label", "")), str(metric.get("value", "")),
-                str(metric.get("comparison", "")), str(metric.get("plain_english_meaning", "")),
-            )
-            if identity not in specialist_metrics:
-                raise AnalysisValidationError(
-                    f"{label}.key_metrics must copy validated specialist metrics exactly"
-                )
             view_ids.update(metric["evidence_ids"])
         for field in ("supporting_evidence", "conflicting_evidence"):
             claims = view.get(field)
@@ -190,12 +173,7 @@ def _check_top_views(
         if not isinstance(watch, list) or not watch \
                 or not all(isinstance(item, str) and item.strip() for item in watch):
             raise AnalysisValidationError(f"{label}.what_to_watch requires concrete items")
-        roles_from_evidence = set().union(*(evidence_roles.get(item, set()) for item in view_ids))
-        if not set(roles).issubset(roles_from_evidence):
-            raise AnalysisValidationError(f"{label}.specialist_roles are not supported by cited evidence")
         cited_ids.update(view_ids)
-    if covered_roles != valid_roles:
-        raise AnalysisValidationError("synthesis top_views must collectively cover every specialist role")
     return cited_ids
 
 
@@ -493,6 +471,13 @@ def load_manifest(manifest_path: Path) -> dict[str, Any]:
         value = manifest.get(mapping)
         if not isinstance(value, dict) or set(value) != set(roles):
             raise AnalysisValidationError(f"manifest {mapping} must cover every role")
+    canonical_path = manifest.get("canonical_packet")
+    canonical_hash = manifest.get("canonical_packet_hash")
+    if not isinstance(canonical_path, str) or not isinstance(canonical_hash, str):
+        raise AnalysisValidationError("manifest must identify immutable canonical evidence")
+    path = Path(canonical_path)
+    if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != canonical_hash:
+        raise AnalysisValidationError("canonical evidence packet content does not match manifest")
     return manifest
 
 
@@ -614,7 +599,7 @@ def validate_synthesis_response(
     if any(item.get("status") in {"limited", "blocked"} for item in responses.values()) \
             and not synthesis["data_limitations"]:
         raise AnalysisValidationError("synthesis must preserve specialist limitations")
-    allowed = set().union(*(set(item.get("evidence_ids", [])) for item in responses.values()))
+    allowed = set(manifest.get("evidence_registry", {}))
     top_view_ids = (
         set() if synthesis["status"] == "blocked"
         else _check_top_views(synthesis.get("top_views"), responses, allowed)
