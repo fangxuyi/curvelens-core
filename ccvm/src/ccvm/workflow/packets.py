@@ -141,7 +141,7 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
             "materiality": "high|medium|low",
             "horizon_sessions": 1,
             "confidence": "high|medium|low",
-            "expected_impact_dimensions": [],
+            "expected_impact_dimensions": ["market_impact"],
             "evidence_ids": [],
             "counterevidence_ids": [],
             "confirmations": [],

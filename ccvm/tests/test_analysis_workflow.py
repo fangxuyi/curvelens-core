@@ -11,6 +11,7 @@ import pytest
 from ccvm.reference.product import AnalysisRoleSpec, load_product
 from ccvm.workflow.finalize import (
     AnalysisValidationError, validate_and_render, validate_research_plan,
+    validate_role_response,
 )
 from ccvm.workflow.monitoring import build_monitor
 from ccvm.workflow.orchestration import advance_state, initialize_state, next_actions
@@ -466,6 +467,27 @@ def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
     assert all(not Path(path).exists() for path in manifest["role_response_paths"].values())
 
 
+def test_investigator_dimension_error_lists_sorted_outcome_enum(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    role = manifest["roles"][0]
+    _write_research_plan(manifest, selected=[role])
+    _write_valid_role(manifest, role)
+    response_path = Path(manifest["role_response_paths"][role])
+    response = json.loads(response_path.read_text())
+    response["candidate_findings"][0]["expected_impact_dimensions"] = [
+        "curve", "positioning",
+    ]
+    response_path.write_text(json.dumps(response))
+
+    with pytest.raises(AnalysisValidationError) as exc_info:
+        validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+    assert "alphabetically sorted subset" in str(exc_info.value)
+    assert "['market_impact', 'price_direction', 'volatility_direction']" in str(
+        exc_info.value
+    )
+
+
 def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     manifest = _packets(tmp_path / "packets", learning_snapshot=_learning_snapshot())
     plan = _write_research_plan(manifest)
@@ -687,6 +709,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert {a["role"] for a in next_actions(state)} == set(manifest["roles"])
     task_text = Path(next_actions(state)[0]["task_path"]).read_text()
     assert "Fed and real yields move gold" not in task_text
+    assert "['market_impact', 'price_direction', 'volatility_direction']" in task_text
+    assert "not capability topics such as curve" in task_text
 
     for role in reversed(manifest["roles"]):
         _write_valid_role(manifest, role)
