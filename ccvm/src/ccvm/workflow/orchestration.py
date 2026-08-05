@@ -214,7 +214,8 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
             "use only lowercase pass, concern, or not_applicable statuses. Do not modify pipeline data or another "
             "role's files. Lead with the packet's required exact numbers, comparisons, and units in key_metrics. "
             "Use plain English and explain what each number means. Return one to five candidate_findings "
-            "with sequential stable IDs, materiality, horizon, confidence, supporting and counterevidence, "
+            "with sequential stable IDs, materiality, horizon, confidence, expected impact dimensions, "
+            "supporting and counterevidence, "
             "confirmations, invalidations, and any unresolved question. Do not repeat the same limitation."
             f"{correction_text}"
         )

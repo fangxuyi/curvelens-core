@@ -78,6 +78,9 @@ memory after the daily analysis completes. Execute any returned
 is reported separately and does not reopen or block the completed daily report.
 The retrospective scores mobile selection separately from forecast correctness,
 including selected-view precision, false prominence, and missed material views.
+It also scores every stable investigator finding at its declared horizon using
+fixed price/volatility materiality thresholds, preserving whether the lead used
+or rejected it and flagging rejected-but-material findings.
 Do not promote a candidate
 unless the user explicitly requests that advisory ID; promotion uses
 `promote-learning --advisory-id <id>` and enters shadow status only. Shadow

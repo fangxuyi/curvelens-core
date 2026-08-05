@@ -403,6 +403,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
         response["candidate_findings"][0].update({
             "claim": "The targeted evidence may affect the ranked view.",
             "materiality": "medium", "horizon_sessions": 1, "confidence": "low",
+            "expected_impact_dimensions": ["price_direction"],
             "evidence_ids": [evidence_id], "counterevidence_ids": [],
             "confirmations": ["Watch the next validated settlement."],
             "invalidations": ["Invalidate if the cited condition reverses."],
@@ -565,6 +566,7 @@ def _write_valid_role(manifest, role):
     template["candidate_findings"][0].update({
         "claim": "The targeted evidence may affect the ranked view.",
         "materiality": "medium", "horizon_sessions": 1, "confidence": "low",
+        "expected_impact_dimensions": ["price_direction"],
         "evidence_ids": [evidence_id], "counterevidence_ids": [],
         "confirmations": ["Watch the next validated settlement."],
         "invalidations": ["Invalidate if the cited condition reverses."],

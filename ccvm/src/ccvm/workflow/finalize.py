@@ -627,6 +627,18 @@ def validate_role_response(
             raise AnalysisValidationError(f"{label} has invalid materiality or confidence")
         if finding.get("horizon_sessions") not in horizons:
             raise AnalysisValidationError(f"{label}.horizon_sessions is not configured")
+        impact_dimensions = finding.get("expected_impact_dimensions")
+        configured_impact_dimensions = set(
+            (manifest.get("synthesis_contract") or {})
+            .get("investigator_relevance_contract", {}).get("dimensions", {})
+        )
+        if not isinstance(impact_dimensions, list) or not impact_dimensions \
+                or len(impact_dimensions) > 3 \
+                or impact_dimensions != sorted(set(impact_dimensions)) \
+                or set(impact_dimensions) - configured_impact_dimensions:
+            raise AnalysisValidationError(
+                f"{label}.expected_impact_dimensions must be configured, unique, and sorted"
+            )
         evidence_ids = _check_ids(finding.get("evidence_ids"), allowed, label)
         counter_ids = _check_ids(
             finding.get("counterevidence_ids"), allowed, f"{label}.counterevidence",
@@ -802,6 +814,9 @@ def validate_and_render(
         "forecast_contract": manifest["synthesis_contract"]["forecast_contract"],
         "mobile_relevance_contract": manifest["synthesis_contract"][
             "mobile_relevance_contract"
+        ],
+        "investigator_relevance_contract": manifest["synthesis_contract"][
+            "investigator_relevance_contract"
         ],
         "status": synthesis["status"],
         "workflow_mode": "agent_orchestrated",
