@@ -1,8 +1,11 @@
 # CurveLens Core
 
-CurveLens Core is a shared futures-and-options analysis framework. One checkout
-can operate multiple commodity products while keeping each product's data,
-workflow state, schedules, and delivery state isolated.
+CurveLens Core is a self-improving, multi-commodity futures-and-options research
+framework. It combines deterministic data quality and evidence controls with
+native-agent research planning, targeted investigations, validated synthesis,
+decision-focused daily briefs, and outcome-based product-local learning. One
+checkout can operate multiple products while keeping each product's data,
+workflow state, learning memory, schedules, and delivery state isolated.
 
 The included product profiles are:
 
@@ -49,8 +52,10 @@ flowchart TD
     R --> O2[statistics.md]
     R --> O3[mobile.md]
     R --> O4[workflow monitor files]
-    O1 -. Future sessions mature .-> L1[Forecast and investigator outcome evaluation]
-    O3 -. Next session matures .-> L1
+    R --> L0[Separate post-analysis learn phase]
+    O1 -. Earlier forecast and finding outcomes mature .-> L0
+    O3 -. Earlier mobile selections mature .-> L0
+    L0 --> L1[Deterministic outcome evaluation and bounded retrospectives]
     L1 --> L2[Bounded product-local learning candidates]
     L2 -. Explicit shadow promotion and activation .-> D
     O3 -. Separate explicit approval .-> O5[Delivery outbox]
@@ -82,8 +87,15 @@ At a high level:
    finding was used or rejected, and ranks exactly three decision-relevant views.
 6. Deterministic validation checks the plan, investigations, citations, copied
    metrics, forecast ledger, mobile selection, and final schema before rendering.
+   Agent corrections are bounded. A run that exhausts its correction allowance
+   becomes terminally blocked and requires an explicitly authorized restart.
    Analysis completion never authorizes delivery by itself.
-7. After the configured future sessions mature, deterministic retrospective
+7. A complete overnight operation runs the separate `learn` phase after report
+   completion. It discovers eligible earlier reports, requests bounded native
+   retrospective workers where needed, and rebuilds memory after those actions
+   finish. A pending outcome is retained for a later session rather than treated
+   as a failed daily report.
+8. After the configured future sessions mature, deterministic retrospective
    evaluation scores forecasts, every stable investigator finding, and mobile
    selection separately. Product-local memory candidates require repeated
    samples, explicit shadow promotion, and a replay plus no-degradation gate
@@ -98,9 +110,19 @@ available for inspection.
 ### Guarded learning
 
 Learning is an auditable hypothesis layer, not autonomous prompt rewriting. The
-daily `learn` operation rebuilds `ccvm/data/products/<product>/learning/memory.json`
-from versioned retrospective records. Runtime data remains product-isolated and
-is not checked into the framework repository.
+`start` and `advance` commands complete the daily analysis; they do not silently
+invoke learning. A complete overnight operation subsequently runs
+`learn --date <as-of-date>`, executes every returned `RUN_RETROSPECTIVE` action,
+and repeats the same command until `LEARNING_MEMORY_UPDATED`.
+
+The learning date is an evaluation cutoff, not the source report date. The
+controller scans completed reports dated before that cutoff and scores only
+outcomes whose configured future sessions have matured. For example, the
+natural August 4 learning pass uses `--date 2026-08-04` and can evaluate reports
+through August 3; it does not use future data to score the August 4 report.
+Versioned retrospective records rebuild
+`ccvm/data/products/<product>/learning/memory.json`. Runtime learning data remains
+product-isolated and is not checked into the framework repository.
 
 | Advisory family | Stable scope | Allowed effect after activation |
 |---|---|---|
@@ -127,23 +149,26 @@ ccvm/data/products/<product>/
 │   ├── analysis.json
 │   ├── mobile.md
 │   └── statistics.md
-└── analysis_workflow/trade_date=<date>/
-    ├── canonical.packet.json
-    ├── research_plan.task.md
-    ├── research_plan.response.json
-    ├── <investigator>.task.md
-    ├── <investigator>.response.json
-    ├── run.json
-    ├── workflow_monitor.md
-    ├── workflow_monitor.json
-    └── workflow_events.jsonl
+├── analysis_workflow/trade_date=<date>/
+│   ├── canonical.packet.json
+│   ├── research_plan.task.md
+│   ├── research_plan.response.json
+│   ├── <investigator>.task.md
+│   ├── <investigator>.response.json
+│   ├── run.json
+│   ├── workflow_monitor.md
+│   ├── workflow_monitor.json
+│   └── workflow_events.jsonl
+└── learning/
+    ├── memory.json
+    └── evaluations/trade_date=<source-date>/
 ```
 
 | Output | Purpose |
 |---|---|
 | `analysis.md` | Primary human-readable report. It combines the top three views, exact supporting statistics, news or driver assessment, conflicts, relevant investigator detail, and forward watch items. |
 | `analysis.json` | Validated structured form of the same analysis, including the research plan and investigator finding dispositions, for retrospective evaluation and downstream tools. |
-| `mobile.md` | Deterministic phone-first rendering of the same synthesis. It selects one view by default and a second only when independently material for the next session, while preserving any conclusion-changing conflict or limitation. Notification preparation uses this exact file without another summarization pass. |
+| `mobile.md` | Deterministic phone-first rendering of the same synthesis. It selects one view by default and a second only when independently material for the next session, while preserving any conclusion-changing conflict or limitation. Prose is retained only as complete sentences, and the character budget is met by omitting lower-priority whole lines rather than cutting text mid-sentence. Notification preparation uses this exact file without another summarization pass. |
 | `statistics.md` | Numerical audit supplement containing the market snapshot, desk-level measures, comparisons, evidence coverage, and retained limitations. It is not a separate forecast. |
 | `workflow_monitor.md` | User-facing debugging view of each agent's assigned task, allowed input files, submitted response, validation status, and correction history. |
 | `workflow_monitor.json` | Machine-readable monitor snapshot with artifact paths and hashes. |
@@ -230,9 +255,11 @@ To request the first analysis:
 Use $curvelens-daily-analysis to run <product> for YYYY-MM-DD.
 ```
 
-The checked-in skill drives the controller through quality review, research
-planning, any selected investigations, synthesis, validation, retrospective
-actions, and bounded memory rebuilding. It does not promote or activate learning
+For a complete overnight operation, the checked-in skill first drives the daily
+controller through quality review, research planning, any selected
+investigations, synthesis, validation, and rendering. It then runs the separate
+learning phase for that operation's as-of date, completes eligible retrospective
+actions, and rebuilds bounded memory. It does not promote or activate learning
 candidates. Those remain separate explicit decisions using the advisory ID.
 
 For bulletin-backed products, the workflow uses the trade date printed inside
