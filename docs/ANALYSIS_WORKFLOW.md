@@ -153,6 +153,13 @@ delivery only after its acceptance gates and an explicit human approval.
 
 ## Retrospective learning loop
 
+Stable investigator findings declare a one- or five-session horizon and the
+price, volatility, or market-impact dimensions expected to matter. The
+retrospective materializes those outcomes independently of final-view forecasts,
+scores realized materiality, and preserves the lead's use or rejection decision.
+This supports omission and usefulness evaluation without treating later movement
+as proof that the investigator's causal explanation was correct.
+
 Daily synthesis records an evidence-linked forecast ledger for price direction,
 volatility direction, and move magnitude. After future sessions mature, run:
 

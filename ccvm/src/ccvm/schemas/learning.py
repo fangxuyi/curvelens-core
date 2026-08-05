@@ -267,6 +267,76 @@ class EvaluationRecord(_LearningModel):
         return self
 
 
+class InvestigatorDimensionResult(_LearningModel):
+    """Realized absolute movement for one finding-linked impact dimension."""
+
+    dimension: SafeKey
+    absolute_change: Annotated[float, Field(ge=0)]
+    realized_materiality: Literal["muted", "material", "extreme"]
+    outcome_id: SafeIdentifier
+
+    @field_validator("absolute_change")
+    @classmethod
+    def require_finite_change(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("absolute_change must be finite")
+        return value
+
+
+class InvestigatorEvaluationRecord(_LearningModel):
+    """Deterministic outcome attribution for one stable investigator finding."""
+
+    schema_version: Literal[1] = 1
+    finding_id: SafeIdentifier
+    investigation_id: SafeIdentifier
+    role: SafeKey
+    horizon_sessions: Annotated[int, Field(strict=True, gt=0, le=_MAX_HORIZON_SESSIONS)]
+    expected_materiality: Literal["high", "medium", "low"]
+    expected_impact_dimensions: Annotated[list[SafeKey], Field(min_length=1, max_length=3)]
+    confidence: Literal["high", "medium", "low"]
+    lead_disposition: Literal["used", "partially_used", "rejected"]
+    lead_used_finding: bool
+    status: Literal["scored", "unscored"]
+    unscored_reason: Annotated[str, Field(max_length=512)] = ""
+    realized_materiality: Literal["muted", "material", "extreme"] | None = None
+    materiality_score: Annotated[int | None, Field(strict=True, ge=0, le=2)] = None
+    materiality_hit: bool | None = None
+    material: bool | None = None
+    rejected_but_material: bool | None = None
+    dimension_results: Annotated[list[InvestigatorDimensionResult], Field(max_length=3)]
+    evidence_validation_passed: Literal[True] = True
+    analysis_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    outcome_sha256: Annotated[
+        list[Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]],
+        Field(max_length=3),
+    ]
+    evaluated_at: datetime
+    evaluator_version: Annotated[int, Field(strict=True, gt=0)] = 1
+
+    @field_validator("expected_impact_dimensions")
+    @classmethod
+    def require_sorted_dimensions(cls, value: list[str]) -> list[str]:
+        if value != sorted(set(value)):
+            raise ValueError("expected_impact_dimensions must be unique and sorted")
+        return value
+
+    @model_validator(mode="after")
+    def validate_score_state(self) -> InvestigatorEvaluationRecord:
+        scored = (
+            self.realized_materiality, self.materiality_score,
+            self.materiality_hit, self.material, self.rejected_but_material,
+        )
+        if self.status == "scored" and (
+            any(value is None for value in scored) or not self.dimension_results
+        ):
+            raise ValueError("scored investigator evaluation requires realized scores")
+        if self.status == "unscored" and not self.unscored_reason:
+            raise ValueError("unscored investigator evaluation requires a reason")
+        if self.evaluated_at.tzinfo is None or self.evaluated_at.utcoffset() is None:
+            raise ValueError("evaluated_at must be timezone-aware")
+        return self
+
+
 class LearningScope(_LearningModel):
     """Stable, product-neutral fields allowed to key a learning advisory."""
 

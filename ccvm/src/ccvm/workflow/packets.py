@@ -11,7 +11,7 @@ from ccvm.reference.product import Product
 from ccvm.schemas.learning import LearningAdvisory, MobileLearningAdvisory
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 13
+PACKET_SCHEMA_VERSION = 14
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -55,6 +55,16 @@ MOBILE_RELEVANCE_DIMENSIONS = {
     "price_direction": {"thresholds": [0.005, 0.015]},
     "volatility_direction": {"thresholds": [0.005, 0.015]},
     "market_impact": {"thresholds": [0.005, 0.015]},
+}
+INVESTIGATOR_RELEVANCE_CONTRACT_VERSION = 1
+INVESTIGATOR_RELEVANCE_DIMENSIONS = {
+    key: {
+        "metric_key": value["metric_key"],
+        "labels": value["labels"],
+        "outcome_rule": value["outcome_rule"],
+        "thresholds_by_horizon": {"1": [0.005, 0.015], "5": [0.01, 0.03]},
+    }
+    for key, value in FORECAST_DIMENSIONS.items()
 }
 
 
@@ -129,6 +139,7 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
             "materiality": "high|medium|low",
             "horizon_sessions": 1,
             "confidence": "high|medium|low",
+            "expected_impact_dimensions": [],
             "evidence_ids": [],
             "counterevidence_ids": [],
             "confirmations": [],
@@ -168,7 +179,7 @@ def _top_view_template(rank: int) -> dict[str, Any]:
         "plain_english_view": "",
         "horizon": "",
         "confidence": "high|medium|low",
-        "evidence_relationship": "cross_supported|conflicting|single_desk",
+        "evidence_relationship": "cross_supported|conflicting|single_desk|direct_evidence",
         "specialist_roles": [],
         "key_metrics": [],
         "supporting_evidence": [{"claim": "", "evidence_ids": []}],
@@ -320,6 +331,11 @@ def build_analysis_packets(
             "version": MOBILE_RELEVANCE_CONTRACT_VERSION,
             "horizon_sessions": 1,
             "dimensions": MOBILE_RELEVANCE_DIMENSIONS,
+        },
+        "investigator_relevance_contract": {
+            "version": INVESTIGATOR_RELEVANCE_CONTRACT_VERSION,
+            "horizons_sessions": FORECAST_HORIZONS_SESSIONS,
+            "dimensions": INVESTIGATOR_RELEVANCE_DIMENSIONS,
         },
         "learning_snapshot": normalized_learning,
     }, sort_keys=True, default=str).encode()
@@ -550,6 +566,17 @@ def build_analysis_packets(
                     "Every mobile candidate must link each expected impact dimension to a one-session "
                     "forecast. Later evaluation uses absolute realized movement and these fixed ex-ante "
                     "thresholds; forecast correctness is scored separately."
+                ),
+            },
+            "investigator_relevance_contract": {
+                "version": INVESTIGATOR_RELEVANCE_CONTRACT_VERSION,
+                "horizons_sessions": list(FORECAST_HORIZONS_SESSIONS),
+                "dimensions": INVESTIGATOR_RELEVANCE_DIMENSIONS,
+                "labels": ["muted", "material", "extreme"],
+                "rule": (
+                    "Each investigator finding declares the price, volatility, or impact dimensions "
+                    "it expects to matter. Later evaluation uses absolute realized movement at the "
+                    "finding horizon and fixed ex-ante thresholds; it does not infer causation."
                 ),
             },
             "learning_context": {

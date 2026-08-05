@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from ccvm.analytics.outcomes import persist_outcome, realize_outcome
-from ccvm.schemas.learning import EvaluationRecord, OutcomeRecord
+from ccvm.schemas.learning import (
+    EvaluationRecord, InvestigatorEvaluationRecord, OutcomeRecord,
+)
 from ccvm.workflow.mobile_evaluation import (
     MOBILE_RELEVANCE_EVALUATOR_VERSION,
     aggregate_mobile_relevance,
@@ -18,8 +20,13 @@ from ccvm.workflow.mobile_evaluation import (
 
 from .evaluation import EVALUATOR_VERSION, aggregate_evaluations, evaluate_forecast
 from .finalize import AnalysisValidationError
+from .investigator_evaluation import (
+    INVESTIGATOR_EVALUATOR_VERSION,
+    aggregate_investigator_evaluations,
+    evaluate_investigator_findings,
+)
 
-RETROSPECTIVE_SCHEMA_VERSION = 2
+RETROSPECTIVE_SCHEMA_VERSION = 3
 
 
 def _hash_bytes(value: bytes) -> str:
@@ -87,6 +94,7 @@ def _trace_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
 def _response_template(
     packet_id: str, evaluations: list[EvaluationRecord],
     mobile_evaluations: list[dict[str, Any]],
+    investigator_evaluations: list[InvestigatorEvaluationRecord],
 ) -> dict[str, Any]:
     return {
         "packet_id": packet_id,
@@ -95,6 +103,7 @@ def _response_template(
         "trace_assessment": "",
         "priority_assessment": "",
         "mobile_assessment": "",
+        "investigator_assessment": "",
         "forecast_reviews": [{
             "forecast_id": item.forecast_id,
             "assessment": "correct|incorrect",
@@ -107,6 +116,13 @@ def _response_template(
             "diagnosis": "",
             "improvement": "",
         } for item in mobile_evaluations if item["status"] == "scored"],
+        "investigator_reviews": [{
+            "finding_id": item.finding_id,
+            "assessment": "materiality_matched|overstated|understated",
+            "lead_disposition": item.lead_disposition,
+            "diagnosis": "",
+            "improvement": "",
+        } for item in investigator_evaluations if item.status == "scored"],
         "candidate_advisories": [],
     }
 
@@ -122,7 +138,7 @@ def validate_retrospective_response(
         raise AnalysisValidationError("retrospective response has invalid status")
     for field in (
         "outcome_assessment", "trace_assessment", "priority_assessment",
-        "mobile_assessment",
+        "mobile_assessment", "investigator_assessment",
     ):
         if not str(response.get(field, "")).strip():
             raise AnalysisValidationError(f"retrospective response requires {field}")
@@ -180,6 +196,37 @@ def validate_retrospective_response(
         for field in ("diagnosis", "improvement"):
             if not str(review.get(field, "")).strip():
                 raise AnalysisValidationError(f"mobile_reviews[{index}] requires {field}")
+
+    investigator_scored = {
+        item["finding_id"]: item
+        for item in (packet.get("investigator_relevance") or {}).get("records", [])
+        if item.get("status") == "scored"
+    }
+    investigator_reviews = response.get("investigator_reviews")
+    if not isinstance(investigator_reviews, list) or {
+        item.get("finding_id") for item in investigator_reviews if isinstance(item, dict)
+    } != set(investigator_scored) or len(investigator_reviews) != len(investigator_scored):
+        raise AnalysisValidationError(
+            "retrospective must review every scored investigator finding exactly once"
+        )
+    expected_scores = {"low": 0, "medium": 1, "high": 2}
+    for index, review in enumerate(investigator_reviews):
+        if not isinstance(review, dict):
+            raise AnalysisValidationError(f"investigator_reviews[{index}] must be an object")
+        scored_item = investigator_scored[review["finding_id"]]
+        expected_score = expected_scores[scored_item["expected_materiality"]]
+        actual_score = scored_item["materiality_score"]
+        expected_assessment = "materiality_matched" if actual_score == expected_score else (
+            "understated" if actual_score > expected_score else "overstated"
+        )
+        if review.get("assessment") != expected_assessment \
+                or review.get("lead_disposition") != scored_item["lead_disposition"]:
+            raise AnalysisValidationError(
+                f"investigator_reviews[{index}] must preserve deterministic attribution"
+            )
+        for field in ("diagnosis", "improvement"):
+            if not str(review.get(field, "")).strip():
+                raise AnalysisValidationError(f"investigator_reviews[{index}] requires {field}")
 
     advisories = response.get("candidate_advisories")
     if not isinstance(advisories, list) or len(advisories) > 8:
@@ -270,6 +317,33 @@ def prepare_retrospective(
         "records": [item.model_dump(mode="json") for item in mobile_records],
         "aggregate": aggregate_mobile_relevance(mobile_records),
     }
+    investigator_contract = analysis.get("investigator_relevance_contract")
+    investigator_analyses = analysis.get("investigator_analyses")
+    investigator_feedback = (analysis.get("synthesis") or {}).get("investigator_feedback")
+    investigator_records: list[InvestigatorEvaluationRecord] = []
+    investigator_unavailable_reason = ""
+    if isinstance(investigator_contract, dict) \
+            and isinstance(investigator_analyses, dict) \
+            and isinstance(investigator_feedback, list):
+        investigator_records = evaluate_investigator_findings(
+            investigator_analyses, investigator_feedback,
+            contract=investigator_contract, source_date=source_date,
+            reports_dir=data_root / "reports",
+            outcomes_dir=run_dir / "investigator_outcomes",
+            analysis_path=analysis_path, analysis_sha256=analysis_hash,
+            evaluated_at=now,
+        )
+    else:
+        investigator_unavailable_reason = (
+            "analysis lacks investigator findings, feedback, or a relevance contract"
+        )
+    investigator_payload = {
+        "evaluator_version": INVESTIGATOR_EVALUATOR_VERSION,
+        "status": "available" if not investigator_unavailable_reason else "unavailable",
+        "unavailable_reason": investigator_unavailable_reason,
+        "records": [item.model_dump(mode="json") for item in investigator_records],
+        "aggregate": aggregate_investigator_evaluations(investigator_records),
+    }
     evaluation_artifact = {
         "schema_version": RETROSPECTIVE_SCHEMA_VERSION,
         "trade_date": trade_date,
@@ -277,6 +351,7 @@ def prepare_retrospective(
         "evaluations": [item.model_dump(mode="json") for item in evaluations],
         "aggregate": aggregate_evaluations(evaluations),
         "mobile_relevance": mobile_payload,
+        "investigator_relevance": investigator_payload,
     }
     evaluation_path = run_dir / "evaluation.json"
     _write_json(evaluation_path, evaluation_artifact)
@@ -289,6 +364,7 @@ def prepare_retrospective(
         "events_sha256": _hash_file(events_path),
         "evaluator_version": EVALUATOR_VERSION,
         "mobile_relevance_evaluator_version": MOBILE_RELEVANCE_EVALUATOR_VERSION,
+        "investigator_evaluator_version": INVESTIGATOR_EVALUATOR_VERSION,
     }
     packet_id = _hash_bytes(json.dumps(identity, sort_keys=True).encode())
     packet = {
@@ -308,6 +384,7 @@ def prepare_retrospective(
         "evaluations": evaluation_artifact["evaluations"],
         "aggregate": evaluation_artifact["aggregate"],
         "mobile_relevance": mobile_payload,
+        "investigator_relevance": investigator_payload,
         "trace_summary": _trace_summary(events),
         "review_contract": {
             "language_rule": (
@@ -333,13 +410,16 @@ def prepare_retrospective(
     scored = [item for item in evaluations if item.status == "scored"]
     _write_json(
         template_path,
-        _response_template(packet_id, evaluations, mobile_payload["records"]),
+        _response_template(
+            packet_id, evaluations, mobile_payload["records"], investigator_records,
+        ),
     )
     task_path.write_text(
         "# CurveLens retrospective review\n\n"
         "Review only the controller-visible packet and deterministic outcomes. Do not spawn agents. "
         "Do not reinterpret outcome labels or claim causation. Diagnose prioritization, calibration, "
-        "mobile false prominence and missed material information, "
+        "mobile false prominence, missed material information, investigator finding materiality, "
+        "lead use and rejected-but-material findings, "
         "evidence use, and trace friction; write the completed JSON only to "
         f"`{response_path}` using `{template_path}`. Candidate advisories remain inactive hypotheses.\n"
     )

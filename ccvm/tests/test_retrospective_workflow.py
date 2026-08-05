@@ -36,6 +36,16 @@ def _mobile_contract():
     }
 
 
+def _investigator_contract():
+    return {
+        "version": 1, "horizons_sessions": [1, 5],
+        "dimensions": {"price_direction": {
+            **_contract()["dimensions"]["price_direction"],
+            "thresholds_by_horizon": {"1": [0.005, 0.015], "5": [0.01, 0.03]},
+        }},
+    }
+
+
 def _mobile_selection():
     return {
         "selected_view_ranks": [1],
@@ -53,7 +63,7 @@ def _mobile_selection():
     }
 
 
-def _setup(root: Path, *, target=True):
+def _setup(root: Path, *, target=True, with_investigator=False):
     trade_date = "2026-07-02"
     analysis_dir = root / "analysis" / f"trade_date={trade_date}"
     analysis_dir.mkdir(parents=True)
@@ -64,7 +74,7 @@ def _setup(root: Path, *, target=True):
         "expected_label": "up", "confidence": "high",
         "evidence_ids": ["feature:market:2026-07-02"],
     }
-    (analysis_dir / "analysis.json").write_text(json.dumps({
+    analysis = {
         "product": "gold", "trade_date": trade_date,
         "forecast_contract": _contract(),
         "mobile_relevance_contract": _mobile_contract(),
@@ -72,7 +82,27 @@ def _setup(root: Path, *, target=True):
             "forecast_ledger": [forecast], "top_views": [{"rank": 1}],
             "mobile_selection": _mobile_selection(),
         },
-    }))
+    }
+    if with_investigator:
+        finding_id = "packet1234567890:futures_curve:f1"
+        investigation_id = "packet1234567890:futures_curve"
+        analysis.update({
+            "investigator_relevance_contract": _investigator_contract(),
+            "investigator_analyses": {"futures_curve": {
+                "investigation_id": investigation_id,
+                "candidate_findings": [{
+                    "finding_id": finding_id, "materiality": "medium",
+                    "horizon_sessions": 1, "confidence": "medium",
+                    "expected_impact_dimensions": ["price_direction"],
+                    "evidence_ids": ["feature:market:2026-07-02"],
+                }],
+            }},
+        })
+        analysis["synthesis"]["investigator_feedback"] = [{
+            "investigation_id": investigation_id, "disposition": "rejected",
+            "used_finding_ids": [],
+        }]
+    (analysis_dir / "analysis.json").write_text(json.dumps(analysis))
     reports = root / "reports"
     reports.mkdir()
     for dt, settle in [(trade_date, 100), ("2026-07-06", 101)]:
@@ -108,6 +138,22 @@ def test_retrospective_materializes_outcomes_evaluation_and_action(tmp_path):
     assert "hidden chain-of-thought" in packet["trace_summary"]["scope_note"]
 
 
+def test_retrospective_scores_rejected_investigator_finding_materiality(tmp_path):
+    trade_date = _setup(tmp_path, with_investigator=True)
+    result = prepare_retrospective(
+        tmp_path, trade_date,
+        generated_at=datetime.fromisoformat("2026-07-07T12:00:00+00:00"),
+    )
+    packet = json.loads(Path(result["packet"]).read_text())
+    record = packet["investigator_relevance"]["records"][0]
+    assert record["status"] == "scored"
+    assert record["realized_materiality"] == "material"
+    assert record["materiality_hit"] is True
+    assert record["rejected_but_material"] is True
+    template = json.loads(Path(result["actions"][0]["template_path"]).read_text())
+    assert template["investigator_reviews"][0]["finding_id"] == record["finding_id"]
+
+
 def test_valid_response_completes_without_activating_candidates(tmp_path):
     trade_date = _setup(tmp_path)
     now = datetime.fromisoformat("2026-07-07T12:00:00+00:00")
@@ -119,6 +165,7 @@ def test_valid_response_completes_without_activating_candidates(tmp_path):
         "trace_assessment": "One validation retry was visible.",
         "priority_assessment": "The first-ranked view received full weight.",
         "mobile_assessment": "The selected view was materially relevant.",
+        "investigator_assessment": "No investigator findings were available.",
     })
     template["forecast_reviews"][0].update({
         "assessment": "correct", "diagnosis": "The stated direction matched.",
@@ -147,6 +194,7 @@ def test_response_cannot_override_deterministic_score(tmp_path):
         "status": "complete", "outcome_assessment": "Done.",
         "trace_assessment": "Done.", "priority_assessment": "Done.",
         "mobile_assessment": "Done.",
+        "investigator_assessment": "Done.",
     })
     response["forecast_reviews"][0].update({
         "assessment": "incorrect", "diagnosis": "No.", "improvement": "No.",
@@ -172,6 +220,7 @@ def test_response_cannot_override_mobile_relevance_score(tmp_path):
         "status": "complete", "outcome_assessment": "Done.",
         "trace_assessment": "Done.", "priority_assessment": "Done.",
         "mobile_assessment": "Done.",
+        "investigator_assessment": "Done.",
     })
     response["forecast_reviews"][0].update({
         "assessment": "correct", "diagnosis": "Done.", "improvement": "Done.",
@@ -182,6 +231,36 @@ def test_response_cannot_override_mobile_relevance_score(tmp_path):
     Path(action["response_path"]).write_text(json.dumps(response))
 
     with pytest.raises(AnalysisValidationError, match="preserve deterministic relevance scoring"):
+        validate_retrospective_response(
+            Path(action["packet_path"]), Path(action["response_path"]),
+        )
+
+
+def test_response_cannot_override_investigator_attribution(tmp_path):
+    trade_date = _setup(tmp_path, with_investigator=True)
+    result = prepare_retrospective(
+        tmp_path, trade_date,
+        generated_at=datetime.fromisoformat("2026-07-07T12:00:00+00:00"),
+    )
+    action = result["actions"][0]
+    response = json.loads(Path(action["template_path"]).read_text())
+    response.update({
+        "status": "complete", "outcome_assessment": "Done.",
+        "trace_assessment": "Done.", "priority_assessment": "Done.",
+        "mobile_assessment": "Done.", "investigator_assessment": "Done.",
+    })
+    response["forecast_reviews"][0].update({
+        "assessment": "correct", "diagnosis": "Done.", "improvement": "Done.",
+    })
+    response["mobile_reviews"][0].update({
+        "assessment": "appropriate", "diagnosis": "Done.", "improvement": "Done.",
+    })
+    response["investigator_reviews"][0].update({
+        "assessment": "overstated", "lead_disposition": "used",
+        "diagnosis": "Done.", "improvement": "Done.",
+    })
+    Path(action["response_path"]).write_text(json.dumps(response))
+    with pytest.raises(AnalysisValidationError, match="deterministic attribution"):
         validate_retrospective_response(
             Path(action["packet_path"]), Path(action["response_path"]),
         )
