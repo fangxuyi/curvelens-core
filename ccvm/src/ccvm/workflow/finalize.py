@@ -65,11 +65,15 @@ def _check_findings(response: dict[str, Any], allowed: set[str], role: str) -> N
 
 def _check_key_metrics(
     metrics: Any, allowed: set[str], label: str, minimum: int,
+    field_name: str = "key_metrics",
 ) -> list[dict[str, Any]]:
+    collection_label = f"{label}.{field_name}"
     if not isinstance(metrics, list) or len(metrics) < minimum:
-        raise AnalysisValidationError(f"{label} requires at least {minimum} key_metrics")
+        raise AnalysisValidationError(
+            f"{collection_label} requires at least {minimum} metric objects"
+        )
     for index, metric in enumerate(metrics):
-        item_label = f"{label}.key_metrics[{index}]"
+        item_label = f"{collection_label}[{index}]"
         if not isinstance(metric, dict):
             raise AnalysisValidationError(f"{item_label} must be an object")
         for field in ("label", "value", "comparison", "plain_english_meaning"):
@@ -837,6 +841,7 @@ def validate_synthesis_response(
     snapshot = _check_key_metrics(
         synthesis.get("market_snapshot"), allowed, "synthesis",
         0 if synthesis["status"] == "blocked" else 6,
+        field_name="market_snapshot",
     )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
     _check_forecast_ledger(synthesis, manifest, allowed)
