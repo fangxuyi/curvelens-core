@@ -27,6 +27,7 @@ from .investigator_evaluation import (
 )
 
 RETROSPECTIVE_SCHEMA_VERSION = 3
+MAX_RETROSPECTIVE_CORRECTIONS = 2
 
 
 def _hash_bytes(value: bytes) -> str:
@@ -392,7 +393,8 @@ def prepare_retrospective(
                 "correlation, or forecast error."
             ),
             "candidate_rule": (
-                "Propose only bounded candidates supported by scored forecasts. Candidates are not active memory."
+                "Leave candidate_advisories empty. Product-local memory candidates are built "
+                "deterministically from validated evaluation records."
             ),
         },
     }
@@ -421,7 +423,8 @@ def prepare_retrospective(
         "mobile false prominence, missed material information, investigator finding materiality, "
         "lead use and rejected-but-material findings, "
         "evidence use, and trace friction; write the completed JSON only to "
-        f"`{response_path}` using `{template_path}`. Candidate advisories remain inactive hypotheses.\n"
+        f"`{response_path}` using `{template_path}`. Preserve every template key and leave "
+        "candidate_advisories as an empty list; deterministic memory aggregation creates candidates.\n"
     )
     if old_packet_id != packet_id:
         response_path.unlink(missing_ok=True)
@@ -443,7 +446,34 @@ def prepare_retrospective(
                 "template_path": str(template_path), "response_path": str(response_path),
             }],
         }
-    response = validate_retrospective_response(packet_path, response_path)
+    try:
+        response = validate_retrospective_response(packet_path, response_path)
+    except AnalysisValidationError as exc:
+        pattern = f"retrospective.response.invalid-{packet_id[:12]}-attempt-*.json"
+        attempt = len(list(run_dir.glob(pattern))) + 1
+        if attempt > MAX_RETROSPECTIVE_CORRECTIONS:
+            raise AnalysisValidationError(
+                f"retrospective exceeded {MAX_RETROSPECTIVE_CORRECTIONS} correction attempts: {exc}"
+            ) from exc
+        archive_path = run_dir / (
+            f"retrospective.response.invalid-{packet_id[:12]}-attempt-{attempt}.json"
+        )
+        response_path.replace(archive_path)
+        task_path.write_text(
+            task_path.read_text()
+            + "\nThe prior response failed validation. Rebuild the complete response from the "
+            f"immutable template and leave candidate_advisories empty. Validation error: {exc}\n"
+        )
+        return {
+            "result": "RETROSPECTIVE_REQUIRED", **base,
+            "validation_error": str(exc), "invalid_response": str(archive_path),
+            "actions": [{
+                "action": "RUN_RETROSPECTIVE",
+                "agent_type": "curvelens_retrospective",
+                "task_path": str(task_path), "packet_path": str(packet_path),
+                "template_path": str(template_path), "response_path": str(response_path),
+            }],
+        }
     final_path = run_dir / "retrospective.json"
     _write_json(final_path, {
         "schema_version": RETROSPECTIVE_SCHEMA_VERSION,
