@@ -6,7 +6,7 @@ workflow state, schedules, and delivery state isolated.
 
 The included product profiles are:
 
-| Product | Specialist perspectives |
+| Product | Available investigator capabilities |
 |---|---|
 | WTI | Futures curve, volatility surface, physical fundamentals |
 | Brent | Futures curve, volatility surface, global physical fundamentals |
@@ -32,18 +32,16 @@ flowchart TD
     A[Select product and trade date] --> B[Collect market, options, news, and product data]
     B --> C[Normalize data and run deterministic quality checks]
     C -->|Recoverable input gap| B
-    C -->|Usable data with limitations retained| D[Compute features and prepare cited evidence packets]
+    C -->|Usable data with limitations retained| D[Compute features and build one canonical evidence packet]
 
     D --> Q[Native Codex data-quality reviewer]
-    Q --> F[Futures and curve specialist]
-    Q --> V[Volatility-surface specialist]
-    Q --> P[Macro or fundamentals specialist]
+    Q --> P[Lead research planner scans all evidence]
+    P -->|Zero to three targeted questions| I[Optional investigators]
+    P --> S[Native Codex lead synthesizer]
+    I --> S
+    D --> S
 
-    F --> S[Native Codex cross-market synthesizer]
-    V --> S
-    P --> S
-
-    S --> G[Deterministic schema, citation, and evidence validation]
+    S --> G[Deterministic schema, citation, forecast, and evidence validation]
     G -->|Bounded correction| S
     G --> R[Integrated daily report]
 
@@ -51,9 +49,10 @@ flowchart TD
     R --> O2[statistics.md]
     R --> O3[mobile.md]
     R --> O4[workflow monitor files]
-    O1 -. Future sessions mature .-> L1[Deterministic outcome and retrospective evaluation]
-    L1 --> L2[Bounded product learning memory]
-    L2 -. Promoted snapshot in next packet .-> D
+    O1 -. Future sessions mature .-> L1[Forecast and investigator outcome evaluation]
+    O3 -. Next session matures .-> L1
+    L1 --> L2[Bounded product-local learning candidates]
+    L2 -. Explicit shadow promotion and activation .-> D
     O3 -. Separate explicit approval .-> O5[Delivery outbox]
 ```
 
@@ -68,26 +67,54 @@ At a high level:
 2. A native Codex quality reviewer decides whether the prepared evidence is
    usable, usable with limitations, retryable through an allowlisted remedy, or
    blocked.
-3. Product-configured specialists independently analyze the futures curve,
-   volatility surface, and macro or fundamental evidence. Each specialist must
-   cite its packet and provide exact values, comparisons, plain-English meaning,
-   news alignment or conflict, and a bounded forward view.
-4. A synthesizer ranks the three most important market views. Each view connects
-   validated numbers with supporting and conflicting evidence, assesses whether
-   the apparent driver is supported or unexplained, and states what to watch
-   next.
-5. Deterministic validation checks every role, citation, required field, and
-   copied metric before rendering the report. Analysis completion never
-   authorizes delivery by itself.
-6. Later sessions deterministically score the forecast ledger. Product-isolated
-   memory candidates require repeated samples, explicit shadow promotion, and a
-   replay plus no-degradation gate before activation. Learning snapshots are
-   hypotheses in the next packet, never market evidence.
+3. A lead research planner scans the complete canonical packet and dispatches
+   zero to three targeted investigations only when a specific question could
+   materially change a ranked view, confidence, driver assessment, or watch
+   item. Every unused capability is explicitly omitted with a rationale.
+4. Optional investigators examine the selected curve, volatility, macro, or
+   fundamental question. Their findings carry stable IDs, supporting and
+   counterevidence, expected materiality, a one- or five-session horizon, and
+   concrete confirmation and invalidation conditions. They are additive research,
+   not information gates.
+5. The lead synthesizer reads the complete canonical packet directly, the
+   validated research plan, and every dispatched investigator response. It can
+   use canonical evidence that no investigator selected, records whether each
+   finding was used or rejected, and ranks exactly three decision-relevant views.
+6. Deterministic validation checks the plan, investigations, citations, copied
+   metrics, forecast ledger, mobile selection, and final schema before rendering.
+   Analysis completion never authorizes delivery by itself.
+7. After the configured future sessions mature, deterministic retrospective
+   evaluation scores forecasts, every stable investigator finding, and mobile
+   selection separately. Product-local memory candidates require repeated
+   samples, explicit shadow promotion, and a replay plus no-degradation gate
+   before activation.
 
 The controller persists every phase, so an interrupted run can resume without
-repeating completed work. Temporary specialists exist only for the run; their
-tasks, evidence boundaries, responses, and validation results remain available
-for inspection.
+repeating completed work. Packet-schema changes require unfinished older runs to
+restart. Temporary investigators exist only for the run; the research plan,
+tasks, evidence boundaries, responses, finding IDs, and validation results remain
+available for inspection.
+
+### Guarded learning
+
+Learning is an auditable hypothesis layer, not autonomous prompt rewriting. The
+daily `learn` operation rebuilds `ccvm/data/products/<product>/learning/memory.json`
+from versioned retrospective records. Runtime data remains product-isolated and
+is not checked into the framework repository.
+
+| Advisory family | Stable scope | Allowed effect after activation |
+|---|---|---|
+| Forecast | Dimension, horizon, and stated confidence | Bounded synthesis calibration |
+| Mobile | Source-view rank, expected materiality, and impact dimensions | `mobile_selection` only |
+| Investigator | Capability, horizon, expected materiality, and impact dimensions | Research dispatch and assignment only |
+
+Five scored observations create a candidate. Twenty observations make a
+non-neutral candidate eligible for explicit promotion into shadow status. Shadow
+advice records counterfactual would-use feedback but cannot change analysis.
+Activation is another explicit action and requires sufficient shadow reviews,
+historical replay, and family-specific no-degradation checks. Current canonical
+evidence always takes precedence, and investigator memory is excluded from the
+synthesizer's learning context.
 
 ## Outputs
 
@@ -101,6 +128,11 @@ ccvm/data/products/<product>/
 │   ├── mobile.md
 │   └── statistics.md
 └── analysis_workflow/trade_date=<date>/
+    ├── canonical.packet.json
+    ├── research_plan.task.md
+    ├── research_plan.response.json
+    ├── <investigator>.task.md
+    ├── <investigator>.response.json
     ├── run.json
     ├── workflow_monitor.md
     ├── workflow_monitor.json
@@ -109,9 +141,9 @@ ccvm/data/products/<product>/
 
 | Output | Purpose |
 |---|---|
-| `analysis.md` | Primary human-readable report. It combines the top three views, exact supporting statistics, news or driver assessment, conflicts, specialist detail, and forward watch items. |
-| `analysis.json` | Validated structured form of the same analysis for downstream tools and delivery formatting. |
-| `mobile.md` | Phone-first brief containing the bottom line, three ranked views, two key numbers per view, driver, conflict, watch item, and one material data note. Notification preparation uses this exact format. |
+| `analysis.md` | Primary human-readable report. It combines the top three views, exact supporting statistics, news or driver assessment, conflicts, relevant investigator detail, and forward watch items. |
+| `analysis.json` | Validated structured form of the same analysis, including the research plan and investigator finding dispositions, for retrospective evaluation and downstream tools. |
+| `mobile.md` | Deterministic phone-first rendering of the same synthesis. It selects one view by default and a second only when independently material for the next session, while preserving any conclusion-changing conflict or limitation. Notification preparation uses this exact file without another summarization pass. |
 | `statistics.md` | Numerical audit supplement containing the market snapshot, desk-level measures, comparisons, evidence coverage, and retained limitations. It is not a separate forecast. |
 | `workflow_monitor.md` | User-facing debugging view of each agent's assigned task, allowed input files, submitted response, validation status, and correction history. |
 | `workflow_monitor.json` | Machine-readable monitor snapshot with artifact paths and hashes. |
@@ -136,9 +168,9 @@ deployments/run_dashboard.sh
 Open `http://127.0.0.1:8501`, select a configured product in the sidebar, and
 then select a trade date. Adding another `ccvm/config/markets/<product>.yaml`
 profile automatically adds it to the selector. The dashboard never combines
-analysis and specialist packets from different workflow runs; news remains
+analysis and investigator packets from different workflow runs; news remains
 hidden while a selected run is in progress or its packet identities disagree.
-Articles classified by specialists as rejected are not promoted as highlights,
+Articles classified by investigators as rejected are not promoted as highlights,
 and post-trade-date context is labeled separately.
 
 ## Install
@@ -185,15 +217,23 @@ Point one operating agent at the repository root and give it one sentence:
 - **Operate the CurveLens Corn deployment.**
 - **Operate the CurveLens Silver deployment.**
 
-The agent reads the shared framework instructions
-and the selected product runbook, verifies the environment, and keeps runtime
-commands explicitly scoped with `CCVM_PRODUCT=<product>`.
+One runtime agent operates exactly one product. It reads the shared framework
+instructions and exactly one selected product runbook, verifies the environment,
+and keeps every runtime command explicitly scoped with
+`CCVM_PRODUCT=<product>`. Separate product agents may share the checkout because
+their runtime directories, workflow state, learning memory, schedules, and
+delivery settings remain isolated.
 
 To request the first analysis:
 
 ```text
 Use $curvelens-daily-analysis to run <product> for YYYY-MM-DD.
 ```
+
+The checked-in skill drives the controller through quality review, research
+planning, any selected investigations, synthesis, validation, retrospective
+actions, and bounded memory rebuilding. It does not promote or activate learning
+candidates. Those remain separate explicit decisions using the advisory ID.
 
 For bulletin-backed products, the workflow uses the trade date printed inside
 the approved bulletin. Notification preparation, schedules, and live delivery
