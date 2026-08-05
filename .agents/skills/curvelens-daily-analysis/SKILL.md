@@ -96,6 +96,19 @@ affect only `mobile_selection`. Shadow mobile advice must not affect any report
 field. Activation also forbids an increase in missed-material rate; active mobile
 advice is retired when its no-degradation safeguards fail.
 
+Investigator planning advisories use `investigator-learning:<id>`. They aggregate
+realized finding materiality by product, configured investigator role, declared
+horizon, expected materiality, and impact dimensions. Five scored findings create
+a candidate; twenty make a non-neutral candidate eligible for explicit promotion.
+At most four investigator advisories may be shadow and four active. Active advice
+may affect only planner dispatch and assignment, and the planner must record whether
+it used or rejected every advisory against current canonical evidence. Shadow advice
+is counterfactual only and cannot change dispatch. Activation requires five shadow
+reviews, replay success, and a no-more-than-five-point materiality degradation check.
+Current evidence always controls: `prefer_skip` is a rebuttable planning hypothesis,
+not permission to omit a current anomaly or a source of market truth. Investigator
+memory is excluded from the synthesizer's learning context.
+
 The completed report must lead with exactly three ranked `top_views`, including
 their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
 and preserve exact cited `key_metrics`, the six-to-ten-item synthesis

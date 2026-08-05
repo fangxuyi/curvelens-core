@@ -213,3 +213,21 @@ at least five would-use reviews, historical replay, no more than a five-point
 selection-accuracy degradation, no increase in missed-material rate, and no
 more than a five-point false-prominence increase. Active advice is retired if
 those safeguards later fail.
+
+Investigator relevance builds a third product-isolated advisory set in the same
+file. It groups deterministic finding outcomes by configured capability, finding
+horizon, expected materiality, and impact dimensions. IDs begin
+`investigator-learning:` and use the same five-sample candidate, twenty-sample
+promotion, explicit shadow, and explicit activation lifecycle. Four shadow and
+four active entries are allowed.
+
+Active investigator advice is visible only to the research planner. A matching
+`prefer_dispatch` or `prefer_skip` advisory can shape dispatch and assignment only
+when the planner records that it used the advisory; rejection leaves the current
+evidence-based plan unchanged. Shadow advice records counterfactual would-use
+feedback and cannot affect dispatch. Activation requires five shadow reviews,
+historical replay, and no more than five percentage points of materiality
+degradation. Advice for removed capabilities, unsupported horizons, or unsupported
+impact dimensions is excluded when packets are built. The synthesizer never receives
+investigator advisories, so historical planning memory cannot become an uncited
+market view or alter report wording directly.

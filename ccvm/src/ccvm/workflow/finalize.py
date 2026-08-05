@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from ccvm.reporting.mobile import render_mobile_brief
 from ccvm.schemas.learning import (
     ForecastLedgerItem,
+    InvestigatorLearningAdvisory,
     MemoryFeedbackItem,
     MobileLearningAdvisory,
 )
@@ -517,6 +518,23 @@ def validate_research_plan(
                 raise AnalysisValidationError(f"{label}.{field} is required")
         if item.get("priority") not in {"high", "medium", "low"}:
             raise AnalysisValidationError(f"{label}.priority is invalid")
+        if item.get("expected_materiality") not in {"high", "medium", "low"}:
+            raise AnalysisValidationError(f"{label}.expected_materiality is invalid")
+        research_dimensions = set(
+            (manifest.get("synthesis_contract") or {})
+            .get("investigator_relevance_contract", {}).get("dimensions", {})
+        )
+        research_horizons = set(
+            (manifest.get("synthesis_contract") or {})
+            .get("investigator_relevance_contract", {}).get("horizons_sessions", [])
+        )
+        impact_dimensions = item.get("expected_impact_dimensions")
+        if not isinstance(impact_dimensions, list) or not impact_dimensions \
+                or impact_dimensions != sorted(set(impact_dimensions)) \
+                or set(impact_dimensions) - research_dimensions:
+            raise AnalysisValidationError(f"{label}.expected_impact_dimensions are invalid")
+        if item.get("horizon_sessions") not in research_horizons:
+            raise AnalysisValidationError(f"{label}.horizon_sessions is invalid")
         ids = _check_ids(item.get("evidence_ids"), allowed, label)
         if not ids:
             raise AnalysisValidationError(f"{label} must cite the anomaly motivating dispatch")
@@ -541,6 +559,49 @@ def validate_research_plan(
         raise AnalysisValidationError(
             "research_plan.evidence_ids must include every dispatch citation"
         )
+    raw_advisories = (
+        (manifest.get("research_contract") or {}).get("learning_context", {})
+        .get("investigator_advisories", [])
+    )
+    advisories = [InvestigatorLearningAdvisory.model_validate(item) for item in raw_advisories]
+    advisory_by_id = {item.advisory_id: item for item in advisories}
+    feedback_raw = plan.get("investigator_memory_feedback")
+    if not isinstance(feedback_raw, list):
+        raise AnalysisValidationError("research plan investigator_memory_feedback must be a list")
+    try:
+        feedback = [MemoryFeedbackItem.model_validate(item) for item in feedback_raw]
+    except ValidationError as exc:
+        raise AnalysisValidationError(
+            f"research plan investigator_memory_feedback is invalid: {exc.errors()[0]['msg']}"
+        ) from exc
+    feedback_ids = [item.advisory_id for item in feedback]
+    if len(feedback_ids) != len(set(feedback_ids)) or set(feedback_ids) != set(advisory_by_id):
+        raise AnalysisValidationError(
+            "research plan must address every investigator advisory exactly once"
+        )
+    for index, item in enumerate(feedback):
+        label = f"research_plan.investigator_memory_feedback[{index}]"
+        advisory = advisory_by_id[item.advisory_id]
+        if advisory.status == "shadow" and item.disposition not in {
+            "shadow_would_use", "shadow_rejected",
+        }:
+            raise AnalysisValidationError(f"{label} must preserve shadow isolation")
+        if advisory.status == "active" and item.disposition not in {"used", "rejected"}:
+            raise AnalysisValidationError(f"{label} has invalid active disposition")
+        _check_ids(item.evidence_ids, allowed, label)
+        if advisory.status != "active" or item.disposition != "used":
+            continue
+        matching = next((
+            investigation for investigation in investigations
+            if investigation["role"] == advisory.scope.role
+            and investigation["horizon_sessions"] == advisory.scope.horizon_sessions
+            and investigation["expected_materiality"] == advisory.scope.expected_materiality
+            and investigation["expected_impact_dimensions"] == advisory.scope.impact_dimensions
+        ), None)
+        if advisory.recommendation == "prefer_dispatch" and matching is None:
+            raise AnalysisValidationError(f"{label} used prefer_dispatch advice without dispatch")
+        if advisory.recommendation == "prefer_skip" and matching is not None:
+            raise AnalysisValidationError(f"{label} used prefer_skip advice but dispatched the scope")
     return plan
 
 
@@ -810,6 +871,7 @@ def validate_and_render(
         "product": manifest.get("product"),
         "trade_date": manifest.get("trade_date"),
         "investigator_analyses": responses,
+        "research_plan": validate_research_plan(manifest_path),
         "synthesis": synthesis,
         "forecast_contract": manifest["synthesis_contract"]["forecast_contract"],
         "mobile_relevance_contract": manifest["synthesis_contract"][

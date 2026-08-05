@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from ccvm.reference.product import Product
-from ccvm.schemas.learning import LearningAdvisory, MobileLearningAdvisory
+from ccvm.schemas.learning import (
+    InvestigatorLearningAdvisory, LearningAdvisory, MobileLearningAdvisory,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 14
+PACKET_SCHEMA_VERSION = 15
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -150,7 +152,9 @@ def _response_template(role_key: str, packet_id: str) -> dict[str, Any]:
     }
 
 
-def _research_plan_template(packet_id: str) -> dict[str, Any]:
+def _research_plan_template(
+    packet_id: str, advisories: list[InvestigatorLearningAdvisory],
+) -> dict[str, Any]:
     return {
         "packet_id": packet_id,
         "status": "complete|limited|blocked",
@@ -161,12 +165,24 @@ def _research_plan_template(packet_id: str) -> dict[str, Any]:
             "question": "one targeted research question",
             "rationale": "why this investigation could change the final view",
             "priority": "high|medium|low",
+            "expected_materiality": "high|medium|low",
+            "horizon_sessions": 1,
+            "expected_impact_dimensions": [],
             "evidence_ids": [],
         }],
         "omitted_roles": [{
             "role": "configured capability key",
             "rationale": "why another investigation is not decision-relevant today",
         }],
+        "investigator_memory_feedback": [{
+            "advisory_id": item.advisory_id,
+            "disposition": (
+                "used|rejected" if item.status == "active"
+                else "shadow_would_use|shadow_rejected"
+            ),
+            "rationale": "",
+            "evidence_ids": [],
+        } for item in advisories],
         "evidence_ids": [],
     }
 
@@ -239,8 +255,9 @@ def build_analysis_packets(
     role_responses: dict[str, str] = {}
     role_packet_hashes: dict[str, str] = {}
     learning_snapshot = learning_snapshot or {
-        "schema_version": 2, "as_of": trade_date,
+        "schema_version": 3, "as_of": trade_date,
         "memory_sha256": "", "advisories": [], "mobile_advisories": [],
+        "investigator_advisories": [],
     }
     raw_advisories = learning_snapshot.get("advisories")
     if not isinstance(raw_advisories, list) or len(raw_advisories) > 16:
@@ -262,13 +279,37 @@ def build_analysis_packets(
     if sum(item.status == "active" for item in mobile_advisories) > 4 \
             or sum(item.status == "shadow" for item in mobile_advisories) > 4:
         raise ValueError("mobile learning snapshot exceeds active or shadow advisory caps")
+    raw_investigator_advisories = learning_snapshot.get("investigator_advisories", [])
+    if not isinstance(raw_investigator_advisories, list) \
+            or len(raw_investigator_advisories) > 8:
+        raise ValueError("learning snapshot must contain at most 8 investigator advisories")
+    parsed_investigator_advisories = [
+        InvestigatorLearningAdvisory.model_validate(item)
+        for item in raw_investigator_advisories
+    ]
+    configured_roles = {role.key for role in product.analysis_roles}
+    configured_dimensions = set(INVESTIGATOR_RELEVANCE_DIMENSIONS)
+    investigator_advisories = [
+        item for item in parsed_investigator_advisories
+        if item.scope.role in configured_roles
+        and item.scope.horizon_sessions in FORECAST_HORIZONS_SESSIONS
+        and set(item.scope.impact_dimensions).issubset(configured_dimensions)
+    ]
+    if any(item.status not in {"active", "shadow"} for item in investigator_advisories):
+        raise ValueError("investigator learning snapshot may contain only active or shadow advisories")
+    if sum(item.status == "active" for item in investigator_advisories) > 4 \
+            or sum(item.status == "shadow" for item in investigator_advisories) > 4:
+        raise ValueError("investigator learning snapshot exceeds active or shadow advisory caps")
     normalized_learning = {
-        "schema_version": int(learning_snapshot.get("schema_version", 2)),
+        "schema_version": int(learning_snapshot.get("schema_version", 3)),
         "as_of": str(learning_snapshot.get("as_of", trade_date)),
         "memory_sha256": str(learning_snapshot.get("memory_sha256", "")),
         "advisories": [item.model_dump(mode="json") for item in advisories],
         "mobile_advisories": [
             item.model_dump(mode="json") for item in mobile_advisories
+        ],
+        "investigator_advisories": [
+            item.model_dump(mode="json") for item in investigator_advisories
         ],
     }
 
@@ -580,7 +621,11 @@ def build_analysis_packets(
                 ),
             },
             "learning_context": {
-                **normalized_learning,
+                "schema_version": normalized_learning["schema_version"],
+                "as_of": normalized_learning["as_of"],
+                "memory_sha256": normalized_learning["memory_sha256"],
+                "advisories": normalized_learning["advisories"],
+                "mobile_advisories": normalized_learning["mobile_advisories"],
                 "rule": (
                     "Learning advisories are hypotheses, never evidence. Record used or rejected "
                     "active advisories in memory_feedback. Shadow advisories must not influence the "
@@ -593,12 +638,31 @@ def build_analysis_packets(
                     "recorded as used or rejected. Shadow mobile advisories must not affect top views, "
                     "forecasts, wording, or mobile_selection; record only counterfactual would-use feedback."
                 ),
+                "investigator_rule": (
+                    "Investigator planning advisories are intentionally excluded from synthesis. "
+                    "Only the validated research plan and investigator findings may reach the lead."
+                ),
             },
             "do_not": [
                 "invent missing evidence", "present settlement analytics as executable prices",
                 "turn an invalid diagnostic into a probability",
                 "claim that news caused a move when evidence only shows timing or correlation",
             ],
+        },
+        "research_contract": {
+            "maximum_investigators": min(3, len(product.analysis_roles)),
+            "learning_context": {
+                "schema_version": normalized_learning["schema_version"],
+                "as_of": normalized_learning["as_of"],
+                "memory_sha256": normalized_learning["memory_sha256"],
+                "investigator_advisories": normalized_learning["investigator_advisories"],
+                "rule": (
+                    "Investigator advisories are historical planning hypotheses, never market "
+                    "evidence. Active advice may affect only research dispatch and assignment. "
+                    "Shadow advice must not affect any dispatch, question, view, forecast, or wording; "
+                    "record only counterfactual would-use feedback."
+                ),
+            },
         },
     }
     synthesis_template = {
@@ -650,7 +714,7 @@ def build_analysis_packets(
     research_plan_template_path = output_dir / "research_plan.template.json"
     research_plan_response_path = output_dir / "research_plan.response.json"
     research_plan_template_path.write_text(json.dumps(
-        _research_plan_template(packet_id), indent=2,
+        _research_plan_template(packet_id, investigator_advisories), indent=2,
     ))
     research_plan_response_path.unlink(missing_ok=True)
     manifest["research_plan_template"] = str(research_plan_template_path)

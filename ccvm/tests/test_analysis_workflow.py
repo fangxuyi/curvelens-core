@@ -179,6 +179,27 @@ def _learning_snapshot(status="active"):
     }
 
 
+def _investigator_learning_advisory(status="active", recommendation="prefer_dispatch"):
+    return {
+        "advisory_id": "investigator-learning:abc123",
+        "status": status,
+        "scope": {
+            "role": "futures_curve", "horizon_sessions": 1,
+            "expected_materiality": "medium",
+            "impact_dimensions": ["price_direction"],
+        },
+        "recommendation": recommendation,
+        "observation": "This investigator scope was material in 70% of scored samples.",
+        "suggested_adjustment": "Prefer dispatch only when current evidence matches the scope.",
+        "sample_size": 20, "material_count": 14, "material_rate": 0.7,
+        "materiality_hit_rate": 0.65, "lead_use_rate": 0.6,
+        "rejected_material_rate": 0.1, "promotion_eligible": True,
+        "source_evaluation_sha256": ["d" * 64],
+        "created_at": "2026-07-19T12:00:00+00:00",
+        "updated_at": "2026-07-19T12:00:00+00:00",
+    }
+
+
 def _packets(tmp_path: Path, learning_snapshot=None):
     report = {"sections": {
         "what_changed": {"move": 1}, "market_risk": {"iv": .2},
@@ -214,6 +235,9 @@ def _write_research_plan(manifest, selected=None):
             "question": f"What could the {role} evidence change in today's ranked view?",
             "rationale": "The cited anomaly could materially alter the lead conclusion.",
             "priority": "high",
+            "expected_materiality": "medium",
+            "horizon_sessions": 1,
+            "expected_impact_dimensions": ["price_direction"],
             "evidence_ids": [evidence_id],
         })
     template.update({
@@ -355,6 +379,71 @@ def test_shadow_learning_is_visible_but_cannot_be_used(tmp_path):
     assert context["mobile_advisories"][0]["status"] == "shadow"
     assert "must not influence" in context["rule"]
     assert "must not affect" in context["mobile_rule"]
+
+
+def test_investigator_learning_is_isolated_to_research_planning(tmp_path):
+    snapshot = _learning_snapshot()
+    snapshot["schema_version"] = 3
+    snapshot["investigator_advisories"] = [_investigator_learning_advisory()]
+    manifest = _packets(tmp_path, learning_snapshot=snapshot)
+    plan = _write_research_plan(manifest)
+    plan["investigator_memory_feedback"][0].update({
+        "disposition": "used",
+        "rationale": "Current canonical evidence matches the active dispatch scope.",
+    })
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    validated = validate_research_plan(tmp_path / "manifest.json")
+    assert validated["investigator_memory_feedback"][0]["disposition"] == "used"
+    assert manifest["research_contract"]["learning_context"][
+        "investigator_advisories"
+    ][0]["status"] == "active"
+    assert "investigator_advisories" not in manifest[
+        "synthesis_contract"
+    ]["learning_context"]
+
+
+def test_shadow_investigator_advice_cannot_be_marked_used(tmp_path):
+    snapshot = _learning_snapshot()
+    snapshot["schema_version"] = 3
+    snapshot["investigator_advisories"] = [
+        _investigator_learning_advisory(status="shadow")
+    ]
+    manifest = _packets(tmp_path, learning_snapshot=snapshot)
+    plan = _write_research_plan(manifest)
+    plan["investigator_memory_feedback"][0].update({
+        "disposition": "used", "rationale": "This must remain counterfactual.",
+    })
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    with pytest.raises(AnalysisValidationError, match="shadow isolation"):
+        validate_research_plan(tmp_path / "manifest.json")
+
+
+def test_stale_investigator_advice_is_not_routed_to_planner(tmp_path):
+    snapshot = _learning_snapshot()
+    snapshot["schema_version"] = 3
+    advisory = _investigator_learning_advisory()
+    advisory["scope"]["role"] = "removed_capability"
+    snapshot["investigator_advisories"] = [advisory]
+    manifest = _packets(tmp_path, learning_snapshot=snapshot)
+    assert manifest["research_contract"]["learning_context"][
+        "investigator_advisories"
+    ] == []
+
+
+def test_active_investigator_skip_advice_must_be_applied_when_used(tmp_path):
+    snapshot = _learning_snapshot()
+    snapshot["schema_version"] = 3
+    snapshot["investigator_advisories"] = [
+        _investigator_learning_advisory(recommendation="prefer_skip")
+    ]
+    manifest = _packets(tmp_path, learning_snapshot=snapshot)
+    plan = _write_research_plan(manifest)
+    plan["investigator_memory_feedback"][0].update({
+        "disposition": "used", "rationale": "Applying the active skip advice.",
+    })
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    with pytest.raises(AnalysisValidationError, match="prefer_skip advice"):
+        validate_research_plan(tmp_path / "manifest.json")
 
 
 def test_packet_builder_supports_arbitrary_configured_roles(tmp_path):
