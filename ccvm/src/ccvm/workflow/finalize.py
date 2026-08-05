@@ -532,9 +532,14 @@ def validate_research_plan(
         if not isinstance(impact_dimensions, list) or not impact_dimensions \
                 or impact_dimensions != sorted(set(impact_dimensions)) \
                 or set(impact_dimensions) - research_dimensions:
-            raise AnalysisValidationError(f"{label}.expected_impact_dimensions are invalid")
+            raise AnalysisValidationError(
+                f"{label}.expected_impact_dimensions must be a nonempty, "
+                f"alphabetically sorted subset of {sorted(research_dimensions)}"
+            )
         if item.get("horizon_sessions") not in research_horizons:
-            raise AnalysisValidationError(f"{label}.horizon_sessions is invalid")
+            raise AnalysisValidationError(
+                f"{label}.horizon_sessions must be one of {sorted(research_horizons)}"
+            )
         ids = _check_ids(item.get("evidence_ids"), allowed, label)
         if not ids:
             raise AnalysisValidationError(f"{label} must cite the anomaly motivating dispatch")

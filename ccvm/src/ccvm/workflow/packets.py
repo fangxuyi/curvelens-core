@@ -167,7 +167,7 @@ def _research_plan_template(
             "priority": "high|medium|low",
             "expected_materiality": "high|medium|low",
             "horizon_sessions": 1,
-            "expected_impact_dimensions": [],
+            "expected_impact_dimensions": ["market_impact"],
             "evidence_ids": [],
         }],
         "omitted_roles": [{

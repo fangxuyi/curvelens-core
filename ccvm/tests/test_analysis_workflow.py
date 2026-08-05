@@ -678,6 +678,9 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "RESEARCH_PLAN_REQUIRED"
     assert next_actions(state)[0]["action"] == "RUN_RESEARCH_PLANNER"
+    planner_task = Path(next_actions(state)[0]["task_path"]).read_text()
+    assert "['market_impact', 'price_direction', 'volatility_direction']" in planner_task
+    assert "realized-outcome dimensions, not report fields" in planner_task
     _write_research_plan(manifest)
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "INVESTIGATORS_REQUIRED"
@@ -743,6 +746,45 @@ def test_research_plan_rejects_unexplained_capability_omission(tmp_path):
     Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
     with pytest.raises(AnalysisValidationError, match="select or explicitly omit every"):
         validate_research_plan(tmp_path / "run" / "manifest.json")
+
+
+def test_research_plan_dimension_error_lists_sorted_outcome_enum(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    plan = _write_research_plan(manifest, selected=[manifest["roles"][0]])
+    plan["investigations"][0]["expected_impact_dimensions"] = [
+        "price_direction", "market_impact",
+    ]
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    with pytest.raises(AnalysisValidationError) as exc_info:
+        validate_research_plan(tmp_path / "run" / "manifest.json")
+    assert "alphabetically sorted subset" in str(exc_info.value)
+    assert "['market_impact', 'price_direction', 'volatility_direction']" in str(
+        exc_info.value
+    )
+
+
+def test_research_plan_retry_refreshes_task_without_a_response(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    state_path, state = initialize_state(
+        manifest_path=tmp_path / "run" / "manifest.json", quality=_quality(),
+        quality_attempts=[], repo_root=Path(__file__).resolve().parents[2],
+    )
+    qc = json.loads(Path(state["qc"]["template_path"]).read_text())
+    qc.update({"disposition": "accept", "rationale": "Usable."})
+    Path(state["qc"]["response_path"]).write_text(json.dumps(qc))
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    plan = _write_research_plan(manifest, selected=[manifest["roles"][0]])
+    plan["investigations"][0]["expected_impact_dimensions"] = ["watch_items"]
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    assert state["research_plan"]["status"] == "retry"
+    task_path = Path(state["research_plan"]["task_path"])
+    task_path.write_text("stale task")
+
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+
+    assert state["phase"] == "RESEARCH_PLAN_REQUIRED"
+    assert "realized-outcome dimensions, not report fields" in task_path.read_text()
 
 
 def test_monitor_preserves_rejected_agent_response(tmp_path):
