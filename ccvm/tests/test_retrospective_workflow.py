@@ -136,6 +136,42 @@ def test_retrospective_materializes_outcomes_evaluation_and_action(tmp_path):
     assert packet["mobile_relevance"]["records"][0]["selection_correct"] is True
     assert packet["mobile_relevance"]["aggregate"]["precision"] == 1
     assert "hidden chain-of-thought" in packet["trace_summary"]["scope_note"]
+    assert packet["review_contract"]["candidate_rule"].startswith(
+        "Leave candidate_advisories empty"
+    )
+    assert "leave candidate_advisories as an empty list" in Path(
+        result["actions"][0]["task_path"]
+    ).read_text()
+
+
+def test_invalid_retrospective_is_archived_and_redispatched(tmp_path):
+    trade_date = _setup(tmp_path)
+    now = datetime.fromisoformat("2026-07-07T12:00:00+00:00")
+    first = prepare_retrospective(tmp_path, trade_date, generated_at=now)
+    action = first["actions"][0]
+    response = json.loads(Path(action["template_path"]).read_text())
+    response.update({
+        "status": "complete", "outcome_assessment": "Done.",
+        "trace_assessment": "Done.", "priority_assessment": "Done.",
+        "mobile_assessment": "Done.", "investigator_assessment": "Done.",
+        "candidate_advisories": [{"candidate_id": "legacy-key"}],
+    })
+    response["forecast_reviews"][0].update({
+        "assessment": "correct", "diagnosis": "Done.", "improvement": "Done.",
+    })
+    response["mobile_reviews"][0].update({
+        "assessment": "appropriate", "diagnosis": "Done.", "improvement": "Done.",
+    })
+    Path(action["response_path"]).write_text(json.dumps(response))
+
+    retry = prepare_retrospective(tmp_path, trade_date, generated_at=now)
+
+    assert retry["result"] == "RETROSPECTIVE_REQUIRED"
+    assert "candidate_advisories[0]" in retry["validation_error"]
+    assert Path(retry["invalid_response"]).exists()
+    assert not Path(action["response_path"]).exists()
+    assert retry["actions"][0]["response_path"] == action["response_path"]
+    assert "prior response failed validation" in Path(action["task_path"]).read_text()
 
 
 def test_retrospective_scores_rejected_investigator_finding_materiality(tmp_path):
