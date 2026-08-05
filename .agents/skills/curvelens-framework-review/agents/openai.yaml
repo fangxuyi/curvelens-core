@@ -1,0 +1,4 @@
+interface:
+  display_name: "CurveLens Framework Review"
+  short_description: "Review cross-product learning for shared improvements"
+  default_prompt: "Use $curvelens-framework-review to review current CurveLens learning and workflow signals."

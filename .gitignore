@@ -31,6 +31,7 @@ ccvm/data/cme_bulletin/
 ccvm/data/agent_outbox/
 ccvm/data/state/
 ccvm/data/products/
+ccvm/data/framework_learning/
 
 # Parquet
 *.parquet
