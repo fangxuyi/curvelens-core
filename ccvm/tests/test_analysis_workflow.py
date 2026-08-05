@@ -203,6 +203,9 @@ def test_packets_are_role_scoped_and_news_is_deduplicated(tmp_path):
     assert set(macro["computed_sections"]) == {"macro", "cot", "what_changed"}
     assert len(macro["relevant_news"]) == 1
     assert macro["relevant_news"][0]["article_id"].startswith("news:")
+    canonical = json.loads(Path(manifest["canonical_packet"]).read_text())
+    assert set(canonical["computed_sections"]) > set(macro["computed_sections"])
+    assert canonical["evidence_registry"] == manifest["evidence_registry"]
 
 
 def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
@@ -373,6 +376,18 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
                       "forecast_ledger": _forecast_ledger(manifest),
                       "data_limitations": ["Specialists were limited."],
                       "evidence_ids": _synthesis_ids(manifest)})
+    direct_id = "feature:rnd:2026-07-20"
+    assert direct_id not in _synthesis_ids(manifest)
+    synthesis["top_views"][0].update({
+        "evidence_relationship": "direct_evidence",
+        "specialist_roles": [],
+        "key_metrics": _metrics(direct_id, 2),
+        "supporting_evidence": [{
+            "claim": "Canonical surface evidence remains material even when no worker selected it.",
+            "evidence_ids": [direct_id],
+        }],
+    })
+    synthesis["evidence_ids"].append(direct_id)
     synthesis_path.write_text(json.dumps(synthesis))
     with pytest.raises(AnalysisValidationError, match="forward view requires horizon"):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "incomplete")
@@ -655,6 +670,19 @@ def test_manifest_tampering_is_detected_by_durable_state(tmp_path):
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(AnalysisValidationError, match="manifest content hash changed"):
         advance_state(state_path, Path(__file__).resolve().parents[2])
+
+
+def test_canonical_packet_tampering_is_rejected(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    canonical_path = Path(manifest["canonical_packet"])
+    canonical = json.loads(canonical_path.read_text())
+    canonical["quality"]["overall_status"] = "tampered"
+    canonical_path.write_text(json.dumps(canonical))
+    with pytest.raises(AnalysisValidationError, match="canonical evidence packet"):
+        initialize_state(
+            manifest_path=tmp_path / "run" / "manifest.json", quality=_quality(),
+            quality_attempts=[], repo_root=Path(__file__).resolve().parents[2],
+        )
 
 
 def test_orchestration_init_is_idempotent_for_completed_packet(tmp_path):
