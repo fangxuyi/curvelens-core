@@ -206,6 +206,11 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
     knowledge_dir = repo_root / "knowledge" / manifest["knowledge_pack"]
     plan = validate_research_plan(Path(state["manifest_path"]))
     investigations = {item["role"]: item for item in plan["investigations"]}
+    relevance_contract = manifest["synthesis_contract"][
+        "investigator_relevance_contract"
+    ]
+    impact_dimensions = sorted(relevance_contract["dimensions"])
+    horizons = sorted(relevance_contract["horizons_sessions"])
     for role, investigation in investigations.items():
         task_path = run_dir / f"{role}.task.md"
         correction = state["roles"][role].get("last_error", "")
@@ -227,7 +232,11 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
             "Use plain English and explain what each number means. Return one to five candidate_findings "
             "with sequential stable IDs, materiality, horizon, confidence, expected impact dimensions, "
             "supporting and counterevidence, "
-            "confirmations, invalidations, and any unresolved question. Do not repeat the same limitation."
+            "confirmations, invalidations, and any unresolved question. Every finding's "
+            "expected_impact_dimensions must be a nonempty, alphabetically sorted subset of "
+            f"{impact_dimensions}; horizon_sessions must be one of {horizons}. These are realized-outcome "
+            "dimensions, not capability topics such as curve, positioning, or fundamentals. Do not repeat "
+            "the same limitation."
             f"{correction_text}"
         )
         state["roles"][role]["task_path"] = str(task_path)

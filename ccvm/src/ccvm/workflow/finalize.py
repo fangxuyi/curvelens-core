@@ -703,7 +703,8 @@ def validate_role_response(
                 or impact_dimensions != sorted(set(impact_dimensions)) \
                 or set(impact_dimensions) - configured_impact_dimensions:
             raise AnalysisValidationError(
-                f"{label}.expected_impact_dimensions must be configured, unique, and sorted"
+                f"{label}.expected_impact_dimensions must be a nonempty, alphabetically "
+                f"sorted subset of {sorted(configured_impact_dimensions)}"
             )
         evidence_ids = _check_ids(finding.get("evidence_ids"), allowed, label)
         counter_ids = _check_ids(
