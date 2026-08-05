@@ -231,3 +231,40 @@ degradation. Advice for removed capabilities, unsupported horizons, or unsupport
 impact dimensions is excluded when packets are built. The synthesizer never receives
 investigator advisories, so historical planning memory cannot become an uncited
 market view or alter report wording directly.
+
+## Repository-wide framework improvement loop
+
+The product learning loop and framework improvement loop have different owners:
+
+- Each product agent completes its own daily analysis, retrospective actions,
+  and product-local memory rebuild.
+- One framework-maintainer loop periodically scans all product runtimes visible
+  in the checkout. Do not attach a duplicate framework review to every product
+  schedule.
+
+Start or resume the shared review without `CCVM_PRODUCT`:
+
+```bash
+ccvm/.venv/bin/python agent/framework_review.py start --date YYYY-MM-DD
+```
+
+Use `$curvelens-framework-review` to execute the returned native reviewer action
+and advance until `FRAMEWORK_REVIEW_COMPLETE`. Runtime artifacts are written to
+`ccvm/data/framework_learning/review_as_of=<date>/` and remain outside git.
+
+The deterministic collector maintains the generalization boundary before model
+review. It omits product narrative observations and suggested adjustments.
+Structured product-memory scopes and outcome metrics become framework-eligible
+only when at least two products show the same non-neutral pattern. The same
+current-schema workflow failure in at least two products is also eligible. Three
+or more occurrences in one product's shared component trigger review, but do not
+presume the cause is general.
+
+The reviewer can inspect source, tests, and git history read-only to classify a
+signal as shared code, shared prompt, shared validation, product configuration,
+product knowledge, insufficient evidence, or already resolved. A proposed change
+must include repository-relative paths, benefits, risks, a test plan, and rollback
+criteria. The controller renders advisory suggestions only; it cannot edit the
+framework, create git state, alter product memory, or promote an advisory. A
+separate human-selected suggestion, implementation, test run, and reviewed pull
+request are required before behavior changes.

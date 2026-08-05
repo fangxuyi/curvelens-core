@@ -138,6 +138,33 @@ historical replay, and family-specific no-degradation checks. Current canonical
 evidence always takes precedence, and investigator memory is excluded from the
 synthesizer's learning context.
 
+### Framework improvement review
+
+Daily learning is product-specific: WTI, Gold, and every other configured product
+build their own outcomes and `memory.json`. Framework reflection is a separate,
+slower loop that runs once across all product runtimes visible in the shared
+checkout. It should not be duplicated in every product agent.
+
+```bash
+ccvm/.venv/bin/python agent/framework_review.py start --date YYYY-MM-DD
+```
+
+The repository skill `$curvelens-framework-review` drives that controller with
+one read-only native reviewer. The deterministic packet has two evidence routes:
+
+| Evidence | Default routing | Shared-review eligibility |
+|---|---|---|
+| Product narrative observations and suggested adjustments | Product-local only | Never copied into the shared packet |
+| Structured forecast, mobile, or investigator scope and outcome metrics | Product-local | Same non-neutral pattern in at least two products |
+| Current-schema validation or blocking failures | Workflow trace | Same failure across products, or at least three occurrences in one shared component requiring classification |
+
+The reviewer may classify each routed signal as shared code, shared prompt,
+shared validation, product configuration, product knowledge, insufficient
+evidence, or already resolved. It writes stable advisory suggestion IDs with
+affected paths, expected benefit, risks, tests, and rollback. It cannot modify
+the repository or create git state. Implementing a suggestion is always a later,
+explicitly approved change with its own tests and reviewed pull request.
+
 ## Outputs
 
 Runtime output is isolated by product and trade date:
@@ -162,6 +189,18 @@ ccvm/data/products/<product>/
 └── learning/
     ├── memory.json
     └── evaluations/trade_date=<source-date>/
+```
+
+Repository-wide review artifacts remain local and separate from every product:
+
+```text
+ccvm/data/framework_learning/review_as_of=<date>/
+├── framework_review.packet.json
+├── framework_review.task.md
+├── framework_review.response.json
+├── framework_suggestions.json
+├── framework_suggestions.md
+└── run.json
 ```
 
 | Output | Purpose |

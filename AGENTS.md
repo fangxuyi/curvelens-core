@@ -93,6 +93,29 @@ Interpretation must use the active product's knowledge pack. Follow
 `knowledge/MAINTENANCE.md`; knowledge changes are proposed through pull
 requests and retain provenance, review dates, and mechanical guardrails.
 
+## Framework improvement review
+
+Product learning remains one loop per product deployment. Run the separate
+repository skill `$curvelens-framework-review` for periodic shared-process
+reflection. There should be one framework-review loop per checkout or centralized
+runtime store, not one copy in every product agent schedule. It scans all product
+runtime directories visible under `ccvm/data/products/` and never requires or
+assumes `CCVM_PRODUCT`.
+
+The deterministic review packet keeps product narrative observations and
+suggested adjustments local. A structured learning pattern becomes eligible for
+shared review only when the same non-neutral bounded scope appears in at least two
+products. Repeated current-schema validation or blocking failures may also enter
+review; a one-product recurrence must still be classified as shared machinery,
+product configuration, product knowledge, insufficient evidence, or already
+resolved.
+
+Framework-review output is advisory only. It may not edit source, prompts,
+profiles, knowledge, schedules, runtime data, or git state, and it may not create
+an issue or pull request. Every accepted suggestion requires a separate explicit
+implementation request, focused tests, and a reviewed pull request. Never promote
+product learning or enable the framework-review schedule implicitly.
+
 ## Development verification
 
 Run the shared suite from `ccvm/`:

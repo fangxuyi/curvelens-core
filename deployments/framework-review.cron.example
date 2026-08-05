@@ -1,0 +1,18 @@
+# Disabled OpenClaw schedule template for CurveLens framework review.
+#
+# Run exactly one shared review for this checkout. Do not copy this job into each
+# product agent schedule. Replace the repository and maintainer-agent placeholders,
+# review cadence and runtime cost, then obtain explicit approval before removing
+# --disabled. This review produces advisory suggestions only and performs no git,
+# framework, product-memory, schedule, notification, or delivery changes.
+
+openclaw cron add \
+  --agent curvelens-framework-maintainer \
+  --name "CurveLens weekly framework review" \
+  --cron "0 12 * * 0" \
+  --tz "America/New_York" \
+  --session isolated \
+  --message 'From /path/to/curvelens-core, read root AGENTS.md and use $curvelens-framework-review with the current New York date as the review cutoff. Do not set CCVM_PRODUCT or read a product runbook. Review all visible product runtimes, continue until FRAMEWORK_REVIEW_COMPLETE, and report suggestion IDs and output paths. Do not implement suggestions, edit framework or product files, create git state, promote learning, change schedules, invoke notifications, or deliver anything.' \
+  --timeout-seconds 1800 \
+  --no-deliver \
+  --disabled

@@ -32,6 +32,12 @@ model API key or repository model client is used. Daily schedules must invoke
 this skill through an isolated agent turn. The old script-only daily entry point
 has been removed.
 
+Product agents retain independent daily learning. Shared framework reflection is
+not another per-product job: run one `$curvelens-framework-review` loop from a
+framework-maintainer agent for the whole checkout. A disabled weekly template is
+provided at `deployments/framework-review.cron.example`; enabling it requires
+separate explicit approval and never authorizes implementation of its suggestions.
+
 | Product | Status |
 |---|---|
 | WTI | Operational |
