@@ -390,6 +390,48 @@ def _check_mobile_selection(
         raise AnalysisValidationError("mobile selection must address existing data limitations")
 
 
+def _normalize_mobile_forecast_links(
+    synthesis: dict[str, Any], manifest: dict[str, Any],
+) -> None:
+    """Align redundant mobile dimensions with the authoritative forecast ledger.
+
+    Mobile impact dimensions are evaluation metadata, not an independent market
+    forecast.  A synthesizer can therefore safely be narrowed to dimensions for
+    which the same source view actually supplied a one-session forecast.  This
+    prevents a clerical mismatch from blocking an otherwise valid daily report.
+    Unknown dimensions and views without a one-session forecast remain invalid.
+    """
+    if synthesis.get("status") == "blocked":
+        return
+    selection = synthesis.get("mobile_selection")
+    if not isinstance(selection, dict) or not isinstance(selection.get("candidates"), list):
+        return
+    contract = manifest.get("synthesis_contract") or {}
+    configured = set((contract.get("forecast_contract") or {}).get("dimensions") or {})
+    horizon = (contract.get("mobile_relevance_contract") or {}).get("horizon_sessions")
+    available: dict[int, set[str]] = {}
+    for item in synthesis.get("forecast_ledger") or []:
+        if not isinstance(item, dict) or item.get("horizon_sessions") != horizon:
+            continue
+        rank = item.get("source_view_rank")
+        dimension = item.get("dimension")
+        if isinstance(rank, int) and dimension in configured:
+            available.setdefault(rank, set()).add(dimension)
+    for candidate in selection["candidates"]:
+        if not isinstance(candidate, dict):
+            continue
+        declared = candidate.get("expected_impact_dimensions")
+        if not isinstance(declared, list) or not all(isinstance(item, str) for item in declared):
+            continue
+        if set(declared) - configured:
+            continue
+        linked = available.get(candidate.get("source_view_rank"), set())
+        if not linked:
+            continue
+        retained = set(declared) & linked
+        candidate["expected_impact_dimensions"] = sorted(retained or linked)
+
+
 def _check_mobile_memory_feedback(
     synthesis: dict[str, Any], manifest: dict[str, Any], allowed: set[str],
 ) -> None:
@@ -845,6 +887,7 @@ def validate_synthesis_response(
     )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
     _check_forecast_ledger(synthesis, manifest, allowed)
+    _normalize_mobile_forecast_links(synthesis, manifest)
     _check_mobile_selection(synthesis, manifest, allowed)
     _check_mobile_memory_feedback(synthesis, manifest, allowed)
     _check_memory_feedback(synthesis, manifest, allowed)

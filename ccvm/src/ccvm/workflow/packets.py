@@ -591,6 +591,9 @@ def build_analysis_packets(
                 "mobile_selection": (
                     "Classify all three validated views for scarce mobile space, then select one by default. "
                     "Select a second only when it is independently material rather than supporting detail. "
+                    "For each candidate, list only expected impact dimensions backed by a forecast from the "
+                    "same source view at the one-session mobile horizon. The framework deterministically "
+                    "narrows this redundant metadata to the authoritative forecast ledger when necessary. "
                     "Base the decision on expected next-session price or volatility impact, imminence, "
                     "cross-support, novelty, and whether omission could change the reader's conclusion. "
                     "Mobile need not cover every investigator. Routine, redundant, background, and low-impact "
