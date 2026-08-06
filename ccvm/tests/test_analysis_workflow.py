@@ -618,6 +618,20 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert "forecast_ledger" not in mobile and "memory_feedback" not in mobile
     assert len(mobile) <= 1400
 
+    redundant_mobile = json.loads(json.dumps(synthesis))
+    redundant_mobile["mobile_selection"]["candidates"][0][
+        "expected_impact_dimensions"
+    ] = ["market_impact", "price_direction"]
+    synthesis_path.write_text(json.dumps(redundant_mobile))
+    normalized_json, *_ = validate_and_render(
+        tmp_path / "packets" / "manifest.json", tmp_path / "normalized-mobile-link",
+    )
+    normalized = json.loads(normalized_json.read_text())
+    assert normalized["synthesis"]["mobile_selection"]["candidates"][0][
+        "expected_impact_dimensions"
+    ] == ["price_direction"]
+    synthesis_path.write_text(json.dumps(synthesis))
+
     bad_synthesis = json.loads(json.dumps(synthesis))
     bad_synthesis["market_snapshot"][0] = "legacy metric shorthand"
     synthesis_path.write_text(json.dumps(bad_synthesis))
