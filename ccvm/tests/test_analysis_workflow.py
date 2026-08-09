@@ -502,6 +502,32 @@ def test_investigator_dimension_error_lists_sorted_outcome_enum(tmp_path):
     )
 
 
+def test_investigator_finding_citations_must_be_disjoint(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    role = manifest["roles"][0]
+    _write_research_plan(manifest, selected=[role])
+    _write_valid_role(manifest, role)
+    response_path = Path(manifest["role_response_paths"][role])
+    response = json.loads(response_path.read_text())
+    support_id = response["candidate_findings"][0]["evidence_ids"][0]
+    other_ids = set(manifest["evidence_registry"]) - {support_id}
+    assert other_ids
+    other_id = sorted(other_ids)[0]
+    response["candidate_findings"][0]["counterevidence_ids"] = [other_id]
+    response["evidence_ids"].append(other_id)
+    response_path.write_text(json.dumps(response))
+
+    assert validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+    response["candidate_findings"][0]["counterevidence_ids"] = [support_id]
+    response_path.write_text(json.dumps(response))
+    with pytest.raises(
+        AnalysisValidationError,
+        match="cannot use one ID as support and counterevidence",
+    ):
+        validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+
 def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     manifest = _packets(tmp_path / "packets", learning_snapshot=_learning_snapshot())
     plan = _write_research_plan(manifest)
@@ -750,6 +776,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert "Fed and real yields move gold" not in task_text
     assert "['market_impact', 'price_direction', 'volatility_direction']" in task_text
     assert "not capability topics such as curve" in task_text
+    assert "evidence_ids and counterevidence_ids disjoint" in task_text
+    assert "Set counterevidence_ids to [] when no distinct contrary evidence exists." in task_text
 
     for role in reversed(manifest["roles"]):
         _write_valid_role(manifest, role)
