@@ -34,6 +34,19 @@ def _metrics_line(metrics: list[dict[str, Any]]) -> str:
     return "; ".join(parts)
 
 
+def _story_claim(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    return _clean(item.get("claim"))
+
+
+def _fallback_driver(view: dict[str, Any]) -> str:
+    driver = view.get("driver_analysis")
+    if not isinstance(driver, dict):
+        return ""
+    return _clean(driver.get("explanation"))
+
+
 def _compose(lines: list[dict[str, Any]]) -> str:
     rendered: list[str] = []
     for item in lines:
@@ -101,9 +114,21 @@ def render_mobile_brief(analysis: dict[str, Any]) -> str:
         plain_view = _complete_prose(view.get("plain_english_view"), 220)
         if plain_view:
             add(plain_view, 20 + index)
+        story = view.get("story_chain") or {}
+        narrative = _complete_prose(
+            _story_claim(story.get("narrative_change")) or _fallback_driver(view),
+            220,
+        )
+        if narrative:
+            add(f"Why it moved: {narrative}", 30 + index)
+        option_read = _complete_prose(
+            _story_claim(story.get("option_market_readthrough")), 180,
+        )
+        if option_read:
+            add(f"Options: {option_read}", 35 + index)
         metrics = _metrics_line(view.get("key_metrics") or [])
         if metrics:
-            add(f"Key move: {metrics}", 40 + index)
+            add(f"Key move: {metrics}", 60 + index)
         conflicts = view.get("conflicting_evidence") or []
         if view.get("evidence_relationship") == "conflicting" and conflicts:
             item = conflicts[0]
@@ -111,11 +136,15 @@ def render_mobile_brief(analysis: dict[str, Any]) -> str:
             conflict = _complete_prose(claim, 180)
             if conflict:
                 add(f"Material conflict: {conflict}", 70 + index)
-        watch = view.get("what_to_watch") or []
-        if watch:
-            watch_item = _complete_prose(watch[0], 180)
-            if watch_item:
-                add(f"Watch: {watch_item}", 10 + index)
+        watch_item = _complete_prose(
+            _story_claim(story.get("forward_watch")), 180,
+        )
+        if not watch_item:
+            watch = view.get("what_to_watch") or []
+            if watch:
+                watch_item = _complete_prose(watch[0], 180)
+        if watch_item:
+            add(f"Watch: {watch_item}", 10 + index)
 
     limitations = synthesis.get("data_limitations") or []
     include_limitation = (

@@ -110,9 +110,13 @@ not permission to omit a current anomaly or a source of market truth. Investigat
 memory is excluded from the synthesizer's learning context.
 
 The completed report must lead with exactly three ranked `top_views`, including
-their supporting and conflicting evidence, `driver_analysis`, and `what_to_watch`,
-and preserve exact cited `key_metrics`, the six-to-ten-item synthesis
-`market_snapshot`, and the `plain_english_summary`.
+their supporting and conflicting evidence, `driver_analysis`, `story_chain`, and
+`what_to_watch`, and preserve exact cited `key_metrics`, the six-to-ten-item
+synthesis `market_snapshot`, and the `plain_english_summary`. Each
+`story_chain` must connect the observed settled-market move, the best-supported
+narrative change or explicit unexplained/not-applicable status, the option-market
+read-through, and the forward watch item without overstating causation from
+timing alone.
 The lead remains responsible for complete canonical evidence coverage; optional
 investigators are additive inquiries rather than information gates. Its `mobile_selection` must
 classify all three views and select one by default; select a second only when it

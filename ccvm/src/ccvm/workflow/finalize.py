@@ -21,6 +21,12 @@ from ccvm.schemas.reporting import MobileSelection
 from .packets import PACKET_SCHEMA_VERSION
 
 _STATUSES = {"complete", "limited", "blocked"}
+_NARRATIVE_STATUSES = {
+    "supported", "partially_supported", "conflicting", "unexplained", "not_applicable",
+}
+_OPTION_READTHROUGH_STATUSES = {
+    "confirmed", "faded", "conflicted", "mixed", "unavailable", "not_material",
+}
 
 
 class AnalysisValidationError(ValueError):
@@ -85,6 +91,67 @@ def _check_key_metrics(
     return metrics
 
 
+def _check_story_claim(
+    value: Any, allowed: set[str], label: str, *, evidence_required: bool = True,
+) -> set[str]:
+    if not isinstance(value, dict):
+        raise AnalysisValidationError(f"{label} must be an object")
+    if not str(value.get("claim", "")).strip():
+        raise AnalysisValidationError(f"{label}.claim is required")
+    ids = _check_ids(value.get("evidence_ids"), allowed, label)
+    if evidence_required and not ids:
+        raise AnalysisValidationError(f"{label} requires evidence")
+    return set(ids)
+
+
+def _check_story_chain(
+    value: Any, allowed: set[str], label: str,
+) -> set[str]:
+    if not isinstance(value, dict):
+        raise AnalysisValidationError(f"{label}.story_chain must be an object")
+    required_fields = {
+        "observed_move", "narrative_change", "option_market_readthrough",
+        "forward_watch",
+    }
+    missing = sorted(required_fields - set(value))
+    if missing:
+        raise AnalysisValidationError(f"{label}.story_chain missing fields {missing}")
+    ids = set()
+    ids.update(_check_story_claim(
+        value.get("observed_move"), allowed, f"{label}.story_chain.observed_move",
+    ))
+    narrative = value.get("narrative_change")
+    if not isinstance(narrative, dict):
+        raise AnalysisValidationError(f"{label}.story_chain.narrative_change must be an object")
+    narrative_status = narrative.get("status")
+    if narrative_status not in _NARRATIVE_STATUSES:
+        raise AnalysisValidationError(
+            f"{label}.story_chain.narrative_change.status is invalid"
+        )
+    ids.update(_check_story_claim(
+        narrative, allowed, f"{label}.story_chain.narrative_change",
+        evidence_required=narrative_status not in {"unexplained", "not_applicable"},
+    ))
+    option = value.get("option_market_readthrough")
+    if not isinstance(option, dict):
+        raise AnalysisValidationError(
+            f"{label}.story_chain.option_market_readthrough must be an object"
+        )
+    option_status = option.get("status")
+    if option_status not in _OPTION_READTHROUGH_STATUSES:
+        raise AnalysisValidationError(
+            f"{label}.story_chain.option_market_readthrough.status is invalid"
+        )
+    ids.update(_check_story_claim(
+        option, allowed, f"{label}.story_chain.option_market_readthrough",
+        evidence_required=option_status not in {"unavailable", "not_material"},
+    ))
+    ids.update(_check_story_claim(
+        value.get("forward_watch"), allowed, f"{label}.story_chain.forward_watch",
+    ))
+    return ids
+
+
 def _check_top_views(
     views: Any, responses: dict[str, dict[str, Any]], allowed: set[str],
 ) -> set[str]:
@@ -94,7 +161,7 @@ def _check_top_views(
         "rank", "title", "plain_english_view", "horizon", "confidence",
         "evidence_relationship", "specialist_roles", "key_metrics",
         "supporting_evidence", "conflicting_evidence", "driver_analysis",
-        "what_to_watch",
+        "story_chain", "what_to_watch",
     }
     shape_errors = []
     ranks = [item.get("rank") if isinstance(item, dict) else None for item in views]
@@ -170,6 +237,7 @@ def _check_top_views(
                 f"{label}.driver_analysis requires evidence unless the driver is unexplained"
             )
         view_ids.update(driver_ids)
+        view_ids.update(_check_story_chain(view.get("story_chain"), allowed, label))
         watch = view.get("what_to_watch")
         if not isinstance(watch, list) or not watch \
                 or not all(isinstance(item, str) and item.strip() for item in watch):
@@ -188,6 +256,11 @@ def _view_evidence_ids(view: dict[str, Any]) -> set[str]:
         for claim in view.get(field, []):
             ids.update(claim.get("evidence_ids", []))
     ids.update((view.get("driver_analysis") or {}).get("evidence_ids", []))
+    story_chain = view.get("story_chain") or {}
+    if isinstance(story_chain, dict):
+        for item in story_chain.values():
+            if isinstance(item, dict):
+                ids.update(item.get("evidence_ids", []))
     return ids
 
 
@@ -1060,6 +1133,24 @@ def _render_markdown(result: dict[str, Any]) -> str:
             "", "#### Driver and news validation", "",
             f"- Assessment: {str(driver.get('status', '')).replace('_', ' ')}",
             f"- Explanation: {driver.get('explanation', '')}",
+            "", "#### Daily story chain", "",
+        ])
+        story = view.get("story_chain") or {}
+        observed = story.get("observed_move") or {}
+        narrative = story.get("narrative_change") or {}
+        option = story.get("option_market_readthrough") or {}
+        forward = story.get("forward_watch") or {}
+        lines.extend([
+            f"- Observed move: {observed.get('claim', '')}",
+            (
+                f"- Narrative change ({str(narrative.get('status', '')).replace('_', ' ')}): "
+                f"{narrative.get('claim', '')}"
+            ),
+            (
+                f"- Options read-through ({str(option.get('status', '')).replace('_', ' ')}): "
+                f"{option.get('claim', '')}"
+            ),
+            f"- Forward watch: {forward.get('claim', '')}",
             "", "#### Supporting and conflicting evidence", "",
             "- Supporting evidence:",
         ])
