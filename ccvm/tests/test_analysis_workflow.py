@@ -335,6 +335,16 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
         "price_direction", "volatility_direction", "market_impact",
     }
     assert manifest["synthesis_contract"]["mobile_relevance_contract"]["horizon_sessions"] == 1
+    role_contract = manifest["synthesis_contract"]["reporting"]["specialist_role_keys"]
+    assert role_contract["configured_role_keys"] == manifest["roles"]
+    assert role_contract["display_names"] == {
+        role: manifest["investigator_capabilities"][role]["display_name"]
+        for role in manifest["roles"]
+    }
+    assert "never its display_name" in role_contract["rule"]
+    assert manifest["synthesis_contract"]["reporting"]["top_view_schema"][
+        "specialist_roles"
+    ] == ["selected dispatched role key (not display_name)"]
     assert template["memory_feedback"] == []
     assert template["mobile_memory_feedback"] == []
 
@@ -674,6 +684,27 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     assert "forecast_ledger" not in mobile and "memory_feedback" not in mobile
     assert len(mobile) <= 1400
 
+    valid_synthesis = json.loads(json.dumps(synthesis))
+    first_role = manifest["roles"][0]
+    display_name = manifest["investigator_capabilities"][first_role]["display_name"]
+    assert display_name != first_role
+    bad_synthesis = json.loads(json.dumps(valid_synthesis))
+    bad_synthesis["top_views"][0]["specialist_roles"] = [display_name]
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError, match=r"top_views\[0\]\.specialist_roles must name configured roles",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-display-name")
+
+    bad_synthesis = json.loads(json.dumps(valid_synthesis))
+    bad_synthesis["top_views"][0]["specialist_roles"] = ["unselected_role_key"]
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError, match=r"top_views\[0\]\.specialist_roles must name configured roles",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-unselected-key")
+    synthesis_path.write_text(json.dumps(valid_synthesis))
+
     redundant_mobile = json.loads(json.dumps(synthesis))
     redundant_mobile["mobile_selection"]["candidates"][0][
         "expected_impact_dimensions"
@@ -827,6 +858,11 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
         _write_valid_role(manifest, role)
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "SYNTHESIS_REQUIRED"
+    synthesis_task = Path(next_actions(state)[0]["task_path"]).read_text()
+    assert "copy only the exact `key` values from the selected dispatched-role list" in synthesis_task
+    for role in manifest["roles"]:
+        display_name = manifest["investigator_capabilities"][role]["display_name"]
+        assert f"- key `{role}`; display_name `{display_name}`; response `" in synthesis_task
     synthesis = json.loads(Path(manifest["synthesis_response_template"]).read_text())
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",

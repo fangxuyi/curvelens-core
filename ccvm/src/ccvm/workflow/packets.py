@@ -561,6 +561,20 @@ def build_analysis_packets(
             "maximum_investigators": min(3, len(product.analysis_roles)),
             "focus": "Forward-looking risks, cross-section agreements, tensions, confirmations, and invalidations.",
             "reporting": {
+                "specialist_role_keys": {
+                    "configured_role_keys": [
+                        role.key for role in product.analysis_roles
+                    ],
+                    "display_names": {
+                        role.key: role.display_name
+                        for role in product.analysis_roles
+                    },
+                    "rule": (
+                        "Use only selected dispatched role keys in specialist_roles; "
+                        "copy the key exactly, never its display_name, and use an empty "
+                        "list when no investigator contributed."
+                    ),
+                },
                 "top_views": (
                     "Rank exactly three distinct market views by decision relevance. Each view must state "
                     "the condition, why it matters, 2-3 exact key metrics, supporting evidence, any "
@@ -568,7 +582,8 @@ def build_analysis_packets(
                     "driver is unexplained), what to watch next, horizon, confidence, and whether it is "
                     "cross-supported, conflicting, a single-desk observation, or based directly on "
                     "canonical evidence. Name only investigator capabilities that materially contributed; "
-                    "a view may use canonical evidence that no investigator selected."
+                    "a view may use canonical evidence that no investigator selected. In specialist_roles, "
+                    "use only selected dispatched role keys, never display names."
                 ),
                 "top_view_schema": {
                     "rank": "1|2|3",
@@ -577,7 +592,7 @@ def build_analysis_packets(
                     "horizon": "time window",
                     "confidence": "high|medium|low",
                     "evidence_relationship": "cross_supported|conflicting|single_desk|direct_evidence",
-                    "specialist_roles": ["configured role key"],
+                    "specialist_roles": ["selected dispatched role key (not display_name)"],
                     "key_metrics": ["2-3 exact metrics cited to canonical evidence"],
                     "supporting_evidence": [{"claim": "reason", "evidence_ids": ["allowed ID"]}],
                     "conflicting_evidence": [{"claim": "contrary evidence", "evidence_ids": ["allowed ID"]}],
