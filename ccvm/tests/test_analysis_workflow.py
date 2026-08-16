@@ -893,8 +893,18 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
         repo_root=Path(__file__).resolve().parents[2],
     )
     assert [a["action"] for a in next_actions(state)] == ["RUN_QC_REVIEWER"]
+    qc_packet = json.loads(Path(state["qc"]["packet_path"]).read_text())
+    qc_task = Path(state["qc"]["task_path"]).read_text()
+    assert "Quality evidence IDs:" in qc_task
+    assert "Allowed remediation IDs:" in qc_task
+    assert "feature IDs, bare quality field names, or remediation IDs" in qc_task
+    for evidence_id in sorted(qc_packet["quality_evidence"]):
+        assert f"- `{evidence_id}`" in qc_task
     qc_template = json.loads(Path(state["qc"]["template_path"]).read_text())
-    qc_template.update({"disposition": "accept", "rationale": "Inputs are usable."})
+    qc_template.update({
+        "disposition": "accept", "rationale": "Inputs are usable.",
+        "evidence_ids": sorted(qc_packet["quality_evidence"]),
+    })
     Path(state["qc"]["response_path"]).write_text(json.dumps(qc_template))
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "RESEARCH_PLAN_REQUIRED"
@@ -1093,6 +1103,30 @@ def test_qc_retry_must_be_allowlisted(tmp_path):
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "QC_REVIEW_REQUIRED"
     assert "non-allowlisted" in state["qc"]["last_error"]
+
+
+@pytest.mark.parametrize("bad_evidence_id", [
+    "feature:futures:2026-07-20", "futures", "recollect_market",
+])
+def test_qc_evidence_ids_use_only_date_scoped_quality_namespace(tmp_path, bad_evidence_id):
+    _packets(tmp_path / "run")
+    state_path, state = initialize_state(
+        manifest_path=tmp_path / "run" / "manifest.json", quality=_quality(futures_count=0),
+        quality_attempts=[{"retry_sections": ["futures"]}],
+        repo_root=Path(__file__).resolve().parents[2],
+    )
+    task = Path(state["qc"]["task_path"]).read_text()
+    assert "quality:futures:2026-07-20" in task
+    assert "recollect_market" in task
+    qc = json.loads(Path(state["qc"]["template_path"]).read_text())
+    qc.update({
+        "disposition": "accept", "rationale": "Check namespace handling.",
+        "evidence_ids": [bad_evidence_id],
+    })
+    Path(state["qc"]["response_path"]).write_text(json.dumps(qc))
+    state = advance_state(state_path, Path(__file__).resolve().parents[2])
+    assert state["phase"] == "QC_REVIEW_REQUIRED"
+    assert "unknown quality evidence" in state["qc"]["last_error"]
 
 
 def test_malformed_agent_containers_enter_correction_path(tmp_path):
