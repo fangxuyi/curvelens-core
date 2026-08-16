@@ -581,9 +581,14 @@ def build_analysis_packets(
                     "confirmed, unavailable, or non_directional_uncertainty in value; preserve "
                     "them in view, story, limitation, or supporting-text fields."
                 ),
+                "top_view_key_metrics_cardinality": (
+                    "Each top view must contain exactly 2 or 3 key_metrics objects. The template's "
+                    "two objects are the default; add a third only when independently material. "
+                    "Never emit four or more and never silently truncate."
+                ),
                 "top_views": (
                     "Rank exactly three distinct market views by decision relevance. Each view must state "
-                    "the condition, why it matters, 2-3 exact numeric key metrics, supporting evidence, any "
+                    "the condition, why it matters, exactly 2 or 3 exact numeric key metrics, supporting evidence, any "
                     "conflicting evidence, the best-supported driver explanation (or explicitly say the "
                     "driver is unexplained), what to watch next, horizon, confidence, and whether it is "
                     "cross-supported, conflicting, a single-desk observation, or based directly on "
@@ -591,7 +596,9 @@ def build_analysis_packets(
                     "evidence-backed measure; categorical statuses belong in narrative fields. "
                     "Name only investigator capabilities that materially contributed; a view may use "
                     "canonical evidence that no investigator selected. In specialist_roles, use only "
-                    "selected dispatched role keys, never display names."
+                    "selected dispatched role keys, never display names. The template's two key_metrics "
+                    "objects are the default; add a third only when independently material, never emit "
+                    "four or more, and never silently truncate."
                 ),
                 "top_view_schema": {
                     "rank": "1|2|3",
@@ -602,7 +609,7 @@ def build_analysis_packets(
                     "evidence_relationship": "cross_supported|conflicting|single_desk|direct_evidence",
                     "specialist_roles": ["selected dispatched role key (not display_name)"],
                     "key_metrics": [
-                        "2-3 exact metric objects; each value contains a number and evidence_ids"
+                        "exactly 2 by default or 3 when independently material; each value contains a number and evidence_ids"
                     ],
                     "supporting_evidence": [{"claim": "reason", "evidence_ids": ["allowed ID"]}],
                     "conflicting_evidence": [{"claim": "contrary evidence", "evidence_ids": ["allowed ID"]}],
