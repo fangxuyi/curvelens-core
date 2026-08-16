@@ -640,7 +640,16 @@ def build_analysis_packets(
                     },
                     "what_to_watch": ["specific confirmation or invalidation with a level or event"],
                 },
-                "market_snapshot_items": "6 to 10 exact values cited to canonical evidence",
+                "market_snapshot_metric_value_rule": (
+                    "Every market_snapshot entry must be an object whose value contains at least one "
+                    "numeric character and an evidence-backed measure. Keep categorical diagnostics "
+                    "such as invalid_surface or futures_only_repricing in story_chain or data_limitations "
+                    "and select another cited numeric observation for the snapshot."
+                ),
+                "market_snapshot_items": (
+                    "6 to 10 exact numeric values cited to canonical evidence; each value contains a "
+                    "number and an evidence-backed measure"
+                ),
                 "plain_english": (
                     "Write for an informed reader who is not an options specialist. Use short sentences, "
                     "define risk reversal and butterfly if used, and avoid desk jargon such as internals, "
