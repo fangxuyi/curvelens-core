@@ -575,15 +575,23 @@ def build_analysis_packets(
                         "list when no investigator contributed."
                     ),
                 },
+                "top_view_metric_value_rule": (
+                    "Every top_views key_metrics value must contain at least one numeric character "
+                    "and an evidence-backed measure. Do not put categorical statuses such as "
+                    "confirmed, unavailable, or non_directional_uncertainty in value; preserve "
+                    "them in view, story, limitation, or supporting-text fields."
+                ),
                 "top_views": (
                     "Rank exactly three distinct market views by decision relevance. Each view must state "
-                    "the condition, why it matters, 2-3 exact key metrics, supporting evidence, any "
+                    "the condition, why it matters, 2-3 exact numeric key metrics, supporting evidence, any "
                     "conflicting evidence, the best-supported driver explanation (or explicitly say the "
                     "driver is unexplained), what to watch next, horizon, confidence, and whether it is "
                     "cross-supported, conflicting, a single-desk observation, or based directly on "
-                    "canonical evidence. Name only investigator capabilities that materially contributed; "
-                    "a view may use canonical evidence that no investigator selected. In specialist_roles, "
-                    "use only selected dispatched role keys, never display names."
+                    "canonical evidence. Every key_metrics value must contain a number and an "
+                    "evidence-backed measure; categorical statuses belong in narrative fields. "
+                    "Name only investigator capabilities that materially contributed; a view may use "
+                    "canonical evidence that no investigator selected. In specialist_roles, use only "
+                    "selected dispatched role keys, never display names."
                 ),
                 "top_view_schema": {
                     "rank": "1|2|3",
@@ -593,7 +601,9 @@ def build_analysis_packets(
                     "confidence": "high|medium|low",
                     "evidence_relationship": "cross_supported|conflicting|single_desk|direct_evidence",
                     "specialist_roles": ["selected dispatched role key (not display_name)"],
-                    "key_metrics": ["2-3 exact metrics cited to canonical evidence"],
+                    "key_metrics": [
+                        "2-3 exact metric objects; each value contains a number and evidence_ids"
+                    ],
                     "supporting_evidence": [{"claim": "reason", "evidence_ids": ["allowed ID"]}],
                     "conflicting_evidence": [{"claim": "contrary evidence", "evidence_ids": ["allowed ID"]}],
                     "driver_analysis": {
