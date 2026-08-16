@@ -350,7 +350,9 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
     assert "categorical statuses" in metric_rule
     assert manifest["synthesis_contract"]["reporting"]["top_view_schema"][
         "key_metrics"
-    ] == ["2-3 exact metric objects; each value contains a number and evidence_ids"]
+    ] == [
+        "exactly 2 by default or 3 when independently material; each value contains a number and evidence_ids"
+    ]
     snapshot_rule = manifest["synthesis_contract"]["reporting"][
         "market_snapshot_metric_value_rule"
     ]
@@ -360,6 +362,16 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
         "6 to 10 exact numeric values cited to canonical evidence; each value contains a "
         "number and an evidence-backed measure"
     )
+    cardinality_rule = manifest["synthesis_contract"]["reporting"][
+        "top_view_key_metrics_cardinality"
+    ]
+    assert "exactly 2 or 3" in cardinality_rule
+    assert "never silently truncate" in cardinality_rule
+    assert manifest["synthesis_contract"]["reporting"]["top_view_schema"][
+        "key_metrics"
+    ] == [
+        "exactly 2 by default or 3 when independently material; each value contains a number and evidence_ids"
+    ]
     assert template["memory_feedback"] == []
     assert template["mobile_memory_feedback"] == []
 
@@ -737,6 +749,20 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     ):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-categorical-snapshot")
     synthesis_path.write_text(json.dumps(synthesis))
+    three_metric_synthesis = json.loads(json.dumps(synthesis))
+    three_metric_synthesis["top_views"][0]["key_metrics"] = _metrics(used_id, 3)
+    synthesis_path.write_text(json.dumps(three_metric_synthesis))
+    validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "three-metrics")
+
+    four_metric_synthesis = json.loads(json.dumps(three_metric_synthesis))
+    four_metric_synthesis["top_views"][0]["key_metrics"] = _metrics(used_id, 4)
+    synthesis_path.write_text(json.dumps(four_metric_synthesis))
+    with pytest.raises(
+        AnalysisValidationError,
+        match=r"synthesis\.top_views\[0\]\.key_metrics must contain no more than 3 items",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "four-metrics")
+    synthesis_path.write_text(json.dumps(synthesis))
 
     redundant_mobile = json.loads(json.dumps(synthesis))
     redundant_mobile["mobile_selection"]["candidates"][0][
@@ -900,6 +926,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert "Never put categorical statuses" in synthesis_task
     assert "Every market_snapshot value must contain at least one numeric character" in synthesis_task
     assert "Keep categorical diagnostics" in synthesis_task
+    assert "return exactly 2 or 3 key_metrics objects" in synthesis_task
+    assert "never silently truncate" in synthesis_task
     synthesis = json.loads(Path(manifest["synthesis_response_template"]).read_text())
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",
