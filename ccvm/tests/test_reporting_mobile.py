@@ -22,6 +22,24 @@ def _view(rank: int, *, relationship: str = "cross_supported") -> dict:
         "evidence_relationship": relationship,
         "conflicting_evidence": ([{"claim": "The conflicting signal remains material."}]
                                  if relationship == "conflicting" else []),
+        "driver_analysis": {
+            "status": "partially_supported",
+            "explanation": "Driver evidence partly explains the move.",
+        },
+        "story_chain": {
+            "observed_move": {"claim": "The front settlement changed materially."},
+            "narrative_change": {
+                "status": "partially_supported",
+                "claim": "A dated catalyst changed the forward narrative.",
+            },
+            "option_market_readthrough": {
+                "status": "conflicted",
+                "claim": "Options did not fully confirm the price move.",
+            },
+            "forward_watch": {
+                "claim": "Watch the next official release for confirmation.",
+            },
+        },
         "what_to_watch": ["Watch whether the next settlement confirms the move."],
     }
 
@@ -50,6 +68,9 @@ def test_mobile_renderer_keeps_complete_prose_sentences():
 
     assert "WTI repriced lower while prompt structure stayed tight." in mobile
     assert "This complete opening sentence carries the decision." in mobile
+    assert "Why it moved: A dated catalyst changed the forward narrative." in mobile
+    assert "Options: Options did not fully confirm the price move." in mobile
+    assert "Watch: Watch the next official release for confirmation." in mobile
     assert "oversized follow-up" not in mobile
     assert "without being cut into a fragment" not in mobile
     assert "…" not in mobile
@@ -79,6 +100,8 @@ def test_mobile_renderer_drops_whole_optional_lines_to_fit_budget():
 
     assert "*1. Complete view 1*" in mobile
     assert "*2. Complete view 2*" in mobile
+    assert "Why it moved:" in mobile
+    assert "Options:" in mobile
     assert "Material conflict: The conflicting signal remains material." in mobile
     assert len(mobile) <= MAX_MOBILE_BRIEF_CHARS
     assert not mobile.endswith("…")

@@ -13,7 +13,7 @@ from ccvm.schemas.learning import (
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-PACKET_SCHEMA_VERSION = 15
+PACKET_SCHEMA_VERSION = 16
 
 FORECAST_CONTRACT_VERSION = 2
 FORECAST_HORIZONS_SESSIONS = (1, 5)
@@ -214,6 +214,20 @@ def _top_view_template(rank: int) -> dict[str, Any]:
             "status": "supported|partially_supported|conflicting|unexplained",
             "explanation": "",
             "evidence_ids": [],
+        },
+        "story_chain": {
+            "observed_move": {"claim": "", "evidence_ids": []},
+            "narrative_change": {
+                "status": "supported|partially_supported|conflicting|unexplained|not_applicable",
+                "claim": "",
+                "evidence_ids": [],
+            },
+            "option_market_readthrough": {
+                "status": "confirmed|faded|conflicted|mixed|unavailable|not_material",
+                "claim": "",
+                "evidence_ids": [],
+            },
+            "forward_watch": {"claim": "", "evidence_ids": []},
         },
         "what_to_watch": [],
     }
@@ -572,6 +586,33 @@ def build_analysis_packets(
                         "explanation": "plain-English causal interpretation without overstating attribution",
                         "evidence_ids": ["canonical evidence ID"],
                     },
+                    "story_chain": {
+                        "observed_move": {
+                            "claim": "exact price or curve move that started today's story",
+                            "evidence_ids": ["canonical evidence ID"],
+                        },
+                        "narrative_change": {
+                            "status": "supported|partially_supported|conflicting|unexplained|not_applicable",
+                            "claim": (
+                                "what changed in fundamentals, macro, positioning, policy, weather, "
+                                "geopolitics, or news; explicitly say unexplained or not_applicable "
+                                "when the evidence does not support a narrative attribution"
+                            ),
+                            "evidence_ids": ["canonical evidence ID unless unexplained or not_applicable"],
+                        },
+                        "option_market_readthrough": {
+                            "status": "confirmed|faded|conflicted|mixed|unavailable|not_material",
+                            "claim": (
+                                "whether options confirmed, faded, conflicted with, or could not assess "
+                                "the move; cite volatility, skew, term-structure, or quality evidence"
+                            ),
+                            "evidence_ids": ["canonical evidence ID unless unavailable or not_material"],
+                        },
+                        "forward_watch": {
+                            "claim": "next event, level, or data release that confirms or invalidates the story",
+                            "evidence_ids": ["canonical evidence ID"],
+                        },
+                    },
                     "what_to_watch": ["specific confirmation or invalidation with a level or event"],
                 },
                 "market_snapshot_items": "6 to 10 exact values cited to canonical evidence",
@@ -598,6 +639,12 @@ def build_analysis_packets(
                     "cross-support, novelty, and whether omission could change the reader's conclusion. "
                     "Mobile need not cover every investigator. Routine, redundant, background, and low-impact "
                     "views belong only in the full report. Preserve a material conflict or data limitation."
+                ),
+                "story_chain": (
+                    "For each top view, write a compact daily story chain: observed settled-market move, "
+                    "best-supported narrative change or explicit unexplained/not_applicable status, option-market "
+                    "read-through, and the forward watch item. This chain is delivery-facing and should explain "
+                    "why the move matters without claiming causation from timing alone."
                 ),
             },
             "forecast_contract": {

@@ -55,6 +55,26 @@ def _top_views(manifest):
                 "explanation": "The validated desk evidence is consistent with the move.",
                 "evidence_ids": [evidence_id],
             },
+            "story_chain": {
+                "observed_move": {
+                    "claim": "The validated settlement moved enough to matter today.",
+                    "evidence_ids": [evidence_id],
+                },
+                "narrative_change": {
+                    "status": "partially_supported",
+                    "claim": "The desk evidence gives a partial narrative for the move.",
+                    "evidence_ids": [evidence_id],
+                },
+                "option_market_readthrough": {
+                    "status": "mixed",
+                    "claim": "The option read-through is mixed against the settled move.",
+                    "evidence_ids": [evidence_id],
+                },
+                "forward_watch": {
+                    "claim": "Watch the next validated settlement and options update.",
+                    "evidence_ids": [evidence_id],
+                },
+            },
             "what_to_watch": ["Watch the next validated settlement and options update."],
         })
     return views
@@ -285,8 +305,15 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
         "title", "plain_english_view", "horizon", "confidence",
         "evidence_relationship", "specialist_roles", "key_metrics",
         "supporting_evidence", "conflicting_evidence", "driver_analysis",
-        "what_to_watch",
+        "story_chain", "what_to_watch",
     }.issubset(view) for view in template["top_views"])
+    assert all(
+        set(view["story_chain"]) == {
+            "observed_move", "narrative_change", "option_market_readthrough",
+            "forward_watch",
+        }
+        for view in template["top_views"]
+    )
     metric_fields = {
         "label", "value", "comparison", "plain_english_meaning", "evidence_ids",
     }
@@ -629,6 +656,7 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     markdown = md_path.read_text()
     assert "Overall forward view" in markdown and "Data limitations" in markdown
     assert "Driver and news validation" in markdown
+    assert "Daily story chain" in markdown
     assert "Validated statistics" in markdown
     statistics = statistics_path.read_text()
     assert "# GOLD Daily Statistics — 2026-07-20" in statistics
@@ -639,6 +667,8 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     mobile = mobile_path.read_text()
     assert "*GOLD Daily Brief — 2026-07-20*" in mobile
     assert "*1. View from futures_curve*" in mobile
+    assert "Why it moved: The desk evidence gives a partial narrative for the move." in mobile
+    assert "Options: The option read-through is mixed against the settled move." in mobile
     assert "Key move: Metric 1: 1.0%" in mobile
     assert "View from vol_surface" not in mobile
     assert "forecast_ledger" not in mobile and "memory_feedback" not in mobile
@@ -666,6 +696,20 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     ):
         validate_and_render(
             tmp_path / "packets" / "manifest.json", tmp_path / "bad-market-snapshot",
+        )
+    synthesis_path.write_text(json.dumps(synthesis))
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["top_views"][0]["story_chain"]["option_market_readthrough"].update({
+        "status": "confirmed", "evidence_ids": [],
+    })
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError,
+        match=r"story_chain\.option_market_readthrough requires evidence",
+    ):
+        validate_and_render(
+            tmp_path / "packets" / "manifest.json", tmp_path / "bad-story-chain",
         )
     synthesis_path.write_text(json.dumps(synthesis))
 
