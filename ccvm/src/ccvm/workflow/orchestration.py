@@ -249,9 +249,11 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
     run_dir = Path(state["manifest_path"]).parent
     task_path = run_dir / "synthesis.task.md"
     selected_roles = selected_investigator_roles(Path(state["manifest_path"]))
-    response_paths = "\n".join(
-        f"- {role}: `{manifest['role_response_paths'][role]}`" for role in selected_roles
-    ) or "- No investigator was dispatched; synthesize directly from canonical evidence."
+    selected_role_details = "\n".join(
+        f"- key `{role}`; display_name `{manifest['investigator_capabilities'][role]['display_name']}`; "
+        f"response `{manifest['role_response_paths'][role]}`"
+        for role in selected_roles
+    ) or "- No investigator was dispatched; use `specialist_roles: []` and synthesize directly from canonical evidence."
     correction = state["synthesis"].get("last_error", "")
     correction_text = (
         "\nThe prior response failed validation. Rebuild the complete response from the immutable "
@@ -264,7 +266,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         "You are the product-neutral synthesis editor. Do not spawn other agents.\n"
         f"The lead research plan is `{manifest['research_plan_response_path']}`. "
         "The following optional investigator outputs passed mechanical validation:\n"
-        f"{response_paths}\n\n"
+        f"{selected_role_details}\n\n"
         f"Read the synthesis contract in `{state['manifest_path']}` and immutable schema "
         f"`{manifest['synthesis_response_template']}`. Read the complete canonical evidence packet "
         f"`{manifest['canonical_packet']}` as your primary evidence source. Write the completed JSON only to "
@@ -298,7 +300,8 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         "each is cross-supported, conflicting, "
         "or a single-desk observation; include exact copied metrics, supporting reasons, conflicting evidence, "
         "horizon, and confidence. Name only investigator capabilities that materially contributed; do not force role "
-        "coverage. For each view, connect the "
+        "coverage. For specialist_roles, copy only the exact `key` values from the selected dispatched-role list "
+        "above, never a display_name, and use [] when no investigator contributed. For each view, connect the "
         "numbers to the best-supported fundamental, macro, positioning, or news driver. Use supported, partially "
         "supported, conflicting, or unexplained; never turn timing or correlation into proven causation. Complete "
         "story_chain for every top view: observed_move must state the settled-market move; narrative_change must "
