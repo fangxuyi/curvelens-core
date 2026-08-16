@@ -586,6 +586,11 @@ def build_analysis_packets(
                     "two objects are the default; add a third only when independently material. "
                     "Never emit four or more and never silently truncate."
                 ),
+                "synthesis_evidence_ids_rule": (
+                    "Set synthesis.evidence_ids to the sorted, deduplicated union of every evidence_ids "
+                    "list in all top_views and market_snapshot entries, including story_chain citations "
+                    "when present, before validation."
+                ),
                 "top_views": (
                     "Rank exactly three distinct market views by decision relevance. Each view must state "
                     "the condition, why it matters, exactly 2 or 3 exact numeric key metrics, supporting evidence, any "

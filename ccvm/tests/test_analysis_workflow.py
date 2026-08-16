@@ -372,6 +372,11 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
     ] == [
         "exactly 2 by default or 3 when independently material; each value contains a number and evidence_ids"
     ]
+    evidence_rule = manifest["synthesis_contract"]["reporting"][
+        "synthesis_evidence_ids_rule"
+    ]
+    assert "sorted, deduplicated union" in evidence_rule
+    assert "story_chain citations" in evidence_rule
     assert template["memory_feedback"] == []
     assert template["mobile_memory_feedback"] == []
 
@@ -763,6 +768,20 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     ):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "four-metrics")
     synthesis_path.write_text(json.dumps(synthesis))
+    citation_case = json.loads(json.dumps(synthesis))
+    citation_case["top_views"][0]["driver_analysis"]["evidence_ids"] = [direct_id]
+    citation_case["evidence_ids"] = _synthesis_ids(manifest)
+    synthesis_path.write_text(json.dumps(citation_case))
+    with pytest.raises(
+        AnalysisValidationError,
+        match="synthesis.evidence_ids must include every top-view citation",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "missing-citation-union")
+
+    citation_case["evidence_ids"] = sorted(set(_synthesis_ids(manifest)) | {direct_id})
+    synthesis_path.write_text(json.dumps(citation_case))
+    validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "complete-citation-union")
+    synthesis_path.write_text(json.dumps(synthesis))
 
     redundant_mobile = json.loads(json.dumps(synthesis))
     redundant_mobile["mobile_selection"]["candidates"][0][
@@ -938,6 +957,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert "Keep categorical diagnostics" in synthesis_task
     assert "return exactly 2 or 3 key_metrics objects" in synthesis_task
     assert "never silently truncate" in synthesis_task
+    assert "set synthesis.evidence_ids to the sorted, deduplicated union" in synthesis_task
+    assert "including story_chain citations" in synthesis_task
     synthesis = json.loads(Path(manifest["synthesis_response_template"]).read_text())
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",
