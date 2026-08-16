@@ -345,6 +345,12 @@ def test_synthesis_template_exposes_complete_ranked_top_view_shape(tmp_path):
     assert manifest["synthesis_contract"]["reporting"]["top_view_schema"][
         "specialist_roles"
     ] == ["selected dispatched role key (not display_name)"]
+    metric_rule = manifest["synthesis_contract"]["reporting"]["top_view_metric_value_rule"]
+    assert "numeric character" in metric_rule
+    assert "categorical statuses" in metric_rule
+    assert manifest["synthesis_contract"]["reporting"]["top_view_schema"][
+        "key_metrics"
+    ] == ["2-3 exact metric objects; each value contains a number and evidence_ids"]
     assert template["memory_feedback"] == []
     assert template["mobile_memory_feedback"] == []
 
@@ -704,6 +710,15 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     ):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-unselected-key")
     synthesis_path.write_text(json.dumps(valid_synthesis))
+    bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["top_views"][0]["key_metrics"][0]["value"] = "confirmed"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError,
+        match=r"synthesis\.top_views\[0\]\.key_metrics\[0\]\.value must contain a number",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-categorical-metric")
+    synthesis_path.write_text(json.dumps(synthesis))
 
     redundant_mobile = json.loads(json.dumps(synthesis))
     redundant_mobile["mobile_selection"]["candidates"][0][
@@ -863,6 +878,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     for role in manifest["roles"]:
         display_name = manifest["investigator_capabilities"][role]["display_name"]
         assert f"- key `{role}`; display_name `{display_name}`; response `" in synthesis_task
+    assert "Every top_views key_metrics value must contain at least one numeric character" in synthesis_task
+    assert "Never put categorical statuses" in synthesis_task
     synthesis = json.loads(Path(manifest["synthesis_response_template"]).read_text())
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",
