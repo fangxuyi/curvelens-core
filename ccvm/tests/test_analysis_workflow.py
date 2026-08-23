@@ -618,6 +618,51 @@ def test_investigator_finding_citations_must_be_disjoint(tmp_path):
         validate_role_response(tmp_path / "run" / "manifest.json", role)
 
 
+def test_investigator_response_requires_complete_citation_union(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    role = manifest["roles"][0]
+    _write_research_plan(manifest, selected=[role])
+    _write_valid_role(manifest, role)
+    response_path = Path(manifest["role_response_paths"][role])
+    response = json.loads(response_path.read_text())
+    support_id = response["candidate_findings"][0]["evidence_ids"][0]
+    other_id = sorted(set(manifest["evidence_registry"]) - {support_id})[0]
+    response["candidate_findings"][0]["counterevidence_ids"] = [other_id]
+    response_path.write_text(json.dumps(response))
+
+    with pytest.raises(
+        AnalysisValidationError,
+        match="evidence_ids must include every finding and required-check citation",
+    ):
+        validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+    nested_ids = {
+        evidence_id
+        for field in ("data_findings", "news_findings", "data_news_comparison")
+        for finding in response[field]
+        for evidence_id in finding["evidence_ids"]
+    }
+    nested_ids.update(
+        evidence_id
+        for item in response["required_check_results"]
+        for evidence_id in item["evidence_ids"]
+    )
+    nested_ids.update(
+        evidence_id
+        for item in response["key_metrics"]
+        for evidence_id in item["evidence_ids"]
+    )
+    nested_ids.update(
+        evidence_id
+        for finding in response["candidate_findings"]
+        for field in ("evidence_ids", "counterevidence_ids")
+        for evidence_id in finding[field]
+    )
+    response["evidence_ids"] = sorted(nested_ids)
+    response_path.write_text(json.dumps(response))
+    assert validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+
 def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     manifest = _packets(tmp_path / "packets", learning_snapshot=_learning_snapshot())
     plan = _write_research_plan(manifest)
@@ -999,11 +1044,15 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     for role in manifest["roles"]:
         role_packet = json.loads(Path(manifest["role_packets"][role]).read_text())
         assert metric_rule_fragment in role_packet["analysis_contract"]["numeric_rule"]
+        evidence_rule = role_packet["analysis_contract"]["evidence_ids_rule"]
+        assert evidence_rule in task_text
     investigator_instructions = (
         Path(__file__).resolve().parents[2]
         / ".codex" / "agents" / "curvelens_investigator.toml"
     ).read_text()
     assert metric_rule_fragment in investigator_instructions
+    assert "sorted, deduplicated union of every citation" in task_text
+    assert "sorted, deduplicated union of every citation" in investigator_instructions
 
     for role in reversed(manifest["roles"]):
         _write_valid_role(manifest, role)
