@@ -931,6 +931,12 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     planner_task = Path(next_actions(state)[0]["task_path"]).read_text()
     assert "['market_impact', 'price_direction', 'volatility_direction']" in planner_task
     assert "realized-outcome dimensions, not report fields" in planner_task
+    assert manifest["research_contract"]["evidence_ids_rule"] in planner_task
+    planner_instructions = (
+        Path(__file__).resolve().parents[2]
+        / ".codex" / "agents" / "curvelens_research_planner.toml"
+    ).read_text()
+    assert manifest["research_contract"]["evidence_ids_rule"] in planner_instructions
     _write_research_plan(manifest)
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
     assert state["phase"] == "INVESTIGATORS_REQUIRED"
@@ -1004,6 +1010,29 @@ def test_research_plan_may_skip_all_investigators(tmp_path):
         "omitted", "omitted", "omitted",
     ]
     assert next_actions(state)[0]["action"] == "RUN_SYNTHESIZER"
+
+
+def test_research_plan_requires_complete_top_level_citation_union(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    selected = manifest["roles"][:2]
+    plan = _write_research_plan(manifest, selected=selected)
+    plan["evidence_ids"] = plan["evidence_ids"][1:]
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+
+    with pytest.raises(
+        AnalysisValidationError,
+        match="research_plan.evidence_ids must include every dispatch citation",
+    ):
+        validate_research_plan(tmp_path / "run" / "manifest.json")
+
+    expected_ids = sorted({
+        evidence_id
+        for investigation in plan["investigations"]
+        for evidence_id in investigation["evidence_ids"]
+    })
+    plan["evidence_ids"] = expected_ids
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    assert validate_research_plan(tmp_path / "run" / "manifest.json")["evidence_ids"] == expected_ids
 
 
 def test_research_plan_rejects_unexplained_capability_omission(tmp_path):

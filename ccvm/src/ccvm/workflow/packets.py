@@ -757,6 +757,11 @@ def build_analysis_packets(
         },
         "research_contract": {
             "maximum_investigators": min(3, len(product.analysis_roles)),
+            "evidence_ids_rule": (
+                "Before validation, set research_plan.evidence_ids to the sorted, deduplicated "
+                "union of every dispatched investigation's evidence_ids; do not omit any dispatch "
+                "citation from the top-level union."
+            ),
             "learning_context": {
                 "schema_version": normalized_learning["schema_version"],
                 "as_of": normalized_learning["as_of"],
