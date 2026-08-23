@@ -68,6 +68,11 @@ INVESTIGATOR_RELEVANCE_DIMENSIONS = {
     }
     for key, value in FORECAST_DIMENSIONS.items()
 }
+INVESTIGATOR_KEY_METRIC_VALUE_RULE = (
+    "Every key_metrics value must contain a numeric, unit-bearing, evidence-backed measure. "
+    "Keep categorical states in findings or limitations. If no cited numeric evidence is available, "
+    "use status blocked, explain the limitation, and leave key_metrics empty; never invent a number."
+)
 
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
@@ -478,7 +483,8 @@ def build_analysis_packets(
                 "numeric_rule": (
                     "Lead with exact current values and changes. Return at least "
                     f"{role.minimum_key_metrics} key_metrics, following report_requirements. "
-                    "Each value must contain a number and unit; comparison must state the date, "
+                    f"{INVESTIGATOR_KEY_METRIC_VALUE_RULE} "
+                    "Comparison must state the date, "
                     "prior value, percentile, or named benchmark when available."
                 ),
                 "history_rule": (
