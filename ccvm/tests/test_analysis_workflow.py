@@ -571,6 +571,27 @@ def test_investigator_dimension_error_lists_sorted_outcome_enum(tmp_path):
     )
 
 
+def test_investigator_key_metrics_require_numeric_evidence_backed_values(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    role = manifest["roles"][0]
+    _write_research_plan(manifest, selected=[role])
+    _write_valid_role(manifest, role)
+    response_path = Path(manifest["role_response_paths"][role])
+    response = json.loads(response_path.read_text())
+    response["key_metrics"][0]["value"] = "confirmed"
+    response_path.write_text(json.dumps(response))
+
+    with pytest.raises(
+        AnalysisValidationError,
+        match=rf"{role}\.key_metrics\[0\]\.value must contain a number",
+    ):
+        validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+    response["key_metrics"][0]["value"] = "12.0%"
+    response_path.write_text(json.dumps(response))
+    assert validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+
 def test_investigator_finding_citations_must_be_disjoint(tmp_path):
     manifest = _packets(tmp_path / "run")
     role = manifest["roles"][0]
@@ -941,6 +962,18 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert "not capability topics such as curve" in task_text
     assert "evidence_ids and counterevidence_ids disjoint" in task_text
     assert "Set counterevidence_ids to [] when no distinct contrary evidence exists." in task_text
+    metric_rule_fragment = "numeric, unit-bearing, evidence-backed measure"
+    assert metric_rule_fragment in task_text
+    assert "use status blocked" in task_text
+    assert "never invent a number" in task_text
+    for role in manifest["roles"]:
+        role_packet = json.loads(Path(manifest["role_packets"][role]).read_text())
+        assert metric_rule_fragment in role_packet["analysis_contract"]["numeric_rule"]
+    investigator_instructions = (
+        Path(__file__).resolve().parents[2]
+        / ".codex" / "agents" / "curvelens_investigator.toml"
+    ).read_text()
+    assert metric_rule_fragment in investigator_instructions
 
     for role in reversed(manifest["roles"]):
         _write_valid_role(manifest, role)
