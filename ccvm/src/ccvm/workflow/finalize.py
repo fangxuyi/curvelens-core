@@ -409,8 +409,18 @@ def _check_mobile_selection(
     try:
         selection = MobileSelection.model_validate(raw)
     except ValidationError as exc:
+        first_error = exc.errors()[0]
+        field_path = ""
+        for component in first_error.get("loc", ()):
+            if isinstance(component, int):
+                field_path += f"[{component}]"
+            else:
+                field_path = (
+                    f"{field_path}.{component}" if field_path else str(component)
+                )
+        field_path = field_path or "<root>"
         raise AnalysisValidationError(
-            f"synthesis.mobile_selection is invalid: {exc.errors()[0]['msg']}"
+            f"synthesis.mobile_selection.{field_path} is invalid: {first_error['msg']}"
         ) from exc
 
     dimensions = (

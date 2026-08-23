@@ -797,6 +797,26 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
     ] == ["price_direction"]
     synthesis_path.write_text(json.dumps(synthesis))
 
+    mobile_error_cases = [
+        ("selected_view_ranks", lambda value: value.update(selected_view_ranks=[])),
+        (
+            "candidates[0].evidence_ids",
+            lambda value: value["candidates"][0].update(evidence_ids=[]),
+        ),
+    ]
+    for field_path, mutate in mobile_error_cases:
+        bad_mobile = json.loads(json.dumps(synthesis))
+        mutate(bad_mobile["mobile_selection"])
+        synthesis_path.write_text(json.dumps(bad_mobile))
+        with pytest.raises(
+            AnalysisValidationError,
+        ) as exc_info:
+            validate_and_render(
+                tmp_path / "packets" / "manifest.json", tmp_path / f"bad-{field_path}",
+            )
+        assert f"synthesis.mobile_selection.{field_path} is invalid:" in str(exc_info.value)
+    synthesis_path.write_text(json.dumps(synthesis))
+
     bad_synthesis = json.loads(json.dumps(synthesis))
     bad_synthesis["market_snapshot"][0] = "legacy metric shorthand"
     synthesis_path.write_text(json.dumps(bad_synthesis))
