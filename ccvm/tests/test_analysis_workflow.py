@@ -833,7 +833,11 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
         bad_synthesis["forecast_ledger"][1]["evidence_ids"][0]
     ]
     synthesis_path.write_text(json.dumps(bad_synthesis))
-    with pytest.raises(AnalysisValidationError, match="evidence from its source top view"):
+    with pytest.raises(
+        AnalysisValidationError,
+        match=r"source_view_rank 1: offending IDs \['feature:market_risk:2026-07-20'\]; "
+        r"allowed source-view IDs \['feature:what_changed:2026-07-20'\]",
+    ):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-link")
 
     bad_synthesis = json.loads(json.dumps(synthesis))

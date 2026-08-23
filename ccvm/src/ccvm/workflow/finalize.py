@@ -323,8 +323,14 @@ def _check_forecast_ledger(
         if item.forecast_id != expected_id:
             raise AnalysisValidationError(f"{label}.forecast_id must be {expected_id!r}")
         _check_ids(item.evidence_ids, allowed, label)
-        if not set(item.evidence_ids).issubset(view_ids[item.source_view_rank]):
-            raise AnalysisValidationError(f"{label} must cite evidence from its source top view")
+        source_view_ids = view_ids[item.source_view_rank]
+        if not set(item.evidence_ids).issubset(source_view_ids):
+            offending_ids = sorted(set(item.evidence_ids) - source_view_ids)
+            raise AnalysisValidationError(
+                f"{label} cites evidence outside source_view_rank {item.source_view_rank}: "
+                f"offending IDs {offending_ids}; allowed source-view IDs "
+                f"{sorted(source_view_ids)}"
+            )
         covered_ranks.add(item.source_view_rank)
         covered_dimensions.add(item.dimension)
     if covered_ranks != set(view_ids):
