@@ -51,3 +51,29 @@ def test_mobile_selection_forbids_unexpected_fields():
 def test_mobile_selection_rejects_blank_top_level_rationale():
     with pytest.raises(ValidationError, match="clean printable text"):
         MobileSelection.model_validate(_selection(selection_rationale="   "))
+
+
+@pytest.mark.parametrize(
+    ("field", "expected_location"),
+    [
+        ("selected_view_ranks", ("selected_view_ranks",)),
+        (
+            "expected_impact_dimensions",
+            ("candidates", 0, "expected_impact_dimensions"),
+        ),
+        ("evidence_ids", ("candidates", 0, "evidence_ids")),
+    ],
+)
+def test_mobile_selection_minimum_length_errors_preserve_field_path(
+    field, expected_location,
+):
+    value = _selection()
+    if field == "selected_view_ranks":
+        value[field] = []
+    else:
+        value["candidates"][0][field] = []
+
+    with pytest.raises(ValidationError) as exc_info:
+        MobileSelection.model_validate(value)
+
+    assert exc_info.value.errors()[0]["loc"] == expected_location
