@@ -1021,11 +1021,13 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     planner_task = Path(next_actions(state)[0]["task_path"]).read_text()
     assert "['market_impact', 'price_direction', 'volatility_direction']" in planner_task
     assert "realized-outcome dimensions, not report fields" in planner_task
+    assert manifest["research_contract"]["investigation_id_rule"] in planner_task
     assert manifest["research_contract"]["evidence_ids_rule"] in planner_task
     planner_instructions = (
         Path(__file__).resolve().parents[2]
         / ".codex" / "agents" / "curvelens_research_planner.toml"
     ).read_text()
+    assert manifest["research_contract"]["investigation_id_rule"] in planner_instructions
     assert manifest["research_contract"]["evidence_ids_rule"] in planner_instructions
     _write_research_plan(manifest)
     state = advance_state(state_path, Path(__file__).resolve().parents[2])
@@ -1139,6 +1141,28 @@ def test_research_plan_requires_complete_top_level_citation_union(tmp_path):
     plan["evidence_ids"] = expected_ids
     Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
     assert validate_research_plan(tmp_path / "run" / "manifest.json")["evidence_ids"] == expected_ids
+
+
+def test_research_plan_requires_canonical_investigation_ids_and_joins_roles(tmp_path):
+    manifest = _packets(tmp_path / "run")
+    role = manifest["roles"][0]
+    plan = _write_research_plan(manifest, selected=[role])
+    canonical_id = plan["investigations"][0]["investigation_id"]
+    plan["investigations"][0]["investigation_id"] = f"{manifest['packet_id']}:{role}"
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+
+    with pytest.raises(AnalysisValidationError, match="investigation_id must be"):
+        validate_research_plan(tmp_path / "run" / "manifest.json")
+
+    plan["investigations"][0]["investigation_id"] = canonical_id
+    Path(manifest["research_plan_response_path"]).write_text(json.dumps(plan))
+    assert validate_research_plan(tmp_path / "run" / "manifest.json")["investigations"][0][
+        "investigation_id"
+    ] == canonical_id
+
+    _write_valid_role(manifest, role)
+    response = validate_role_response(tmp_path / "run" / "manifest.json", role)
+    assert response["investigation_id"] == canonical_id
 
 
 def test_research_plan_rejects_unexplained_capability_omission(tmp_path):

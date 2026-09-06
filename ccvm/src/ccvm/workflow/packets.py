@@ -78,6 +78,10 @@ INVESTIGATOR_EVIDENCE_IDS_RULE = (
     "citation in data_findings, news_findings, data_news_comparison, required_check_results, "
     "key_metrics, and candidate_findings evidence_ids and counterevidence_ids."
 )
+RESEARCH_INVESTIGATION_ID_RULE = (
+    "For every dispatched investigation, copy investigation_id exactly as packet_id[:16]:<role> "
+    "using the configured capability role key; do not use the full packet_id or a display name."
+)
 
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
@@ -769,6 +773,7 @@ def build_analysis_packets(
         },
         "research_contract": {
             "maximum_investigators": min(3, len(product.analysis_roles)),
+            "investigation_id_rule": RESEARCH_INVESTIGATION_ID_RULE,
             "evidence_ids_rule": (
                 "Before validation, set research_plan.evidence_ids to the sorted, deduplicated "
                 "union of every dispatched investigation's evidence_ids; do not omit any dispatch "
