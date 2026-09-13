@@ -234,6 +234,7 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
         role_packet = json.loads(Path(manifest["role_packets"][role]).read_text())
         numeric_rule = role_packet["analysis_contract"]["numeric_rule"]
         evidence_ids_rule = role_packet["analysis_contract"]["evidence_ids_rule"]
+        finding_container_rule = role_packet["analysis_contract"]["finding_container_rule"]
         correction_text = f"\nCorrect this validation error from the prior response: {correction}\n" if correction else ""
         task_path.write_text(
             "# CurveLens targeted investigation\n\n"
@@ -251,6 +252,7 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
             "role's files. Lead with the packet's required exact numbers, comparisons, and units in key_metrics. "
             f"{numeric_rule} "
             f"{evidence_ids_rule} "
+            f"{finding_container_rule} "
             "Use plain English and explain what each number means. Return one to five candidate_findings "
             "with sequential stable IDs, materiality, horizon, confidence, expected impact dimensions, "
             "supporting and counterevidence, "

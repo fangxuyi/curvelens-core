@@ -78,6 +78,11 @@ INVESTIGATOR_EVIDENCE_IDS_RULE = (
     "citation in data_findings, news_findings, data_news_comparison, required_check_results, "
     "key_metrics, and candidate_findings evidence_ids and counterevidence_ids."
 )
+INVESTIGATOR_FINDING_CONTAINER_RULE = (
+    "Every nonempty data_findings, news_findings, and data_news_comparison item must be an object "
+    "with a nonempty claim and evidence_ids; use an empty list when there is no finding, and include "
+    "the configured relevance field for news findings."
+)
 RESEARCH_INVESTIGATION_ID_RULE = (
     "For every dispatched investigation, copy investigation_id exactly as packet_id[:16]:<role> "
     "using the configured capability role key; do not use the full packet_id or a display name."
@@ -509,6 +514,7 @@ def build_analysis_packets(
                     "Every factual or numerical claim must cite an evidence_id from the canonical packet."
                 ),
                 "evidence_ids_rule": INVESTIGATOR_EVIDENCE_IDS_RULE,
+                "finding_container_rule": INVESTIGATOR_FINDING_CONTAINER_RULE,
                 "epistemic_rule": "Label verified observations, interpretations, and open questions separately.",
                 "finding_schema": {
                     "data_findings": {"claim": "text", "evidence_ids": ["feature:..."]},

@@ -592,6 +592,29 @@ def test_investigator_key_metrics_require_numeric_evidence_backed_values(tmp_pat
     assert validate_role_response(tmp_path / "run" / "manifest.json", role)
 
 
+@pytest.mark.parametrize("field", ["data_findings", "news_findings", "data_news_comparison"])
+def test_investigator_finding_containers_require_claims_or_empty_lists(tmp_path, field):
+    manifest = _packets(tmp_path / "run")
+    role = manifest["roles"][0]
+    _write_research_plan(manifest, selected=[role])
+    _write_valid_role(manifest, role)
+    response_path = Path(manifest["role_response_paths"][role])
+    response = json.loads(response_path.read_text())
+    evidence_id = next(iter(manifest["evidence_registry"]))
+    response[field] = [{"evidence_ids": [evidence_id]}]
+    response_path.write_text(json.dumps(response))
+
+    with pytest.raises(
+        AnalysisValidationError,
+        match=rf"{role}\.{field}\[0\] must contain a claim",
+    ):
+        validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+    response[field] = []
+    response_path.write_text(json.dumps(response))
+    assert validate_role_response(tmp_path / "run" / "manifest.json", role)
+
+
 def test_investigator_finding_citations_must_be_disjoint(tmp_path):
     manifest = _packets(tmp_path / "run")
     role = manifest["roles"][0]
@@ -1048,6 +1071,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
         assert metric_rule_fragment in role_packet["analysis_contract"]["numeric_rule"]
         evidence_rule = role_packet["analysis_contract"]["evidence_ids_rule"]
         assert evidence_rule in task_text
+        finding_container_rule = role_packet["analysis_contract"]["finding_container_rule"]
+        assert finding_container_rule in task_text
     investigator_instructions = (
         Path(__file__).resolve().parents[2]
         / ".codex" / "agents" / "curvelens_investigator.toml"
@@ -1055,6 +1080,7 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert metric_rule_fragment in investigator_instructions
     assert "sorted, deduplicated union of every citation" in task_text
     assert "sorted, deduplicated union of every citation" in investigator_instructions
+    assert finding_container_rule in investigator_instructions
 
     for role in reversed(manifest["roles"]):
         _write_valid_role(manifest, role)
