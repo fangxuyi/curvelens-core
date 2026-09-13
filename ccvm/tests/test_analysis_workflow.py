@@ -915,6 +915,24 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-forecast")
 
     bad_synthesis = json.loads(json.dumps(synthesis))
+    rank_two = next(
+        item for item in bad_synthesis["forecast_ledger"]
+        if item["source_view_rank"] == 2
+    )
+    rank_two["horizon_sessions"] = 5
+    rank_two["forecast_id"] = (
+        f"{manifest['packet_id'][:16]}:v2:{rank_two['dimension']}:h5"
+    )
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError,
+        match=r"missing one-session forecast coverage for top-view ranks \[2\]",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-mobile-horizon")
+    synthesis_path.write_text(json.dumps(synthesis))
+    validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "valid-mobile-horizon")
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
     bad_synthesis["forecast_ledger"][0]["evidence_ids"] = [
         bad_synthesis["forecast_ledger"][1]["evidence_ids"][0]
     ]
@@ -1073,6 +1091,8 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert "never silently truncate" in synthesis_task
     assert "set synthesis.evidence_ids to the sorted, deduplicated union" in synthesis_task
     assert "including story_chain citations" in synthesis_task
+    mobile_horizon_coverage_rule = manifest["synthesis_contract"]["mobile_relevance_contract"]["coverage_rule"]
+    assert mobile_horizon_coverage_rule in synthesis_task
     synthesis = json.loads(Path(manifest["synthesis_response_template"]).read_text())
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",

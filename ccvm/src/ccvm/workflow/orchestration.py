@@ -271,6 +271,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
     run_dir = Path(state["manifest_path"]).parent
     task_path = run_dir / "synthesis.task.md"
     selected_roles = selected_investigator_roles(Path(state["manifest_path"]))
+    mobile_horizon_coverage_rule = manifest["synthesis_contract"]["mobile_relevance_contract"]["coverage_rule"]
     selected_role_details = "\n".join(
         f"- key `{role}`; display_name `{manifest['investigator_capabilities'][role]['display_name']}`; "
         f"response `{manifest['role_response_paths'][role]}`"
@@ -321,6 +322,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         "one-session mobile horizon. List only impact dimensions backed by those same-rank, one-session "
         "forecasts; for example, a candidate listing price_direction and market_impact needs both forecasts "
         "for that view at horizon 1. Complete mobile_selection for all three views and select one by default; "
+        f"{mobile_horizon_coverage_rule} "
         "select a second only "
         "when it is independently material for the next session. Mobile selection does not need to represent "
         "every investigator. Set forecast_ledger and mobile_selection candidates and selected ranks to empty for "
