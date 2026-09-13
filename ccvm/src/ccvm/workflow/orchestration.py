@@ -271,6 +271,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
     run_dir = Path(state["manifest_path"]).parent
     task_path = run_dir / "synthesis.task.md"
     selected_roles = selected_investigator_roles(Path(state["manifest_path"]))
+    metric_key_rule = manifest["synthesis_contract"]["forecast_contract"]["metric_key_rule"]
     selected_role_details = "\n".join(
         f"- key `{role}`; display_name `{manifest['investigator_capabilities'][role]['display_name']}`; "
         f"response `{manifest['role_response_paths'][role]}`"
@@ -316,7 +317,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         "evidence_ids list in all top_views and market_snapshot entries, including story_chain citations "
         "when present. Do not omit a citation because it is nested in a view. "
         "Complete forecast_ledger using the manifest forecast_contract, including its exact deterministic "
-        "forecast_id format. Every non-blocked top view needs a forecast and all required dimensions must be "
+        f"forecast_id format. {metric_key_rule} Every non-blocked top view needs a forecast and all required dimensions must be "
         "covered. Every mobile candidate must have at least one forecast from the same source view at the "
         "one-session mobile horizon. List only impact dimensions backed by those same-rank, one-session "
         "forecasts; for example, a candidate listing price_direction and market_impact needs both forecasts "
