@@ -82,6 +82,10 @@ RESEARCH_INVESTIGATION_ID_RULE = (
     "For every dispatched investigation, copy investigation_id exactly as packet_id[:16]:<role> "
     "using the configured capability role key; do not use the full packet_id or a display name."
 )
+FORECAST_METRIC_KEY_RULE = (
+    "For every forecast_ledger item, copy forecast_contract.dimensions[dimension].metric_key "
+    "exactly; never infer or substitute a metric name."
+)
 
 
 def load_articles(path: Path | None) -> list[dict[str, Any]]:
@@ -714,6 +718,7 @@ def build_analysis_packets(
                 "horizons_sessions": list(FORECAST_HORIZONS_SESSIONS),
                 "dimensions": FORECAST_DIMENSIONS,
                 "required_dimensions": list(FORECAST_DIMENSIONS),
+                "metric_key_rule": FORECAST_METRIC_KEY_RULE,
                 "minimum_per_top_view": 1,
                 "maximum_items": 9,
                 "forecast_id_format": (

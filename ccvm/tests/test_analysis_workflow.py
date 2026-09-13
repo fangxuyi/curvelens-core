@@ -915,6 +915,17 @@ def test_finalizer_requires_all_roles_and_known_evidence(tmp_path):
         validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-forecast")
 
     bad_synthesis = json.loads(json.dumps(synthesis))
+    bad_synthesis["forecast_ledger"][0]["metric_key"] = "wrong_metric"
+    synthesis_path.write_text(json.dumps(bad_synthesis))
+    with pytest.raises(
+        AnalysisValidationError,
+        match=r"synthesis\.forecast_ledger\[0\]\.metric_key does not match its dimension",
+    ):
+        validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "bad-metric-key")
+    synthesis_path.write_text(json.dumps(synthesis))
+    validate_and_render(tmp_path / "packets" / "manifest.json", tmp_path / "valid-metric-key")
+
+    bad_synthesis = json.loads(json.dumps(synthesis))
     bad_synthesis["forecast_ledger"][0]["evidence_ids"] = [
         bad_synthesis["forecast_ledger"][1]["evidence_ids"][0]
     ]
@@ -1073,6 +1084,13 @@ def test_generic_orchestration_gates_qc_roles_and_synthesis(tmp_path):
     assert "never silently truncate" in synthesis_task
     assert "set synthesis.evidence_ids to the sorted, deduplicated union" in synthesis_task
     assert "including story_chain citations" in synthesis_task
+    metric_key_rule = manifest["synthesis_contract"]["forecast_contract"]["metric_key_rule"]
+    assert metric_key_rule in synthesis_task
+    synthesizer_instructions = (
+        Path(__file__).resolve().parents[2]
+        / ".codex" / "agents" / "curvelens_synthesizer.toml"
+    ).read_text()
+    assert metric_key_rule in synthesizer_instructions
     synthesis = json.loads(Path(manifest["synthesis_response_template"]).read_text())
     used = json.loads(Path(manifest["role_response_paths"][manifest["roles"][0]]).read_text())["evidence_ids"][0]
     synthesis.update({"status": "limited", "headline": "Mixed setup",
