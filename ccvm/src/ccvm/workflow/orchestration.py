@@ -234,6 +234,7 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
         role_packet = json.loads(Path(manifest["role_packets"][role]).read_text())
         numeric_rule = role_packet["analysis_contract"]["numeric_rule"]
         evidence_ids_rule = role_packet["analysis_contract"]["evidence_ids_rule"]
+        finding_container_rule = role_packet["analysis_contract"]["finding_container_rule"]
         correction_text = f"\nCorrect this validation error from the prior response: {correction}\n" if correction else ""
         task_path.write_text(
             "# CurveLens targeted investigation\n\n"
@@ -251,6 +252,7 @@ def _write_role_tasks(state: dict[str, Any], repo_root: Path) -> None:
             "role's files. Lead with the packet's required exact numbers, comparisons, and units in key_metrics. "
             f"{numeric_rule} "
             f"{evidence_ids_rule} "
+            f"{finding_container_rule} "
             "Use plain English and explain what each number means. Return one to five candidate_findings "
             "with sequential stable IDs, materiality, horizon, confidence, expected impact dimensions, "
             "supporting and counterevidence, "
@@ -272,6 +274,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
     task_path = run_dir / "synthesis.task.md"
     selected_roles = selected_investigator_roles(Path(state["manifest_path"]))
     mobile_horizon_coverage_rule = manifest["synthesis_contract"]["mobile_relevance_contract"]["coverage_rule"]
+    metric_key_rule = manifest["synthesis_contract"]["forecast_contract"]["metric_key_rule"]
     selected_role_details = "\n".join(
         f"- key `{role}`; display_name `{manifest['investigator_capabilities'][role]['display_name']}`; "
         f"response `{manifest['role_response_paths'][role]}`"
@@ -317,7 +320,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
         "evidence_ids list in all top_views and market_snapshot entries, including story_chain citations "
         "when present. Do not omit a citation because it is nested in a view. "
         "Complete forecast_ledger using the manifest forecast_contract, including its exact deterministic "
-        "forecast_id format. Every non-blocked top view needs a forecast and all required dimensions must be "
+        f"forecast_id format. {metric_key_rule} Every non-blocked top view needs a forecast and all required dimensions must be "
         "covered. Every mobile candidate must have at least one forecast from the same source view at the "
         "one-session mobile horizon. List only impact dimensions backed by those same-rank, one-session "
         "forecasts; for example, a candidate listing price_direction and market_impact needs both forecasts "
