@@ -342,6 +342,31 @@ def _check_forecast_ledger(
         )
 
 
+def _check_mobile_horizon_coverage(
+    synthesis: dict[str, Any], manifest: dict[str, Any],
+) -> None:
+    if synthesis["status"] == "blocked":
+        return
+    relevance_contract = (
+        (manifest.get("synthesis_contract") or {}).get("mobile_relevance_contract") or {}
+    )
+    horizon = relevance_contract.get("horizon_sessions")
+    if horizon != 1:
+        raise AnalysisValidationError("manifest mobile_relevance_contract is incomplete")
+    covered_ranks = {
+        item.get("source_view_rank")
+        for item in synthesis.get("forecast_ledger", [])
+        if isinstance(item, dict) and item.get("horizon_sessions") == horizon
+    }
+    view_ranks = {int(view["rank"]) for view in synthesis["top_views"]}
+    missing_ranks = sorted(view_ranks - covered_ranks)
+    if missing_ranks:
+        raise AnalysisValidationError(
+            "synthesis forecast_ledger missing one-session forecast coverage for top-view "
+            f"ranks {missing_ranks}"
+        )
+
+
 def _check_memory_feedback(
     synthesis: dict[str, Any], manifest: dict[str, Any], allowed: set[str],
 ) -> None:
@@ -976,6 +1001,7 @@ def validate_synthesis_response(
     )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
     _check_forecast_ledger(synthesis, manifest, allowed)
+    _check_mobile_horizon_coverage(synthesis, manifest)
     _normalize_mobile_forecast_links(synthesis, manifest)
     _check_mobile_selection(synthesis, manifest, allowed)
     _check_mobile_memory_feedback(synthesis, manifest, allowed)

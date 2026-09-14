@@ -53,6 +53,10 @@ FORECAST_DIMENSIONS = {
     },
 }
 MOBILE_RELEVANCE_CONTRACT_VERSION = 1
+MOBILE_HORIZON_COVERAGE_RULE = (
+    "Before mobile_selection is validated, every non-blocked top-view rank must have at least "
+    "one one-session forecast in forecast_ledger; validation reports each missing rank."
+)
 MOBILE_RELEVANCE_DIMENSIONS = {
     "price_direction": {"thresholds": [0.005, 0.015]},
     "volatility_direction": {"thresholds": [0.005, 0.015]},
@@ -419,6 +423,7 @@ def build_analysis_packets(
             "version": MOBILE_RELEVANCE_CONTRACT_VERSION,
             "horizon_sessions": 1,
             "dimensions": MOBILE_RELEVANCE_DIMENSIONS,
+            "coverage_rule": MOBILE_HORIZON_COVERAGE_RULE,
         },
         "investigator_relevance_contract": {
             "version": INVESTIGATOR_RELEVANCE_CONTRACT_VERSION,
@@ -735,6 +740,7 @@ def build_analysis_packets(
                 "version": MOBILE_RELEVANCE_CONTRACT_VERSION,
                 "horizon_sessions": 1,
                 "dimensions": MOBILE_RELEVANCE_DIMENSIONS,
+                "coverage_rule": MOBILE_HORIZON_COVERAGE_RULE,
                 "labels": ["muted", "material", "extreme"],
                 "rule": (
                     "Every mobile candidate must link each expected impact dimension to a one-session "
