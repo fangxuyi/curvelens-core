@@ -15,6 +15,9 @@ exactly one deployment runbook:
 - `deployments/copper/AGENTS.md`
 - `deployments/corn/AGENTS.md`
 - `deployments/silver/AGENTS.md`
+- `deployments/sp500/AGENTS.md`
+- `deployments/nasdaq100/AGENTS.md`
+- `deployments/russell2000/AGENTS.md`
 
 The deployment runbook is authoritative for product-specific collection,
 schedules, QC, and delivery. `CCVM_PRODUCT` selects which runbook applies. If a
