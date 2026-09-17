@@ -150,6 +150,8 @@ def main() -> None:
                     ),
                     "retrospectives": refresh["results"],
                     "retrospective_errors": refresh["errors"],
+                    "deferred_retrospectives": refresh["deferred_source_dates"],
+                    "review_budget": refresh["review_budget"],
                     "actions": refresh["actions"],
                 })
             if args.command == "promote-learning":

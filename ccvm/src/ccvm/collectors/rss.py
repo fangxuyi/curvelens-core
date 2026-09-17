@@ -60,6 +60,8 @@ class RSSNewsCollector:
         articles: list[dict] = []
         seen_urls: set[str] = set()
         source_results: dict[str, str] = {}
+        source_diagnostics: dict[str, dict] = {}
+        source_warnings = 0
 
         if not self.sources or not self.keywords:
             self.manifest_db.complete_run(
@@ -72,21 +74,37 @@ class RSSNewsCollector:
 
         for source in self.sources:
             try:
-                fetched = _fetch_source(source, cutoff, seen_urls, self.keywords)
+                diagnostics: dict = {}
+                fetched = _fetch_source(source, cutoff, seen_urls, self.keywords,
+                                        diagnostics=diagnostics)
+                source_diagnostics[source["key"]] = diagnostics
                 articles.extend(fetched)
-                source_results[source["key"]] = f"ok ({len(fetched)})"
+                warnings = diagnostics["warnings"]
+                if warnings:
+                    source_warnings += 1
+                    source_results[source["key"]] = (
+                        f"warning ({len(fetched)}): " + "; ".join(warnings)
+                    )
+                    logger.warning("RSS %s: %s", source["key"], source_results[source["key"]])
+                else:
+                    source_results[source["key"]] = f"ok ({len(fetched)})"
                 logger.info("RSS %s: %d articles", source["key"], len(fetched))
             except Exception as exc:
+                source_warnings += 1
                 source_results[source["key"]] = f"failed: {exc}"
                 logger.warning("RSS %s: failed — %s", source["key"], exc)
 
+        notes = json.dumps(source_results, sort_keys=True)
+        status = "warning" if source_warnings else "success"
+        warning_count = int(bool(source_warnings))
         if not articles:
             logger.warning("No RSS articles fetched for %s", as_of_str)
-            self.manifest_db.complete_run(run_id, "warning", 0, 1, 0, 0)
+            self.manifest_db.complete_run(run_id, "warning", 0, 1, 0, 0, notes=notes)
             return {
                 "run_id": run_id, "status": "warning",
                 "success": 0, "warning": 1, "failure": 0, "skipped": 0,
                 "articles": 0, "sources": source_results,
+                "source_diagnostics": source_diagnostics,
             }
 
         content = json.dumps(articles, indent=2, ensure_ascii=False).encode("utf-8")
@@ -95,11 +113,13 @@ class RSSNewsCollector:
 
         if self.manifest_db.sha256_exists_for_date(sha256, as_of_str):
             logger.info("RSS news already stored for %s (unchanged)", as_of_str)
-            self.manifest_db.complete_run(run_id, "success", 0, 0, 0, 1)
+            self.manifest_db.complete_run(run_id, status, 0, warning_count, 0, 1,
+                                          notes=notes)
             return {
-                "run_id": run_id, "status": "success",
-                "success": 0, "warning": 0, "failure": 0, "skipped": 1,
+                "run_id": run_id, "status": status,
+                "success": 0, "warning": warning_count, "failure": 0, "skipped": 1,
                 "articles": len(articles), "sources": source_results,
+                "source_diagnostics": source_diagnostics,
             }
 
         raw_path, sha256, byte_size = self.raw_store.persist(
@@ -127,11 +147,13 @@ class RSSNewsCollector:
             "collection_run_id": run_id,
         })
 
-        self.manifest_db.complete_run(run_id, "success", 1, 0, 0, 0)
+        self.manifest_db.complete_run(run_id, status, 1, warning_count, 0, 0,
+                                      notes=notes)
         return {
-            "run_id": run_id, "status": "success",
-            "success": 1, "warning": 0, "failure": 0, "skipped": 0,
+            "run_id": run_id, "status": status,
+            "success": 1, "warning": warning_count, "failure": 0, "skipped": 0,
             "articles": len(articles), "sources": source_results,
+            "source_diagnostics": source_diagnostics,
         }
 
 
@@ -157,7 +179,8 @@ def find_raw_articles(data_dir: Path, as_of_date: date) -> Optional[Path]:
 
 
 def _fetch_source(source: dict, cutoff: date, seen_urls: set,
-                  keywords: frozenset[str]) -> list[dict]:
+                  keywords: frozenset[str], *,
+                  diagnostics: Optional[dict] = None) -> list[dict]:
     """Fetch one RSS feed; return filtered, deduplicated article dicts."""
     with httpx.Client(
         timeout=20.0,
@@ -169,7 +192,21 @@ def _fetch_source(source: dict, cutoff: date, seen_urls: set,
         feed_content = resp.text
 
     feed = feedparser.parse(feed_content)
+    if not feed.version:
+        raise ValueError("response is not a recognized RSS/Atom feed")
     articles = []
+    dated_entries = [published for entry in feed.entries
+                     if (published := _parse_entry_date(entry)) is not None]
+    latest = max(dated_entries) if dated_entries else None
+    warnings = []
+    if latest is not None and latest < cutoff:
+        warnings.append(f"stale feed: latest dated entry {latest.isoformat()} "
+                        f"is before cutoff {cutoff.isoformat()}")
+    elif feed.entries and latest is None:
+        warnings.append("feed has no verifiable publication dates")
+    if feed.bozo:
+        warnings.append("feed parser reported malformed content")
+    undated_relevant = 0
 
     for entry in feed.entries:
         url = getattr(entry, "link", "") or ""
@@ -189,7 +226,10 @@ def _fetch_source(source: dict, cutoff: date, seen_urls: set,
         if not any(kw in text.lower() for kw in keywords):
             continue
 
-        published_at = _parse_entry_date(entry) or date.today()
+        published_at = _parse_entry_date(entry)
+        if published_at is None:
+            undated_relevant += 1
+            continue
         if published_at < cutoff:
             continue
 
@@ -203,6 +243,15 @@ def _fetch_source(source: dict, cutoff: date, seen_urls: set,
             "source_name": source["name"],
         })
 
+    if undated_relevant:
+        warnings.append(f"excluded {undated_relevant} relevant entries with no publication date")
+    if diagnostics is not None:
+        diagnostics.update({
+            "entry_count": len(feed.entries),
+            "latest_published_at": latest.isoformat() if latest else None,
+            "undated_relevant_excluded": undated_relevant,
+            "warnings": warnings,
+        })
     return articles
 
 
