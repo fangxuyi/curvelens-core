@@ -28,6 +28,7 @@ from .investigator_evaluation import (
 
 RETROSPECTIVE_SCHEMA_VERSION = 3
 MAX_RETROSPECTIVE_CORRECTIONS = 2
+DEFAULT_DAILY_REVIEW_DATES = 2
 
 
 def _hash_bytes(value: bytes) -> str:
@@ -36,6 +37,97 @@ def _hash_bytes(value: bytes) -> str:
 
 def _hash_file(path: Path) -> str:
     return _hash_bytes(path.read_bytes()) if path.exists() else ""
+
+
+def _rebase_event_paths(content: bytes, data_root: Path, replacement: bytes) -> bytes:
+    # Discover equivalent spellings from the log as well as the caller. The
+    # controller resolves its root, while old logs can still use a symlink.
+    resolved_root = data_root.resolve()
+    roots = {str(data_root.absolute()), str(resolved_root)}
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+        elif isinstance(value, str) and value.startswith("/"):
+            path = Path(value)
+            try:
+                relative = path.resolve().relative_to(resolved_root)
+                prefix = path.parents[len(relative.parts) - 1] if relative.parts else path
+                if prefix.resolve() == resolved_root:
+                    roots.add(str(prefix))
+            except (ValueError, OSError, RuntimeError, IndexError):
+                pass
+    for line in content.splitlines():
+        try:
+            visit(json.loads(line))
+        except (ValueError, UnicodeDecodeError):
+            pass
+    for root in sorted(roots, key=len, reverse=True):
+        content = content.replace(root.encode().rstrip(b"/") + b"/", replacement)
+    return content
+
+
+def _without_clock(value: Any) -> Any:
+    """Execution timestamps are not new evidence."""
+    if isinstance(value, dict):
+        return {key: _without_clock(item) for key, item in value.items()
+                if key not in {"generated_at", "evaluated_at"}}
+    if isinstance(value, list):
+        return [_without_clock(item) for item in value]
+    return value
+
+
+def _same_scores(previous: dict, current: dict) -> bool:
+    if not isinstance(previous, dict):
+        return False
+    fields = ("evaluations", "aggregate", "mobile_relevance", "investigator_relevance")
+    return all(_without_clock(previous.get(key)) == _without_clock(current.get(key))
+               for key in fields)
+
+
+def _restore_cached_review(
+    run_dir: Path, packet: dict, previous_packet: dict, legacy_ids: set[str],
+) -> None:
+    """Rebind only a provably equivalent review, retaining the original for audit."""
+    response_path = run_dir / "retrospective.response.json"
+    candidates = []
+    if response_path.exists():
+        try:
+            response = _load_object(response_path, "retrospective response")
+        except AnalysisValidationError:
+            # Let the normal bounded correction path archive malformed submissions.
+            return
+        if response.get("packet_id") == packet["packet_id"]:
+            return
+        candidates.append((response, previous_packet))
+    final_path = run_dir / "retrospective.json"
+    if final_path.exists():
+        try:
+            final = _load_object(final_path, "completed retrospective")
+        except AnalysisValidationError:
+            final = {}
+        candidates.append((final.get("review", {}), final.get("evaluation", {})))
+    for response, evidence in candidates:
+        if not isinstance(response, dict):
+            continue
+        previous_id = response.get("packet_id")
+        if not isinstance(previous_id, str) or previous_id not in legacy_ids | {packet["packet_id"]} \
+                or not _same_scores(evidence, packet):
+            continue
+        _write_json(run_dir / f"retrospective.reused-{previous_id}.json", {
+            "previous_response": response, "previous_evaluation": evidence,
+            "new_packet_id": packet["packet_id"],
+            "reason": "Equivalent evidence; portable cache identity upgrade or verified relocation.",
+        })
+        _write_json(response_path, {**response, "packet_id": packet["packet_id"]})
+        return
+    if response_path.exists():
+        response = _load_object(response_path, "retrospective response")
+        suffix = _hash_bytes(response_path.read_bytes())[:20]
+        response_path.replace(run_dir / f"retrospective.superseded-{suffix}.json")
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -260,6 +352,7 @@ def validate_retrospective_response(
 
 def prepare_retrospective(
     data_root: Path, trade_date: str, *, generated_at: datetime | None = None,
+    previous_data_root: Path | None = None,
 ) -> dict[str, Any]:
     try:
         source_date = date.fromisoformat(trade_date)
@@ -359,7 +452,7 @@ def prepare_retrospective(
 
     events_path = data_root / "analysis_workflow" / f"trade_date={trade_date}" / "workflow_events.jsonl"
     events = _load_events(events_path)
-    identity = {
+    legacy_identity = {
         "analysis_sha256": analysis_hash,
         "outcome_hashes": outcome_hashes,
         "events_sha256": _hash_file(events_path),
@@ -367,17 +460,40 @@ def prepare_retrospective(
         "mobile_relevance_evaluator_version": MOBILE_RELEVANCE_EVALUATOR_VERSION,
         "investigator_evaluator_version": INVESTIGATOR_EVALUATOR_VERSION,
     }
+    legacy_ids = {_hash_bytes(json.dumps(legacy_identity, sort_keys=True).encode())}
+    event_bytes = events_path.read_bytes() if events_path.exists() else b""
+    if previous_data_root is not None:
+        # Explicit migration repair only: reproduce the old fingerprint exactly.
+        # A changed forecast, outcome, scoring version or event still fails this proof.
+        previous_events = _rebase_event_paths(
+            event_bytes, data_root, str(previous_data_root).encode().rstrip(b"/") + b"/",
+        )
+        legacy_ids.add(_hash_bytes(json.dumps({
+            **legacy_identity, "events_sha256": _hash_bytes(previous_events),
+        }, sort_keys=True).encode()))
+    identity = {
+        **legacy_identity,
+        "cache_identity_version": 2,
+        "events_sha256": _hash_bytes(_rebase_event_paths(event_bytes, data_root, b"<DATA_ROOT>/")),
+        # Investigator outcomes can mature separately from report forecasts.
+        "review_scores_sha256": _hash_bytes(json.dumps(
+            _without_clock({key: evaluation_artifact[key] for key in (
+                "evaluations", "aggregate", "mobile_relevance", "investigator_relevance",
+            )}), sort_keys=True,
+        ).encode()),
+    }
     packet_id = _hash_bytes(json.dumps(identity, sort_keys=True).encode())
     packet = {
         "schema_version": RETROSPECTIVE_SCHEMA_VERSION,
         "packet_id": packet_id,
+        "cache_identity": identity,
         "product": analysis.get("product"),
         "trade_date": trade_date,
         "generated_at": now.isoformat(),
         "source_artifacts": {
             "analysis_path": str(analysis_path), "analysis_sha256": analysis_hash,
             "workflow_events_path": str(events_path),
-            "workflow_events_sha256": identity["events_sha256"],
+            "workflow_events_sha256": legacy_identity["events_sha256"],
         },
         "top_views": (analysis.get("synthesis") or {}).get("top_views", []),
         "forecasts": forecasts,
@@ -399,10 +515,10 @@ def prepare_retrospective(
         },
     }
     packet_path = run_dir / "retrospective.packet.json"
-    old_packet_id = None
+    previous_packet = {}
     if packet_path.exists():
         try:
-            old_packet_id = json.loads(packet_path.read_text()).get("packet_id")
+            previous_packet = json.loads(packet_path.read_text())
         except json.JSONDecodeError:
             pass
     _write_json(packet_path, packet)
@@ -426,8 +542,7 @@ def prepare_retrospective(
         f"`{response_path}` using `{template_path}`. Preserve every template key and leave "
         "candidate_advisories as an empty list; deterministic memory aggregation creates candidates.\n"
     )
-    if old_packet_id != packet_id:
-        response_path.unlink(missing_ok=True)
+    _restore_cached_review(run_dir, packet, previous_packet, legacy_ids)
 
     base = {
         "product": analysis.get("product"), "date": trade_date,
@@ -478,6 +593,7 @@ def prepare_retrospective(
     _write_json(final_path, {
         "schema_version": RETROSPECTIVE_SCHEMA_VERSION,
         "packet_id": packet_id, "product": analysis.get("product"),
+        "cache_identity": identity,
         "trade_date": trade_date, "evaluation": evaluation_artifact,
         "review": response,
     })
@@ -489,10 +605,20 @@ def prepare_retrospective(
 
 def refresh_retrospectives(
     data_root: Path, as_of: date, *, max_source_dates: int = 30,
+    max_review_dates: int = DEFAULT_DAILY_REVIEW_DATES,
 ) -> dict[str, Any]:
     """Refresh eligible historical outcomes without blocking the daily report."""
     if max_source_dates < 1:
         raise ValueError("max_source_dates must be positive")
+    if max_review_dates < 1:
+        raise ValueError("max_review_dates must be positive")
+    budget_path = data_root / "learning" / "review_dispatch" / f"{as_of.isoformat()}.json"
+    budget = _load_object(budget_path, "review dispatch budget") if budget_path.exists() else {
+        "as_of": as_of.isoformat(), "limit": max_review_dates, "source_dates": [],
+    }
+    # Repeated learn calls on the same date cannot drain the rest of the backlog.
+    limit = min(max_review_dates, int(budget["limit"]))
+    reserved = list(budget["source_dates"])
     candidates: list[tuple[date, str]] = []
     for path in (data_root / "analysis").glob("trade_date=*/analysis.json"):
         value = path.parent.name.removeprefix("trade_date=")
@@ -505,15 +631,30 @@ def refresh_retrospectives(
     results = []
     actions = []
     errors = []
-    for _, value in sorted(candidates)[-max_source_dates:]:
+    deferred = []
+    for _, value in reversed(sorted(candidates)[-max_source_dates:]):
         try:
             result = prepare_retrospective(data_root, value)
         except (AnalysisValidationError, ValueError, KeyError) as exc:
             errors.append({"trade_date": value, "error": str(exc)})
             continue
         results.append({"trade_date": value, "result": result["result"]})
-        actions.extend(result.get("actions", []))
-    return {"as_of": as_of.isoformat(), "results": results, "actions": actions, "errors": errors}
+        requested = result.get("actions", [])
+        if requested:
+            if value not in reserved and len(reserved) >= limit:
+                deferred.append(value)
+                continue
+            if value not in reserved:
+                reserved.append(value)
+                _write_json(budget_path, {
+                    "as_of": as_of.isoformat(), "limit": limit, "source_dates": reserved,
+                })
+            actions.extend(requested)
+    return {
+        "as_of": as_of.isoformat(), "results": results, "actions": actions, "errors": errors,
+        "deferred_source_dates": deferred,
+        "review_budget": {"limit": limit, "reserved_source_dates": reserved},
+    }
 
 
 __all__ = [
