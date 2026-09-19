@@ -109,6 +109,15 @@ def main() -> None:
     macro_path = DATA_DIR / "gold" / "macro" / f"trade_date={as_of_str}" / "macro.json"
     macro = json.loads(macro_path.read_text()) if macro_path.exists() else None
 
+    # ── Equity-index sector and company-event context (optional) ──
+    equity_path = (
+        DATA_DIR / "gold" / "equity_context"
+        / f"trade_date={as_of_str}" / "equity_context.json"
+    )
+    equity_context = (
+        json.loads(equity_path.read_text()) if equity_path.exists() else None
+    )
+
     # ── Agreement ──
     agr_path = DATA_DIR / "gold" / "agreement" / f"trade_date={as_of_str}" / "agreement.json"
     if agr_path.exists():
@@ -163,6 +172,7 @@ def main() -> None:
         themes=themes,
         scorecard=scorecard,
         macro=macro,
+        equity_context=equity_context,
     )
 
     md_path = output_dir / f"{as_of_str}.md"
