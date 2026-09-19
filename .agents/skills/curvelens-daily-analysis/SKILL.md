@@ -10,7 +10,15 @@ or a vendor model CLI.
 
 1. Read the repository `AGENTS.md`, then exactly one product runbook selected by
    the requested product. Set `CCVM_PRODUCT` explicitly for every command.
-2. Start or resume the durable controller:
+2. For a scheduled fresh report, establish the expected settlement date from
+   the invocation's target and the deployment's session/publication policy,
+   independently of the acquired bulletin's internal date. Freeze that target
+   across retries; if the policy or target is unavailable, report that missing
+   configuration instead of claiming freshness. Pass
+   `--expected-date <target-date>` on every daily controller call below. Keep
+   `--date` equal to the verified source date; never relabel a stale bulletin.
+   Explicit historical runs may omit `--expected-date`.
+   Start or resume the durable controller:
 
    ```bash
    CCVM_PRODUCT=<product> ccvm/.venv/bin/python agent/analysis_orchestrator.py start --date <date>
@@ -19,7 +27,13 @@ or a vendor model CLI.
 3. Parse its JSON result. Handle `NEED_CME_PDF` according to the product
    runbook. On `NEED_AUTHORIZED_MARKET_DATA`, follow the selected deployment
    runbook; for Brent, use `$curvelens-ice-report-download` to obtain and import
-   official ICE Report 10 and 166 files. Stop on `ORCHESTRATION_ERROR` or
+   official ICE Report 10 and 166 files. `AWAITING_TRADE_DATE` means the fresh
+   report is still missing, even if the acquired date has a completed workflow.
+   Preserve historical reports and revised input vintages; reacquire only through
+   the approved path within the existing retry window, then report the blocker
+   if still stale. Stop on `UNEXPECTED_TRADE_DATE` and check the target/source
+   mismatch. Neither result permits report delivery or a restart.
+   Stop on `ORCHESTRATION_ERROR` or
    `ORCHESTRATION_BLOCKED` and report its exact detail. Never use `--restart`
    unless the user requests a fresh run.
 4. Execute every returned action using native subagents:
@@ -72,10 +86,20 @@ failure. Retrospective completion never authorizes delivery or activates a
 learning candidate.
 
 Use `learn --date <as-of-date>` to rebuild bounded product-isolated aggregate
-memory after the daily analysis completes. Execute any returned
+memory after the daily analysis completes. The learning cutoff is separate from
+the source trade date and expected report date. Keep it fixed across repeated
+learning calls in the same operation; never change it to unlock another budget.
+When report delivery is explicitly authorized, attempt the validated report's
+delivery before learning, passing the same `--expected-date` to `notify.py
+--prepare` if that integration is used. For another authorized delivery channel,
+require matching source/target dates and `ORCHESTRATION_COMPLETE` before sending.
+A user-requested historical resend must be labeled historical. Do not send again
+merely because learning finishes. Execute any returned
 `RUN_RETROSPECTIVE` actions in parallel with `curvelens_retrospective`, then run
 `learn` again until it returns `LEARNING_MEMORY_UPDATED`. A retrospective error
 is reported separately and does not reopen or block the completed daily report.
+`LEARNING_MEMORY_UPDATED` does not mean the backlog is empty: report deferred
+dates and errors separately. Learning cannot satisfy a missing fresh report.
 The retrospective scores mobile selection separately from forecast correctness,
 including selected-view precision, false prominence, and missed material views.
 It also scores every stable investigator finding at its declared horizon using

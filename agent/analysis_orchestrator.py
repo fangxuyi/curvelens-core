@@ -25,6 +25,7 @@ from ccvm.reference.product import get_product
 from ccvm.learning.memory import activate_advisory, build_memory, promote_advisory
 from ccvm.runtime import data_dir
 from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
+from ccvm.workflow.freshness import trade_date_guard
 from ccvm.workflow.monitoring import build_monitor, monitor_paths, record_event
 from ccvm.workflow.orchestration import (
     advance_state, initialize_state, load_state, next_actions,
@@ -71,7 +72,7 @@ def _prepare(as_of: str) -> dict:
     return result
 
 
-def _summary(state: dict) -> dict:
+def _summary(state: dict, expected_date: str | None = None) -> dict:
     state_path = Path(state["manifest_path"]).parent / "run.json"
     result = {
         "result": "ORCHESTRATION_COMPLETE" if state["phase"] == "COMPLETE" else (
@@ -83,6 +84,8 @@ def _summary(state: dict) -> dict:
         "actions": next_actions(state), "workflow_mode": "agent_orchestrated",
         "delivery_queued": False,
     }
+    if expected_date is not None:
+        result["expected_trade_date"] = expected_date
     try:
         build_monitor(state_path)
         events_path, monitor_json, monitor_md = monitor_paths(state)
@@ -114,18 +117,33 @@ def main() -> None:
         )
     )
     parser.add_argument("--date", help="Trade date YYYY-MM-DD (default: today ET)")
+    parser.add_argument(
+        "--expected-date",
+        help="Required settlement target for this invocation, independent of the source date",
+    )
     parser.add_argument("--restart", action="store_true",
                         help="Discard orchestration state for this date and prepare anew")
     parser.add_argument("--max-agent-corrections", type=int, default=2)
     parser.add_argument("--advisory-id", help="Learning advisory to promote")
     args = parser.parse_args()
+    if args.expected_date is not None and (
+        args.command not in {"start", "advance", "status", "inspect"} or not args.date
+    ):
+        parser.error("--expected-date requires an explicit --date and a daily workflow command")
     try:
         as_of = date.fromisoformat(args.date) if args.date else datetime.now(
             ZoneInfo("America/New_York")
         ).date()
+        expected_date = date.fromisoformat(args.expected_date).isoformat() \
+            if args.expected_date is not None else None
     except ValueError:
         _emit({"result": "ERROR", "detail": "invalid date"}, False)
     as_of_str = as_of.isoformat()
+    # Check before locks, --restart, persisted completion, or evidence preparation.
+    # An old completed run is valid history, but cannot satisfy a newer target.
+    blocker = trade_date_guard(as_of_str, expected_date)
+    if blocker is not None:
+        _emit(blocker, False)
     run_dir = data_dir() / "analysis_workflow" / f"trade_date={as_of_str}"
     state_path = run_dir / "run.json"
     try:
@@ -189,13 +207,13 @@ def main() -> None:
             if args.command == "retrospect":
                 _emit(prepare_retrospective(data_dir(), as_of_str))
             if args.command in {"status", "inspect"}:
-                _emit(_summary(load_state(state_path)))
+                _emit(_summary(load_state(state_path), expected_date))
 
             if args.command == "start":
                 if args.restart:
                     state_path.unlink(missing_ok=True)
                 if state_path.exists():
-                    _emit(_summary(load_state(state_path)))
+                    _emit(_summary(load_state(state_path), expected_date))
                 prepared = _prepare(as_of_str)
                 if prepared.get("result") not in {
                     "ANALYSIS_PACKETS_READY", "ANALYSIS_PACKETS_READY_WITH_LIMITATIONS",
@@ -209,7 +227,7 @@ def main() -> None:
                     max_qc_reviews=get_product().analysis_max_quality_attempts,
                     max_agent_corrections=args.max_agent_corrections,
                 )
-                _emit(_summary(state))
+                _emit(_summary(state, expected_date))
 
             state = load_state(state_path)
             if state["phase"] == "REMEDIATION_REQUIRED":
@@ -252,7 +270,7 @@ def main() -> None:
                     statistics_md=str(statistics_path), mobile_md=str(mobile_path),
                 )
                 save_state(state_path, state)
-            _emit(_summary(state), state["phase"] != "BLOCKED")
+            _emit(_summary(state, expected_date), state["phase"] != "BLOCKED")
     except (AnalysisValidationError, FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
         _emit({"result": "ORCHESTRATION_ERROR", "date": as_of_str, "detail": str(exc)}, False)
 
