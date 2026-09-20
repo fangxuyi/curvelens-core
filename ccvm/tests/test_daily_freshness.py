@@ -48,7 +48,9 @@ def _completed(root, product="wti"):
     for field, filename in (("analysis_json", "analysis.json"), ("analysis_md", "analysis.md"),
                             ("statistics_md", "statistics.md"), ("mobile_md", "mobile.md")):
         output = report_dir / filename
-        output.write_text("{}" if filename.endswith("json") else "Historical report")
+        output.write_text(json.dumps({key: state[key] for key in
+                                     ("product", "trade_date", "packet_id")})
+                          if filename.endswith("json") else "Historical report")
         state[field] = str(output)
     save_state(path, state)
     bulletin = root / "cme_bulletin"

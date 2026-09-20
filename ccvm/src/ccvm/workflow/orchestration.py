@@ -16,6 +16,10 @@ from .monitoring import archive_invalid_response, record_event, reset_events
 
 SCHEMA_VERSION = 1
 TERMINAL_PHASES = {"COMPLETE", "BLOCKED"}
+VALID_PHASES = TERMINAL_PHASES | {
+    "QC_REVIEW_REQUIRED", "RESEARCH_PLAN_REQUIRED", "INVESTIGATORS_REQUIRED",
+    "SYNTHESIS_REQUIRED", "REMEDIATION_REQUIRED", "READY_TO_FINALIZE",
+}
 
 
 def _now() -> str:
@@ -33,8 +37,12 @@ def load_state(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise AnalysisValidationError(f"workflow state does not exist: {path}")
     value = json.loads(path.read_text())
+    if not isinstance(value, dict):
+        raise AnalysisValidationError("workflow state must be an object")
     if value.get("schema_version") != SCHEMA_VERSION:
         raise AnalysisValidationError("unsupported workflow state schema")
+    if not isinstance(value.get("phase"), str) or value["phase"] not in VALID_PHASES:
+        raise AnalysisValidationError("unsupported workflow phase")
     return value
 
 

@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import importlib.util
+from pathlib import Path
+import sys
 
 import pyarrow as pa
 import pytest
@@ -84,3 +87,39 @@ def test_scorecard_is_product_and_storage_layer_driven(tmp_path):
     assert result["product"] == "copper"
     assert pq.layers == ["shared_features"]
     assert result["states"][0]["state"] == "confirmed_upside_risk"
+
+
+@pytest.mark.parametrize("product", ["wti", "gold", "corn", "silver", "copper", "brent"])
+def test_daily_report_labels_scorecard_with_active_product(tmp_path, monkeypatch, product):
+    from ccvm.analytics import monitor_state, scorecard
+    from ccvm.reference.product import get_product
+    monkeypatch.setenv("CCVM_PRODUCT", product)
+    get_product.cache_clear()
+    dates = ["2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17"]
+    pq = _setup(tmp_path, dict(zip(dates, [100., 101., 102., 103.])),
+                {dates[0]: "confirmed_upside_risk"})
+    pq.exists = lambda layer, dataset, dt: dataset == "futures_features"
+    script = Path(__file__).resolve().parents[1] / "scripts/generate_report.py"
+    spec = importlib.util.spec_from_file_location("scorecard_report_entrypoint", script)
+    report = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(report)
+    monkeypatch.setattr(report, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(report, "ParquetStore", lambda _: pq)
+    monkeypatch.setattr(monitor_state, "compute_streaks", lambda *a: {})
+    monkeypatch.setattr(monitor_state, "build_day_diff", lambda *a: {})
+    monkeypatch.setattr(sys, "argv", [str(script), "--date", dates[-1]])
+    outputs = []
+    class ScorecardReached(Exception):
+        pass
+    def capture(*args, **kwargs):
+        outputs.append(compute(*args, **kwargs))
+        raise ScorecardReached
+    monkeypatch.setattr(scorecard, "compute", capture)
+    try:
+        with pytest.raises(ScorecardReached):
+            report.main()
+        assert outputs[0]["product"] == product
+        assert outputs[0]["states"][0]["hit_rate_3d"] == 1.0
+        assert pq.layers == ["gold"]
+    finally:
+        get_product.cache_clear()

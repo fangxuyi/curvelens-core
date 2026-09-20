@@ -82,3 +82,33 @@ Manual recovery validates that recovery send only. The next scheduled invocation
 must confirm unattended delivery with its own Gmail receipt before operational
 readiness is claimed. A prompt cannot send email after the host crashes or usage
 is exhausted; no independent failure-email service is configured here.
+
+## Recovery integrity checks
+
+The controller checks persisted product, trade date, packet identity and canonical
+manifest location before resuming. A saved COMPLETE flag alone is insufficient:
+the four canonical report files must exist and be nonempty, and analysis.json
+must identify the same product, date and packet. Newly finalized reports also
+record SHA-256 digests for all four files; changed content blocks completion and
+notification preparation. Older reports retain identity/presence checks and
+explicitly report `legacy_identity_and_presence`; they are not retroactively
+assigned trusted digests. Unknown workflow phases fail with a structured error.
+
+Report files are published with atomic replacement. Completion is saved only
+after all reports and their digests are available; an interrupted finalization
+can resume from READY_TO_FINALIZE. A preparation process that exits unsuccessfully
+cannot claim that its packets are ready.
+
+The repository notification outbox rejects corrupt ledgers instead of silently
+discarding delivery history. Acknowledgment saves receipts before removing queued
+items, and pending listings exclude acknowledged IDs. These protections cover the
+repository outbox; the host Gmail integration must still follow the separate Sent
+search and receipt contract above. Atomic writes do not provide a concurrent-send
+lock: only one delivery worker may operate a given product outbox at a time.
+
+The shared GitHub test workflow runs on pull requests and main-branch pushes. It
+includes stale-date, wrong-product, missing/altered-report, interrupted-acknowledgment
+and corrupt-ledger regressions, plus scorecard identity checks for all six products.
+Branch protection is a separate repository setting; adding this workflow does not
+make its status a required merge check. External publication delays, host outages,
+usage limits and provider authorization failures remain operational dependencies.
