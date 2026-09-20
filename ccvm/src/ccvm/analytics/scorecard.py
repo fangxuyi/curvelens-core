@@ -29,9 +29,11 @@ _MIN_RENDER_SAMPLES = 5  # brief shows the table once any state has this many
 def compute(
     pq_store, data_dir: Path, as_of_str: str, max_lookback: int = 252,
     *, product: str = "gold", layer: str | None = None,
+    agreement_layer: str | None = None,
 ) -> dict:
     """Build a product-neutral agreement scorecard up to as_of (inclusive)."""
     storage_layer = layer or product
+    agreement_storage_layer = agreement_layer or product
     dates = [
         d for d in pq_store.list_dates(storage_layer, "futures_features")
         if d <= as_of_str
@@ -44,7 +46,7 @@ def compute(
         fd = pq_store.read(storage_layer, "futures_features", dt).to_pydict()
         if fd.get("settlement") and fd["settlement"][0] is not None:
             settles[dt] = fd["settlement"][0]
-        ap = data_dir / product / "agreement" / f"trade_date={dt}" / "agreement.json"
+        ap = data_dir / agreement_storage_layer / "agreement" / f"trade_date={dt}" / "agreement.json"
         if ap.exists():
             st = json.loads(ap.read_text()).get("state")
             if st:

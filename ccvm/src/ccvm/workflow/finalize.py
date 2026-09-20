@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ccvm.reporting.mobile import render_mobile_brief
+from ccvm.storage.atomic import write_text_atomic
 from ccvm.schemas.learning import (
     ForecastLedgerItem,
     InvestigatorLearningAdvisory,
@@ -1058,10 +1059,14 @@ def validate_and_render(
     md_path = output_dir / "analysis.md"
     statistics_path = output_dir / "statistics.md"
     mobile_path = output_dir / "mobile.md"
-    json_path.write_text(json.dumps(result, indent=2))
-    md_path.write_text(_render_markdown(result))
-    statistics_path.write_text(_render_statistics_markdown(result))
-    mobile_path.write_text(render_mobile_brief(result))
+    # Render the entire set before publishing any member. A failed write leaves
+    # the durable controller at READY_TO_FINALIZE, where resumption is safe.
+    outputs = {
+        json_path: json.dumps(result, indent=2), md_path: _render_markdown(result),
+        statistics_path: _render_statistics_markdown(result), mobile_path: render_mobile_brief(result),
+    }
+    for path, text in outputs.items():
+        write_text_atomic(path, text)
     return json_path, md_path, statistics_path, mobile_path
 
 

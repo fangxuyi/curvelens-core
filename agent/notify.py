@@ -48,6 +48,8 @@ REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
 from ccvm.reporting.mobile import render_mobile_brief
 from ccvm.runtime import data_dir
+from ccvm.storage.atomic import write_text_atomic
+from ccvm.workflow.completion import validate_run_identity, verify_completed_artifacts
 from ccvm.workflow.freshness import trade_date_guard
 
 DATA_DIR = data_dir()
@@ -63,14 +65,19 @@ def _load(path: Path) -> list[dict]:
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text())
-    except (json.JSONDecodeError, ValueError):
-        return []
+        items = json.loads(path.read_text())
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(f"Delivery ledger is unreadable; preserve and repair it: {path}") from exc
+    if not isinstance(items, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("id"), str) or not item["id"]
+        for item in items
+    ):
+        raise ValueError(f"Delivery ledger must contain records with nonempty IDs: {path}")
+    return items
 
 
 def _save(path: Path, items: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(items, indent=2))
+    write_text_atomic(path, json.dumps(items, indent=2))
 
 
 def _now_iso() -> str:
@@ -609,6 +616,8 @@ def cmd_prepare(date_str: str, expected_date: str | None = None) -> None:
         sys.exit(1)
     try:
         run_state = json.loads(run_state_path.read_text())
+        if not isinstance(run_state, dict):
+            raise ValueError("workflow state must be an object")
     except (json.JSONDecodeError, ValueError):
         _emit({
             "result": "ANALYSIS_NOT_COMPLETE", "date": date_str,
@@ -621,6 +630,13 @@ def cmd_prepare(date_str: str, expected_date: str | None = None) -> None:
             "phase": run_state.get("phase"),
             "detail": "daily delivery is gated on ORCHESTRATION_COMPLETE",
         })
+        sys.exit(1)
+
+    try:
+        validate_run_identity(run_state, _product().key, date_str, run_state_path.parent)
+        verify_completed_artifacts(run_state, DATA_DIR)
+    except (ValueError, OSError, KeyError) as exc:
+        _emit({"result": "ANALYSIS_NOT_COMPLETE", "date": date_str, "detail": str(exc)})
         sys.exit(1)
 
     report_json = DATA_DIR / "reports" / f"{date_str}.json"
@@ -679,7 +695,8 @@ def cmd_prepare(date_str: str, expected_date: str | None = None) -> None:
 
 
 def cmd_list_pending() -> None:
-    pending = _load(PENDING_PATH)
+    delivered_ids = {item["id"] for item in _load(DELIVERED_PATH)}
+    pending = [item for item in _load(PENDING_PATH) if item["id"] not in delivered_ids]
     _emit({
         "result": "PENDING",
         "count": len(pending),
@@ -728,15 +745,20 @@ def cmd_ack(ids: list[str], ack_all: bool) -> None:
         ack_set = set(ids)
 
     still_pending, acked = [], []
+    delivered_ids = {item["id"] for item in delivered}
     for p in pending:
         if p["id"] in ack_set:
-            delivered.append({**p, "delivered_at": _now_iso()})
+            if p["id"] not in delivered_ids:
+                delivered.append({**p, "delivered_at": _now_iso()})
+                delivered_ids.add(p["id"])
             acked.append(p["id"])
         else:
             still_pending.append(p)
 
-    _save(PENDING_PATH, still_pending)
+    # Commit the receipt first. If removing pending records fails, listing and
+    # retrying ACK consult this receipt and cannot expose the item for resend.
     _save(DELIVERED_PATH, delivered)
+    _save(PENDING_PATH, still_pending)
     _emit({"result": "ACKED", "acked": acked, "still_pending": len(still_pending)})
 
 
@@ -789,4 +811,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except (ValueError, OSError) as exc:
+        _emit({"result": "DELIVERY_STATE_ERROR", "detail": str(exc)})
+        sys.exit(1)

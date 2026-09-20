@@ -31,6 +31,7 @@ from ccvm.scenarios.scenario_engine import generate as gen_scenarios, to_dict
 from ccvm.reporting.daily_report import generate as gen_report
 from ccvm.storage.parquet_store import ParquetStore
 from ccvm.runtime import data_dir
+from ccvm.reference.product import get_product
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -87,7 +88,10 @@ def main() -> None:
 
     # ── Calibration scorecard (C7) ──
     from ccvm.analytics import scorecard as scorecard_mod
-    scorecard = scorecard_mod.compute(pq, DATA_DIR, as_of_str)
+    scorecard = scorecard_mod.compute(
+        pq, DATA_DIR, as_of_str, product=get_product().key,
+        layer="gold", agreement_layer="gold",
+    )
 
     # ── OI analytics (C2, optional) ──
     oi_path = DATA_DIR / "gold" / "oi" / f"trade_date={as_of_str}" / "oi.json"

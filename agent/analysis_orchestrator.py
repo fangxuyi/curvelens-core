@@ -26,6 +26,10 @@ from ccvm.learning.memory import activate_advisory, build_memory, promote_adviso
 from ccvm.runtime import data_dir
 from ccvm.workflow.finalize import AnalysisValidationError, validate_and_render
 from ccvm.workflow.freshness import trade_date_guard
+from ccvm.workflow.completion import (
+    artifact_hashes, validate_manifest_identity, validate_run_identity,
+    verify_completed_artifacts,
+)
 from ccvm.workflow.monitoring import build_monitor, monitor_paths, record_event
 from ccvm.workflow.orchestration import (
     advance_state, initialize_state, load_state, next_actions,
@@ -64,6 +68,12 @@ def _prepare(as_of: str) -> dict:
         raise AnalysisValidationError(
             f"preparation returned non-JSON output (exit {proc.returncode})"
         ) from exc
+    if not isinstance(result, dict):
+        raise AnalysisValidationError("preparation output must be an object")
+    if proc.returncode != 0 and result.get("result") in {
+        "ANALYSIS_PACKETS_READY", "ANALYSIS_PACKETS_READY_WITH_LIMITATIONS",
+    }:
+        raise AnalysisValidationError(f"preparation claimed ready but failed (exit {proc.returncode})")
     if result.get("result") not in {
         "ANALYSIS_PACKETS_READY", "ANALYSIS_PACKETS_READY_WITH_LIMITATIONS",
     }:
@@ -73,6 +83,7 @@ def _prepare(as_of: str) -> dict:
 
 
 def _summary(state: dict, expected_date: str | None = None) -> dict:
+    integrity = verify_completed_artifacts(state, data_dir()) if state["phase"] == "COMPLETE" else None
     state_path = Path(state["manifest_path"]).parent / "run.json"
     result = {
         "result": "ORCHESTRATION_COMPLETE" if state["phase"] == "COMPLETE" else (
@@ -98,6 +109,7 @@ def _summary(state: dict, expected_date: str | None = None) -> dict:
     if state.get("block_reason"):
         result["detail"] = state["block_reason"]
     if state["phase"] == "COMPLETE":
+        result["artifact_integrity"] = integrity
         result["analysis_json"] = state.get("analysis_json")
         result["analysis_md"] = state.get("analysis_md")
         result["statistics_md"] = state.get("statistics_md")
@@ -105,6 +117,12 @@ def _summary(state: dict, expected_date: str | None = None) -> dict:
     if state["phase"] == "QC_REVIEW_REQUIRED" and state["qc"].get("last_error"):
         result["validation_error"] = state["qc"]["last_error"]
     return result
+
+
+def _load_run(path: Path, trade_date: str) -> dict:
+    state = load_state(path)
+    validate_run_identity(state, get_product().key, trade_date, path.parent)
+    return state
 
 
 def main() -> None:
@@ -207,18 +225,21 @@ def main() -> None:
             if args.command == "retrospect":
                 _emit(prepare_retrospective(data_dir(), as_of_str))
             if args.command in {"status", "inspect"}:
-                _emit(_summary(load_state(state_path), expected_date))
+                _emit(_summary(_load_run(state_path, as_of_str), expected_date))
 
             if args.command == "start":
                 if args.restart:
                     state_path.unlink(missing_ok=True)
                 if state_path.exists():
-                    _emit(_summary(load_state(state_path), expected_date))
+                    _emit(_summary(_load_run(state_path, as_of_str), expected_date))
                 prepared = _prepare(as_of_str)
                 if prepared.get("result") not in {
                     "ANALYSIS_PACKETS_READY", "ANALYSIS_PACKETS_READY_WITH_LIMITATIONS",
                 }:
                     _emit(prepared, prepared.get("result") == "NEED_CME_PDF")
+                validate_manifest_identity(
+                    Path(prepared["manifest"]), get_product().key, as_of_str, run_dir,
+                )
                 state_path, state = initialize_state(
                     manifest_path=Path(prepared["manifest"]),
                     quality=prepared["quality_report"],
@@ -229,7 +250,7 @@ def main() -> None:
                 )
                 _emit(_summary(state, expected_date))
 
-            state = load_state(state_path)
+            state = _load_run(state_path, as_of_str)
             if state["phase"] == "REMEDIATION_REQUIRED":
                 # The only current recipe is a complete deterministic market
                 # recollection/re-normalization/recompute. The allowlist is
@@ -239,6 +260,9 @@ def main() -> None:
                     "ANALYSIS_PACKETS_READY", "ANALYSIS_PACKETS_READY_WITH_LIMITATIONS",
                 }:
                     _emit(prepared, False)
+                validate_manifest_identity(
+                    Path(prepared["manifest"]), get_product().key, as_of_str, run_dir,
+                )
                 state = refresh_after_remediation(
                     state_path, manifest_path=Path(prepared["manifest"]),
                     quality=prepared["quality_report"],
@@ -258,6 +282,7 @@ def main() -> None:
                 state["analysis_md"] = str(md_path)
                 state["statistics_md"] = str(statistics_path)
                 state["mobile_md"] = str(mobile_path)
+                state["artifact_sha256"] = artifact_hashes(state, data_dir())
                 record_event(
                     state, "phase_changed", actor="controller",
                     detail=f"{previous_phase} -> {state['phase']}",
@@ -271,7 +296,7 @@ def main() -> None:
                 )
                 save_state(state_path, state)
             _emit(_summary(state, expected_date), state["phase"] != "BLOCKED")
-    except (AnalysisValidationError, FileNotFoundError, KeyError, json.JSONDecodeError) as exc:
+    except (AnalysisValidationError, OSError, KeyError, json.JSONDecodeError) as exc:
         _emit({"result": "ORCHESTRATION_ERROR", "date": as_of_str, "detail": str(exc)}, False)
 
 
