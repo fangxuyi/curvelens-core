@@ -75,6 +75,63 @@ INVESTIGATORS_REQUIRED → SYNTHESIS_REQUIRED → READY_TO_FINALIZE → COMPLETE
 with bounded remediation/correction cycles and a
 terminal `BLOCKED` state.
 
+### Scheduled freshness and historical resumption
+
+`ORCHESTRATION_COMPLETE` describes one product/trade-date workflow. It does not
+prove that an overnight invocation obtained its required settlement date.
+For scheduled fresh reports, pass `--expected-date <target-date>` to `start`,
+`advance`, `status`, and `inspect`, along with explicit `--date <source-date>`.
+The target comes from the deployment's session/publication policy, independently
+of the downloaded document. Keep it fixed across that invocation's retries.
+The controller deliberately does not guess a trading calendar or derive the
+target from today's date, delivery history, or the latest file on disk.
+
+For example, a September 18 overnight invocation targeting September 17 but
+acquiring a September 16 bulletin calls:
+
+```bash
+CCVM_PRODUCT=wti ccvm/.venv/bin/python agent/analysis_orchestrator.py start \
+  --date 2026-09-16 --expected-date 2026-09-17
+```
+
+It returns `AWAITING_TRADE_DATE`, exit 1, no native actions and
+`delivery_queued: false`, before taking a workflow lock, reading completed state,
+honoring `--restart`, or preparing evidence. A source newer than the exact target
+returns `UNEXPECTED_TRADE_DATE`; check configuration before proceeding. Neither
+result changes the historical workflow to `BLOCKED`. Explicit historical runs
+without a target retain the existing resumption behavior.
+
+Preserve the canonical preliminary input and separately saved final revisions.
+Reacquire only through the approved source path within the already configured
+retry window. When the required date arrives, start/resume that date; do not
+restart the older date. Exhausting the window leaves the target visibly pending.
+The guard detects a mismatch; it does not download a missing bulletin or schedule
+retries. The source's internal date and product identity still require verification.
+
+For separately authorized outbox delivery, also pass `--expected-date` to
+`agent/notify.py --prepare --date <source-date>`. The same mismatch blocks queuing
+without changing pending/delivered state. `notify.py --is-new` checks delivery
+deduplication only: an undelivered old report is not necessarily fresh. Other
+authorized channels must honor the guarded controller result. Historical resends
+remain explicitly dated historical deliveries, independent of fresh-job success.
+
+Deliver a matching validated report before bounded historical learning when
+delivery is authorized. Keep the learning evaluation cutoff separate and fixed
+across calls. Its persisted two-source-date budget and deferred backlog do not
+block a new date's analysis or report delivery. Learning completion neither
+implies fresh analysis nor warrants another report email.
+
+Before deploying this change, verify that the actual host job loads this
+checkout's daily skill and supplies an independently established target to both
+daily controller calls and its delivery integration. A code merge alone does not
+update machine-local prompts, copied skills, acquisition helpers, or schedules.
+Do a no-send replay with an old completed date, a newly arriving target date,
+and an exhausted learning budget. Confirm the blocked attempt preserves file
+hashes, the target begins QC, repeated target starts reuse one run, and learning
+does not gate delivery. Existing retry timing and permissions remain unchanged.
+
+### Research and synthesis
+
 The lead scans complete canonical evidence and selects zero to three targeted
 investigations. Each dispatched investigator fills its own JSON template with:
 

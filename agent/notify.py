@@ -25,7 +25,7 @@ type at most once — re-running --prepare is idempotent and will not re-queue a
 message that was already delivered.
 
 Usage:
-    python agent/notify.py --is-new 2026-07-02        # freshness gate (before saving PDF)
+    python agent/notify.py --is-new 2026-07-02        # delivery deduplication only
     python agent/notify.py --prepare-human-action --date 2026-07-02 \
       --url https://www.ice.com/report/10
     python agent/notify.py --prepare --date 2026-07-02
@@ -48,6 +48,7 @@ REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT / "ccvm" / "src"))
 from ccvm.reporting.mobile import render_mobile_brief
 from ccvm.runtime import data_dir
+from ccvm.workflow.freshness import trade_date_guard
 
 DATA_DIR = data_dir()
 OUTBOX_DIR = DATA_DIR / "agent_outbox"
@@ -585,7 +586,15 @@ def cmd_prepare_human_action(date_str: str, url: str) -> None:
     })
 
 
-def cmd_prepare(date_str: str) -> None:
+def cmd_prepare(date_str: str, expected_date: str | None = None) -> None:
+    try:
+        blocker = trade_date_guard(date_str, expected_date)
+    except ValueError:
+        _emit({"result": "ERROR", "detail": "invalid date"})
+        sys.exit(1)
+    if blocker is not None:
+        _emit(blocker)
+        sys.exit(1)
     run_state_path = (
         DATA_DIR / "analysis_workflow" / f"trade_date={date_str}" / "run.json"
     )
@@ -686,12 +695,13 @@ def cmd_list_pending() -> None:
 
 
 def cmd_is_new(date_str: str) -> None:
-    """Report whether a bulletin date still needs processing.
+    """Report whether a bulletin date's daily message has been delivered.
 
     A date is "new" when its product-specific daily message has not yet been
-    delivered. Used as the up-front freshness gate: the agent downloads
-    the CME "current" bulletin, reads its internal date, and calls this before
-    saving/recomputing — if not new, it discards the download and stays silent.
+    delivered. This is delivery deduplication, not a source-freshness check:
+    an undelivered historical date can still be stale for today's invocation.
+    Use --expected-date on daily start and notification preparation to enforce
+    the separately established settlement target. Preserve revised vintages.
 
     Delivered gates out; merely-pending does not — so a run that crashed after
     queueing but before delivering still counts as new and can recover.
@@ -745,11 +755,14 @@ def main() -> None:
         "--url", help="Approved source URL (required with --prepare-human-action)",
     )
     parser.add_argument("--is-new", metavar="DATE",
-                        help="Report whether DATE still needs processing (freshness gate)")
+                        help="Report whether DATE's daily message is undelivered (not freshness)")
+    parser.add_argument("--expected-date", help="Required settlement target for --prepare")
     parser.add_argument("--list-pending", action="store_true", help="Print queued messages as JSON")
     parser.add_argument("--ack", nargs="+", metavar="ID", help="Mark message id(s) delivered")
     parser.add_argument("--ack-all", action="store_true", help="Mark all pending messages delivered")
     args = parser.parse_args()
+    if args.expected_date is not None and (not args.prepare or args.prepare_human_action):
+        parser.error("--expected-date is only supported with --prepare")
 
     if args.prepare_human_action:
         if not args.date or not args.url:
@@ -763,7 +776,7 @@ def main() -> None:
         if not args.date:
             _emit({"result": "ERROR", "detail": "--prepare requires --date"})
             sys.exit(1)
-        cmd_prepare(args.date)
+        cmd_prepare(args.date, args.expected_date)
     elif args.is_new:
         cmd_is_new(args.is_new)
     elif args.list_pending:
