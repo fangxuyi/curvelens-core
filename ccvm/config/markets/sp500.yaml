@@ -1,0 +1,150 @@
+market:
+  name: CME E-mini S&P 500
+  display_name: S&P 500
+  exchange: CME
+  product_code: ES
+  currency: USD
+  price_unit: USD/INDEX_POINT
+  contract_multiplier: 50
+  tick_size: 0.25
+  month_codes: {H: 3, M: 6, U: 9, Z: 12}
+  listed_futures_months: [3, 6, 9, 12]
+  options:
+    exercise_style: American
+    settlement_style: Futures
+    risk_free_rate: 0.05
+    rnd_quality_gate: true
+    premium_tick_size: 0.05
+    rnd_max_fit_residual_ticks: 2.0
+    expiry_rule: quarterly_third_friday
+  futures_depth: 4
+  options_expiry_depth: 4
+  options_expiry_horizon_months: 12
+  warn_strikes_below: 8
+  fail_strikes_below: 3
+  settlement_min: 100
+  settlement_max: 50000
+  futures_prefix: ES
+  options_prefix: ES
+  yfinance_contract_suffix: ""
+  calendar_module: ccvm.reference.equity_index_calendar
+  knowledge_pack: sp500
+  market_data:
+    provider: authorized_files
+    input_subdir: authorized_market_data
+    futures_filename: futures.json
+    options_filename: options.json
+    credentials_env: []
+  equity_context:
+    proxy_ticker: SPY
+    proxy_name: SPDR S&P 500 ETF Trust
+    sector_proxies:
+      XLC: Communication Services
+      XLY: Consumer Discretionary
+      XLP: Consumer Staples
+      XLE: Energy
+      XLF: Financials
+      XLV: Health Care
+      XLI: Industrials
+      XLB: Materials
+      XLRE: Real Estate
+      XLK: Information Technology
+      XLU: Utilities
+    earnings_provider: alphavantage
+    earnings_api_key_env: ALPHAVANTAGE_API_KEY
+    sec_user_agent_env: SEC_USER_AGENT
+    history_days: 45
+    company_watchlist:
+      - {ticker: AAPL, name: Apple, cik: "0000320193"}
+      - {ticker: MSFT, name: Microsoft, cik: "0000789019"}
+      - {ticker: NVDA, name: NVIDIA, cik: "0001045810"}
+      - {ticker: AMZN, name: Amazon, cik: "0001018724"}
+      - {ticker: GOOGL, name: Alphabet, cik: "0001652044"}
+      - {ticker: META, name: Meta Platforms, cik: "0001326801"}
+      - {ticker: BRK.B, name: Berkshire Hathaway, cik: "0001067983"}
+      - {ticker: AVGO, name: Broadcom, cik: "0001730168"}
+      - {ticker: TSLA, name: Tesla, cik: "0001318605"}
+      - {ticker: JPM, name: JPMorgan Chase, cik: "0000019617"}
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 800
+    series:
+      treasury_2y: {series_id: DGS2, label: U.S. 2-year Treasury yield, units: percent, role: policy_rate, flat_price_sign: -1}
+      treasury_10y: {series_id: DGS10, label: U.S. 10-year Treasury yield, units: percent, role: discount_rate, flat_price_sign: -1}
+      real_yield_10y: {series_id: DFII10, label: U.S. 10-year real yield, units: percent, role: real_discount_rate, flat_price_sign: -1}
+      broad_usd: {series_id: DTWEXBGS, label: Nominal broad U.S. dollar index, units: index, role: currency, flat_price_sign: 0}
+      vix: {series_id: VIXCLS, label: CBOE VIX close, units: index, role: stress, flat_price_sign: -1}
+      financial_conditions: {series_id: STLFSI4, label: St. Louis Fed Financial Stress Index, units: index, role: financial_conditions, flat_price_sign: -1}
+  news:
+    keywords: [s&p 500, sp500, spy, equities, stocks, earnings, guidance, buyback, merger, acquisition, dividend, split, federal reserve, inflation, jobs, treasury, technology, financials, energy, healthcare]
+    sources:
+      - {key: sec_press, url: "https://www.sec.gov/news/pressreleases.rss", name: SEC Press Releases}
+      - {key: federal_reserve_speeches, url: "https://www.federalreserve.gov/feeds/speeches.xml", name: Federal Reserve Speeches}
+      - {key: bls_releases, url: "https://www.bls.gov/feed/bls_latest.rss", name: BLS Latest Releases}
+      - {key: bea_releases, url: "https://apps.bea.gov/rss/rss.xml", name: BEA News Releases}
+      - {key: cnbc_markets, url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114", name: CNBC Markets}
+      - {key: yahoo_finance, url: "https://finance.yahoo.com/news/rssindex", name: Yahoo Finance}
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options, equity_context]
+    max_quality_attempts: 2
+    roles:
+      - key: index_market
+        display_name: Index Market and Basis Analyst
+        mandate: Explain S&P 500 settlement, quarterly futures basis, breadth, positioning, and the forward market view.
+        section_keys: [what_changed, history_context, monitor, oi, term_structure, equity_context]
+        news_keywords: [s&p 500, sp500, spy, equities, stocks, breadth, sector, treasury]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report the front ES settlement and one-day point and percentage change.
+          - Report quarterly futures spreads and distinguish financing/dividend basis from commodity carry.
+          - Report SPY context with its observation time limitation.
+          - Report the top three and bottom three sector ETF returns.
+          - Compare current measures with dated local history.
+        required_checks:
+          - Never interpret index contango or backwardation as inventory scarcity.
+          - Distinguish official CME settlements from ETF adjusted-close context.
+      - key: vol_surface
+        display_name: Index Volatility Analyst
+        mandate: Explain ES option implied volatility, downside skew, term structure, and risk-neutral probabilities.
+        section_keys: [market_risk, rnd, term_structure, history_context]
+        news_keywords: [volatility, options, vix, earnings, federal reserve, inflation, jobs, geopolitical]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report ATM IV, 25-delta risk reversal, 25-delta butterfly, and front-to-second-expiry IV spread.
+          - Report valid RND probabilities by expiry and list every failed expiry explicitly.
+          - Compare implied with realized volatility and dated history.
+        required_checks:
+          - Treat RND as risk-neutral pricing probabilities, not real-world forecasts.
+          - Treat failed RND diagnostics as limitations, never as valid probabilities.
+      - key: macro
+        display_name: Equity Macro Analyst
+        mandate: Explain rates, real yields, inflation, growth, labor, liquidity, and policy implications for U.S. large caps.
+        section_keys: [macro, what_changed, term_structure, equity_context]
+        news_keywords: [federal reserve, inflation, jobs, payroll, treasury, yields, gdp, pce, cpi, liquidity]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report the latest 2-year, 10-year, real yield, VIX, and financial-stress observations with dates.
+          - Compare macro evidence with price, sector leadership, basis, and skew.
+        required_checks:
+          - Preserve release dates and distinguish lagged macro data from same-day market prices.
+          - Separate observed correlations from causal claims.
+      - key: sectors_corporate
+        display_name: Sectors, Earnings, and Corporate Events Analyst
+        mandate: Explain sector leadership and the most index-relevant earnings, filings, corporate actions, and company news.
+        section_keys: [equity_context, catalysts, what_changed]
+        news_keywords: [earnings, guidance, buyback, merger, acquisition, dividend, split, 8-k, 10-q, 10-k, technology, financials, energy, healthcare]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report the top three and bottom three sector proxy returns.
+          - Name upcoming watched earnings with dates and estimates when available.
+          - Name recent watched SEC filings and distinguish filing facts from news interpretation.
+          - Explain whether sector and company evidence confirms or conflicts with the index move.
+        required_checks:
+          - Do not claim the ETF sector panel is exact constituent-weight attribution.
+          - Do not claim the bounded company watchlist is the full or current index membership.
+  caveats:
+    - "Bootstrap supports quarterly ES futures/options only; daily, weekly, serial, and end-of-month option families are excluded"
+    - "SPY and sector ETF adjusted closes are contextual and not synchronized with official CME settlements"
+    - "Corporate monitoring is a bounded reviewed watchlist, not exhaustive current-index coverage"

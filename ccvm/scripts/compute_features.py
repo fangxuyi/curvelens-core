@@ -182,6 +182,24 @@ def main() -> None:
                     macro["flat_price"]["directional_prior"],
                     macro["flat_price"]["score"], macro["flat_price"]["signals_scored"])
 
+    # ── Optional equity-index sector and company-event context ──
+    from ccvm.collectors.equity_context import load_equity_context
+    from ccvm.reference.product import get_product
+    equity_context = load_equity_context(DATA_DIR, get_product().key, as_of_str)
+    if equity_context is not None:
+        context_path = (
+            DATA_DIR / "gold" / "equity_context"
+            / f"trade_date={as_of_str}" / "equity_context.json"
+        )
+        context_path.parent.mkdir(parents=True, exist_ok=True)
+        context_path.write_text(json.dumps(equity_context, indent=2))
+        logger.info(
+            "Equity context: %d sectors, %d earnings, %d filings",
+            len(equity_context.get("sector_proxies", [])),
+            len(equity_context.get("upcoming_earnings", [])),
+            len(equity_context.get("recent_material_filings", [])),
+        )
+
     # ── COT positioning context (B3) ──
     cot = cot_features.compute(DATA_DIR, as_of_str)
     if cot is not None:

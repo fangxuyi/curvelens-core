@@ -47,6 +47,7 @@ def generate(
     themes: Optional[list] = None,
     scorecard: Optional[dict] = None,
     macro: Optional[dict] = None,
+    equity_context: Optional[dict] = None,
 ) -> dict:
     """
     Generate the daily report. Returns the report dict and writes files to output_dir.
@@ -67,6 +68,7 @@ def generate(
             "term_structure": _term_structure_section(gold_futures, gold_options),
             "fundamentals": _fundamentals_section(gold_eia),
             "macro": macro or {"status": "unavailable"},
+            "equity_context": equity_context or {"status": "unavailable"},
             "catalysts": _catalysts_section(top_catalysts, themes),
             "agreement": agreement,
             "scenarios": scenarios,
@@ -366,6 +368,7 @@ def _render_markdown(report: dict) -> str:
     opt = s["market_risk"].get("options", {})
     fundamentals = s.get("fundamentals", s.get("eia_fundamentals", {}))
     macro = s.get("macro") or {}
+    equity = s.get("equity_context") or {}
     eia = fundamentals  # WTI provider's standardized report payload
     agr = s["agreement"]
     cats = s["catalysts"]
@@ -709,6 +712,65 @@ def _render_markdown(report: dict) -> str:
                 f"25Δ BF {_fmt_pct(vol.get('butterfly_25d'))} "
                 f"(`{vol.get('interpretation')}`).")
         lines += [f"*{macro.get('caveat')}*", ""]
+
+    if equity.get("product"):
+        proxy = equity.get("index_proxy") or {}
+        proxy_return = proxy.get("return_1d")
+        proxy_return_text = (
+            f"{proxy_return:+.2%}" if proxy_return is not None else "n/a"
+        )
+        lines += [
+            "### Equity breadth and company events",
+            "",
+            f"- {proxy.get('name', 'Index proxy')} ({proxy.get('ticker', 'n/a')}): "
+            f"**{proxy_return_text}** on {proxy.get('observation_date', 'n/a')} "
+            "*(adjusted-close context; not the official futures settlement)*",
+        ]
+        leaders = equity.get("top_sectors") or []
+        laggards = equity.get("bottom_sectors") or []
+        if leaders:
+            lines.append(
+                "- Sector leaders: " + " · ".join(
+                    f"{item['name']} ({item['ticker']}) "
+                    f"{item.get('return_1d', 0):+.2%}"
+                    for item in leaders
+                )
+            )
+        if laggards:
+            lines.append(
+                "- Sector laggards: " + " · ".join(
+                    f"{item['name']} ({item['ticker']}) "
+                    f"{item.get('return_1d', 0):+.2%}"
+                    for item in laggards
+                )
+            )
+        earnings = equity.get("upcoming_earnings") or []
+        if earnings:
+            lines.append(
+                "- Upcoming watched earnings: " + " · ".join(
+                    f"{item['ticker']} {item['report_date']}"
+                    for item in earnings[:8]
+                )
+            )
+        filings = equity.get("recent_material_filings") or []
+        if filings:
+            lines.append(
+                "- Recent watched filings: " + " · ".join(
+                    f"[{item['ticker']} {item['form']} "
+                    f"{item['filing_date']}]({item['source_url']})"
+                    for item in filings[:8]
+                )
+            )
+        if not earnings:
+            lines.append("- Upcoming watched earnings: unavailable or none in the next 14 days.")
+        if not filings:
+            lines.append("- Recent watched SEC filings: unavailable or none in the last 5 days.")
+        lines += [
+            "",
+            "*Sector ETFs describe broad U.S. leadership, not exact "
+            "index-constituent attribution.*",
+            "",
+        ]
 
     # ── Section 3: Catalysts ──
     lines += ["## 3. Upcoming Catalysts", ""]
