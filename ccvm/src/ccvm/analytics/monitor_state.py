@@ -215,6 +215,7 @@ def build_day_diff(pq_store, data_dir: Path, as_of_str: str) -> dict:
     dates = [d for d in pq_store.list_dates("gold", "futures_features") if d <= as_of_str]
     if as_of_str not in dates or len(dates) < 2:
         return {"status": "unavailable"}
+    dates = sorted(dates)
     prior = dates[dates.index(as_of_str) - 1]
 
     def _metrics(dt):
@@ -224,6 +225,10 @@ def build_day_diff(pq_store, data_dir: Path, as_of_str: str) -> dict:
         return {**fm, **om}
 
     today, prev = _metrics(as_of_str), _metrics(prior)
+    from .option_comparison import compare_front_surface
+    def _options(dt):
+        return pq_store.read("gold", "option_features", dt) if pq_store.exists("gold", "option_features", dt) else None
+    option_comparison = compare_front_surface(_options(as_of_str), _options(prior), as_of_str, prior)
 
     def _delta(key):
         a, b = today.get(key), prev.get(key)
@@ -245,8 +250,9 @@ def build_day_diff(pq_store, data_dir: Path, as_of_str: str) -> dict:
         "prior_date": prior,
         "settle_change": _delta("front_settle"),
         "settle_prior": prev.get("front_settle"),
-        "atm_iv_change": _delta("atm_iv"),
-        "rr25_change": _delta("rr25"),
+        "option_comparison": option_comparison,
+        "atm_iv_change": option_comparison["atm_iv_change"],
+        "rr25_change": option_comparison["risk_reversal_25d_change"],
         "slope_change": _delta("curve_slope"),
         "agreement_today": _agreement(as_of_str),
         "agreement_prior": _agreement(prior),
