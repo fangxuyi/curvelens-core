@@ -139,17 +139,11 @@ def _market_risk_section(
     if gold_options is not None and len(gold_options) > 0:
         od = gold_options.to_pydict()
         expiries = sorted(set(od["option_expiry"]))
-        atm_ivs   = [v for v in od["atm_iv"] if v is not None]
-        rr25_vals = [v for v in od["risk_reversal_25d"] if v is not None]
-        bf25_vals = [v for v in od["butterfly_25d"] if v is not None]
-        skew_vals = [v for v in od["skew_slope"] if v is not None]
+        from ..analytics.option_comparison import front_surface
+        surface = front_surface(gold_options)
         section["options"] = {
+            **surface,
             "expiries_covered": expiries[:6],
-            "atm_iv": atm_ivs[0] if atm_ivs else None,
-            "risk_reversal_25d": rr25_vals[0] if rr25_vals else None,
-            "butterfly_25d": bf25_vals[0] if bf25_vals else None,
-            "skew_slope": skew_vals[0] if skew_vals else None,
-            "coverage_note": od["price_note"][0] if od.get("price_note") else None,
             "feature_source": "gold/option_features",
         }
 

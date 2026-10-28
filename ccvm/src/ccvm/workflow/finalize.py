@@ -951,6 +951,28 @@ def _check_investigator_feedback(
         )
 
 
+def _check_option_comparisons(synthesis, manifest):
+    """Check ATM metric comparison text against the immutable computed contract.
+
+    This verifies the displayed numerical comparison, not arbitrary natural-language
+    claims or forecasts. Those still require final editorial verification.
+    """
+    contract = manifest.get("synthesis_contract", {}).get("option_comparison")
+    if not contract:
+        return  # Old packets remain readable; regenerate to obtain the new guard.
+    metrics = list(synthesis.get("market_snapshot", []))
+    for view in synthesis.get("top_views", []):
+        metrics.extend(view.get("key_metrics", []))
+    for metric in metrics:
+        label = str(metric.get("label", ""))
+        if re.search(r"\batm\b", label, re.I) and re.search(r"\biv\b|implied volatility", label, re.I):
+            if metric.get("comparison") != contract["comparison_text"]:
+                raise AnalysisValidationError(
+                    "ATM IV comparison must copy synthesis_contract.option_comparison.comparison_text; "
+                    "cross-expiry headline subtraction is not a daily volatility move"
+                )
+
+
 def validate_synthesis_response(
     manifest_path: Path, responses: dict[str, dict[str, Any]],
     response_path: Path | None = None,
@@ -1001,6 +1023,7 @@ def validate_synthesis_response(
         field_name="market_snapshot",
     )
     _check_ids(synthesis.get("evidence_ids"), allowed, "synthesis")
+    _check_option_comparisons(synthesis, manifest)
     _check_forecast_ledger(synthesis, manifest, allowed)
     _check_mobile_horizon_coverage(synthesis, manifest)
     _normalize_mobile_forecast_links(synthesis, manifest)

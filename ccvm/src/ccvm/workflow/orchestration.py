@@ -298,6 +298,7 @@ def _write_synthesis_task(state: dict[str, Any]) -> None:
     task_path.write_text(
         "# CurveLens lead synthesis\n\n"
         "You are the product-neutral synthesis editor. Do not spawn other agents.\n"
+        'For ATM IV, use only the canonical what_changed.diff.option_comparison (same option_expiry AND underlying_contract on both dates). A changed headline expiry is a roll, not a daily volatility move. If the matched prior surface is absent, state the daily comparison is unavailable; never substitute the previous headline. For every ATM IV key metric or snapshot metric, copy synthesis_contract.option_comparison.comparison_text exactly into comparison when that contract is supplied. Preserve the sign and percentage-point units in all prose. '
         f"The lead research plan is `{manifest['research_plan_response_path']}`. "
         "The following optional investigator outputs passed mechanical validation:\n"
         f"{selected_role_details}\n\n"
