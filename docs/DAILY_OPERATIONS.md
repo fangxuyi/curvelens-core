@@ -24,6 +24,24 @@ CME describes publication times as approximate:
 
 ## Host integration
 
+The headed CME downloader can use the tracked
+`agent/cme_pdf_capture.cjs` helper from its existing approved browser session.
+Call `capturePdf(page, exactConfiguredBulletinUrl)` and await its result before
+closing Chrome. It waits up to 45 seconds for a complete, successful PDF response
+instead of assuming that navigation plus a fixed sleep completed the body read.
+It does not launch a browser, make a separate request, reload, or retry. Keep the
+host's permission preflight, explicit product mapping, internal date/section
+verification, and preservation of existing PDF vintages.
+
+On `CME_PDF_CAPTURE_FAILED`, retain `error.diagnostics` locally: HTTP status,
+content type, byte count when available, and a bounded body-read failure reason.
+These observations distinguish an HTML/error response from an unreadable PDF
+body without saving response content or browser URLs. No captured bytes alone
+does not establish a publication delay or provider outage.
+
+Run capture regressions with `node --test agent/tests/cme_pdf_capture.test.cjs`
+from the checkout root, using the host's installed Node executable.
+
 Use `agent/run_controller.py` as the restricted adapter to
 `agent/analysis_orchestrator.py`. It accepts explicit product selection, a bounded
 set of controller operations and ISO dates. It forwards `--expected-date` on

@@ -34,3 +34,5 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m pytest tests/ -q
+      - name: Run browser PDF capture regressions
+        run: node --test agent/tests/cme_pdf_capture.test.cjs
