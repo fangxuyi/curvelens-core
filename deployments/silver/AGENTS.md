@@ -90,6 +90,20 @@ Workflow completion is not production acceptance. The native-agent workflow is
 the supported path; do not make SDK, model HTTP API, `codex exec`, or
 vendor-model CLI calls.
 
+## Separately authorized Gmail delivery
+
+The validation-only default above does not prevent a delivery the user has
+explicitly requested. An existing explicitly approved recurring email task or
+an explicit resend request authorizes that delivery scope; it does not promote
+Silver to production or enable Telegram. Follow the authorized email contract
+in `docs/DAILY_OPERATIONS.md` and queue through `agent/email_outbox.py` in the
+isolated Silver `email_outbox` before calling the connected Gmail plugin. Send
+only the returned exact payload to the verified, previously approved self
+mailbox, search Sent by invocation ID first, and acknowledge its confirmed Gmail
+message ID. A saved email body outside that outbox is insufficient. Preserve
+rejections and existing receipts; never substitute another transport or treat
+queueing as approval. The mobile `notify.py` queue remains separate.
+
 ## Silver-specific analytical conventions
 
 - Silver has both monetary/investment and industrial drivers. Analyze them

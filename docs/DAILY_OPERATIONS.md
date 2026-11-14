@@ -83,6 +83,10 @@ recurrence and payload scope. Addresses and receipts stay in local configuration
 not source control. Send through the connected Gmail plugin only.
 
 1. Verify the authenticated mailbox and search Sent for the unique invocation ID.
+   Queue the exact payload in the selected product's `email_outbox` using the
+   tracked `agent/email_outbox.py` adapter described below. An invocation-local
+   `email_payload.json` alone is not an outbox entry and does not satisfy the
+   repository's queue-before-send rule.
 2. Require a completed validated workflow and matching source/target dates before
    sending the full `analysis.md`. Include its limitations, actual date, target
    date, run time and delivery ID. Retain preliminary-data labels.
@@ -92,6 +96,10 @@ not source control. Send through the connected Gmail plugin only.
    search Sent before retrying. Preserve a rejected payload locally and request
    the specific missing approval; do not treat an app permission setting as an
    override of automatic approval review.
+   Acknowledge that confirmed ID through `email_outbox.py ack`; preserve the
+   original rejection separately. Queueing never grants authorization or overrides
+   a rejection. Existing explicit user authorization should be supplied as
+   evidence rather than repeatedly requesting the same consent.
 5. Deliver before bounded historical learning. Keep its evaluation cutoff fixed,
    dispatch only controller-returned actions, report deferred dates/errors
    separately, and do not send a second email solely because learning finishes.
@@ -100,6 +108,65 @@ Manual recovery validates that recovery send only. The next scheduled invocation
 must confirm unattended delivery with its own Gmail receipt before operational
 readiness is claimed. A prompt cannot send email after the host crashes or usage
 is exhausted; no independent failure-email service is configured here.
+
+### Durable Gmail outbox
+
+The November 14 Silver analysis completed, but the direct Gmail handoff was
+rejected. The initial rejection cited missing accepted delivery authorization;
+the recovery rejection specifically cited the missing isolated outbox record.
+The email instructions had bypassed that repository requirement while disabling
+the separate mobile/Telegram queue. Full-report Gmail now has its own tracked
+adapter; it never calls Gmail, handles credentials, or changes analysis state.
+
+Before preparing, retain the frozen invocation record at
+`automation_invocations/<invocation-id>/invocation.json` within the product's
+runtime root. It must contain `invocation_id`, `expected_trade_date`,
+`actual_trade_date`, `gmail_account`, `run_time_ny` (with timezone), and
+`bulletin_vintage` (`PRELIMINARY` or `FINAL`). Addresses and authorization references
+are runtime configuration, never checked-in constants. Preparing a full report
+requires COMPLETE, matching dates, and verified hashes for all four report files.
+
+For an explicitly authorized report, run from the repository root:
+
+```bash
+CCVM_PRODUCT=<product> ccvm/.venv/bin/python agent/email_outbox.py prepare \
+  --invocation-id <original-id> --recipient <approved-self-mailbox> \
+  --authorization-reference <host-thread-or-user-message-reference>
+CCVM_PRODUCT=<product> ccvm/.venv/bin/python agent/email_outbox.py pending \
+  --invocation-id <original-id>
+```
+
+`EMAIL_QUEUED` returns the exact `gmail_args` to pass to the connected Gmail
+plugin after verifying the account and checking Sent immediately before sending.
+It contains the full report with only local knowledge citation paths converted
+to stable labels; no analysis prose, metrics, or limitations are removed.
+`EMAIL_ALREADY_DELIVERED` returns the receipt without a send payload: do not send.
+`EMAIL_OUTBOX_BLOCKED` requires correction of the named condition, never a direct
+Gmail fallback. An authorization reference is an audit pointer, not approval.
+
+For an authorized concise failure email, use `prepare-status` instead, with the
+same invocation, recipient and authorization arguments plus
+`--status blocked` (or `failed`) and `--summary <concise-observed-status>`.
+The summary is at most 1,000 characters, must omit local paths and raw logs, and
+must be reviewed by the host for accuracy and secrets. It never includes an older
+full report. Preserve the frozen target even when the source date is unverified.
+
+After Gmail confirms the send, or a Sent lookup confirms an earlier ambiguous
+send of this exact queued payload, acknowledge it:
+
+```bash
+CCVM_PRODUCT=<product> ccvm/.venv/bin/python agent/email_outbox.py ack \
+  --invocation-id <original-id> --message-id <confirmed-gmail-id>
+```
+
+The immutable payload and atomic receipt remain under `email_outbox/`. The
+existing host `email_delivery_receipts/` may retain richer verification and
+rejection history, but is not a replacement for queue acknowledgment. A crash
+after Gmail accepts but before acknowledgment requires a Sent search, not an
+automatic resend. One host sender must own each product's entire send cycle;
+the adapter's file lock serializes local writes only. Never race an active daily
+job with a recovery worker. Do not change schedules, recipients, models or
+production acceptance when adopting this adapter.
 
 ## Recovery integrity checks
 
