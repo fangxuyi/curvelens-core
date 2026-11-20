@@ -48,9 +48,14 @@ def _mailbox(value: str) -> str:
 def report_for_email(report: str) -> str:
     # Keep citations auditable without disclosing repository paths. No narrative,
     # numbers, limitations, or reference hashes are removed.
-    report = re.sub(r"knowledge:knowledge/([a-z0-9_-]+)/([a-z0-9_-]+)\.md:",
+    report = re.sub(r"knowledge:knowledge/([a-z0-9_-]+)/([a-z0-9_-]+)\.(?:md|yaml):",
                     r"knowledge:\1:\2:", report)
-    if re.search(r"(?:file://|[A-Z]:\\|ccvm/data/|knowledge/|(?<![\w:/])/(?!/)[^\s<>()]+)", report):
+    # Division after a parenthesized expression and percent-per-year units
+    # are report notation, not absolute paths. Exempt only these bounded forms
+    # from scanning; keep the delivered report byte-for-byte unchanged.
+    path_scan = re.sub(r"(?<=\))/[0-9]+(?:\.[0-9]+)?(?=[\s,;:]|\.(?:\s|$)|$)", "", report)
+    path_scan = re.sub(r"(?<=%)/year(?![\w/])", "", path_scan)
+    if re.search(r"(?:file://|[A-Z]:\\|ccvm/data/|knowledge/|(?<![\w:/])/(?!/)[^\s<>()]+)", path_scan):
         raise ValueError("Report contains local paths; preserve it locally for review")
     return report
 

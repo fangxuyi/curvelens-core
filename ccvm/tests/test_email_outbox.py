@@ -132,9 +132,18 @@ def test_failed_ack_write_leaves_queue_recoverable(tmp_path, monkeypatch):
 
 def test_citations_keep_identity_and_local_paths_block_export():
     assert report_for_email("knowledge:knowledge/silver/macro.md:abc123") == "knowledge:silver:macro:abc123"
+    assert report_for_email("knowledge:knowledge/wti/calendar.yaml:6e1467e6da7b") == "knowledge:wti:calendar:6e1467e6da7b"
     for report in ["see /Users/operator/private.txt", "file:///tmp/report", "ccvm/data/report", "/etc/passwd"]:
         with pytest.raises(ValueError, match="local paths"):
             report_for_email(report)
+
+
+def test_report_math_and_percent_units_are_preserved_without_allowing_paths():
+    report = "Slope (4021.5-3853)/10. Carry (3870-3853)/3853 times 12; -9.136490%/year. Corn -(4.5925-4.4675)/4.4675 × 12."
+    assert report_for_email(report) == report
+    for unsafe in ["(value)/10/private", "(value)/10.5/private", "(value)/4.4675/private", "%/year/private", "/year", "/10", "/4.4675", "knowledge/wti/calendar.yaml", report + " /etc/passwd"]:
+        with pytest.raises(ValueError, match="local paths"):
+            report_for_email(unsafe)
 
 
 def test_no_authorization_reference_or_path_traversal(tmp_path):
