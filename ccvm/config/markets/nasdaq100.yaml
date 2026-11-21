@@ -1,0 +1,138 @@
+market:
+  name: CME E-mini Nasdaq-100
+  display_name: Nasdaq-100
+  exchange: CME
+  product_code: NQ
+  currency: USD
+  price_unit: USD/INDEX_POINT
+  contract_multiplier: 20
+  tick_size: 0.25
+  month_codes: {H: 3, M: 6, U: 9, Z: 12}
+  listed_futures_months: [3, 6, 9, 12]
+  options:
+    exercise_style: American
+    settlement_style: Futures
+    risk_free_rate: 0.05
+    rnd_quality_gate: true
+    premium_tick_size: 0.05
+    rnd_max_fit_residual_ticks: 2.0
+    expiry_rule: quarterly_third_friday
+  futures_depth: 4
+  options_expiry_depth: 4
+  options_expiry_horizon_months: 12
+  warn_strikes_below: 8
+  fail_strikes_below: 3
+  settlement_min: 100
+  settlement_max: 100000
+  futures_prefix: NQ
+  options_prefix: NQ
+  yfinance_contract_suffix: ""
+  calendar_module: ccvm.reference.equity_index_calendar
+  knowledge_pack: nasdaq100
+  market_data:
+    provider: authorized_files
+    input_subdir: authorized_market_data
+    futures_filename: futures.json
+    options_filename: options.json
+    credentials_env: []
+  equity_context:
+    proxy_ticker: QQQ
+    proxy_name: Invesco QQQ Trust
+    sector_proxies: {XLC: Communication Services, XLY: Consumer Discretionary, XLP: Consumer Staples, XLE: Energy, XLF: Financials, XLV: Health Care, XLI: Industrials, XLB: Materials, XLRE: Real Estate, XLK: Information Technology, XLU: Utilities}
+    earnings_provider: alphavantage
+    earnings_api_key_env: ALPHAVANTAGE_API_KEY
+    sec_user_agent_env: SEC_USER_AGENT
+    history_days: 45
+    company_watchlist:
+      - {ticker: AAPL, name: Apple, cik: "0000320193"}
+      - {ticker: MSFT, name: Microsoft, cik: "0000789019"}
+      - {ticker: NVDA, name: NVIDIA, cik: "0001045810"}
+      - {ticker: AMZN, name: Amazon, cik: "0001018724"}
+      - {ticker: GOOGL, name: Alphabet, cik: "0001652044"}
+      - {ticker: META, name: Meta Platforms, cik: "0001326801"}
+      - {ticker: AVGO, name: Broadcom, cik: "0001730168"}
+      - {ticker: TSLA, name: Tesla, cik: "0001318605"}
+      - {ticker: COST, name: Costco, cik: "0000909832"}
+      - {ticker: NFLX, name: Netflix, cik: "0001065280"}
+  macro:
+    provider: fred
+    api_key_env: FRED_API_KEY
+    history_days: 800
+    series:
+      treasury_2y: {series_id: DGS2, label: U.S. 2-year Treasury yield, units: percent, role: policy_rate, flat_price_sign: -1}
+      treasury_10y: {series_id: DGS10, label: U.S. 10-year Treasury yield, units: percent, role: discount_rate, flat_price_sign: -1}
+      real_yield_10y: {series_id: DFII10, label: U.S. 10-year real yield, units: percent, role: duration_discount_rate, flat_price_sign: -1}
+      broad_usd: {series_id: DTWEXBGS, label: Nominal broad U.S. dollar index, units: index, role: currency, flat_price_sign: 0}
+      vix: {series_id: VIXCLS, label: CBOE VIX close, units: index, role: stress, flat_price_sign: -1}
+      financial_conditions: {series_id: STLFSI4, label: St. Louis Fed Financial Stress Index, units: index, role: financial_conditions, flat_price_sign: -1}
+  news:
+    keywords: [nasdaq, nasdaq-100, ndx, qqq, technology, semiconductor, artificial intelligence, cloud, software, earnings, guidance, federal reserve, inflation, treasury]
+    sources:
+      - {key: sec_press, url: "https://www.sec.gov/news/pressreleases.rss", name: SEC Press Releases}
+      - {key: federal_reserve_speeches, url: "https://www.federalreserve.gov/feeds/speeches.xml", name: Federal Reserve Speeches}
+      - {key: bls_releases, url: "https://www.bls.gov/feed/bls_latest.rss", name: BLS Latest Releases}
+      - {key: bea_releases, url: "https://apps.bea.gov/rss/rss.xml", name: BEA News Releases}
+      - {key: cnbc_technology, url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=19854910", name: CNBC Technology}
+      - {key: yahoo_finance, url: "https://finance.yahoo.com/news/rssindex", name: Yahoo Finance}
+  analysis:
+    blocking_sections: [futures]
+    retryable_empty_sections: [futures, options, equity_context]
+    max_quality_attempts: 2
+    roles:
+      - key: index_market
+        display_name: Index Market and Basis Analyst
+        mandate: Explain Nasdaq-100 settlement, quarterly basis, breadth, concentration, and forward implications.
+        section_keys: [what_changed, history_context, monitor, oi, term_structure, equity_context]
+        news_keywords: [nasdaq, nasdaq-100, qqq, technology, breadth, sector, treasury]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report the front NQ settlement and one-day point and percentage change.
+          - Report quarterly futures spreads as financing/dividend basis, not commodity carry.
+          - Report QQQ context and top and bottom three sector ETF returns.
+          - Compare current measures with dated local history.
+        required_checks:
+          - Never interpret index contango or backwardation as inventory scarcity.
+          - Distinguish official CME settlements from ETF adjusted-close context.
+      - key: vol_surface
+        display_name: Index Volatility Analyst
+        mandate: Explain NQ option volatility, downside skew, term structure, and risk-neutral probabilities.
+        section_keys: [market_risk, rnd, term_structure, history_context]
+        news_keywords: [volatility, options, vix, earnings, federal reserve, semiconductor, geopolitical]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report ATM IV, 25-delta risk reversal, butterfly, and IV term spread.
+          - Report valid RND probabilities by expiry and every failed expiry.
+          - Compare implied with realized volatility and dated history.
+        required_checks:
+          - Treat RND as risk-neutral pricing probabilities, not forecasts.
+          - Treat failed RND diagnostics only as limitations.
+      - key: macro
+        display_name: Growth and Duration Macro Analyst
+        mandate: Explain real yields, policy rates, growth, liquidity, and valuation-duration pressure on growth equities.
+        section_keys: [macro, what_changed, term_structure, equity_context]
+        news_keywords: [federal reserve, inflation, jobs, treasury, real yield, gdp, pce, cpi, liquidity]
+        minimum_key_metrics: 5
+        report_requirements:
+          - Report 2-year, 10-year, real yield, VIX, and stress observations with dates.
+          - Compare macro evidence with NQ price, technology leadership, basis, and skew.
+        required_checks:
+          - Preserve release dates and data cadence.
+          - Do not reduce all Nasdaq moves to interest rates when company evidence conflicts.
+      - key: sectors_corporate
+        display_name: Technology, Earnings, and Corporate Events Analyst
+        mandate: Explain technology leadership and market-moving earnings, filings, product cycles, capital spending, and corporate actions.
+        section_keys: [equity_context, catalysts, what_changed]
+        news_keywords: [earnings, guidance, buyback, merger, acquisition, dividend, split, 8-k, semiconductor, artificial intelligence, cloud, software, capex]
+        minimum_key_metrics: 4
+        report_requirements:
+          - Report top and bottom three sector proxy returns.
+          - Name upcoming watched earnings and recent watched SEC filings.
+          - Separate verified company events from technology narratives.
+          - Explain confirmation or conflict with the NQ move.
+        required_checks:
+          - Do not claim the broad sector panel is exact Nasdaq-100 attribution.
+          - Do not claim the bounded watchlist is full current membership.
+  caveats:
+    - "Bootstrap supports quarterly NQ futures/options only; daily, weekly, serial, and end-of-month option families are excluded"
+    - "QQQ and sector ETF adjusted closes are contextual and not synchronized with official CME settlements"
+    - "The company watchlist emphasizes market-moving technology issuers and is not exhaustive current-index coverage"

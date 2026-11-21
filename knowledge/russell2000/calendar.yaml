@@ -1,0 +1,7 @@
+product: russell2000
+recurring:
+  - {name: Federal Open Market Committee decision, day: null, time_et: "14:00", kind: macro, schedule_note: use the dated Federal Reserve calendar}
+  - {name: Senior Loan Officer Opinion Survey, day: null, time_et: null, kind: credit, schedule_note: quarterly; use the Federal Reserve calendar}
+  - {name: Russell index reconstitution, day: null, time_et: null, kind: index_event, schedule_note: annual; use the dated FTSE Russell calendar}
+  - {name: Watched small-cap earnings, day: null, time_et: null, kind: corporate, schedule_note: use the collected company earnings calendar}
+dated: []
